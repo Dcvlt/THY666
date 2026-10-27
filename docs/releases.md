@@ -64,5 +64,7 @@ changes also trigger a rebuild. No firmware, private inputs or device bindings
 are included in Pages.
 
 Core checks, native desktop source checks and updater checks exercise public
-source independently of instrument builds. Required branch checks should use
-these job names; a green build does not substitute for board qualification.
+source independently of instrument builds. Main protection requires `core` and `PR routing`, an up-to-date branch and
+resolved review conversations. Normal PRs target develop; only develop from this
+repository can promote to main. Force-pushes and deletion are blocked, including
+for administrators. A green build does not substitute for board qualification.
