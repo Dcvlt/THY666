@@ -57,8 +57,9 @@ and option tables.
 The project also includes a **GitHub Pages site** with an overview, installation, browser Client
 and the same searchable illustrated guide. Its tabs are Install, Client and User guide.
 Build the public core and browser updater first, then run `npm run build:site`; it needs no board, firmware or private musical archive.
-The site and publishing workflow are prepared locally; public hosting and release
-downloads are not live yet. See [Project site](docs/project-site.md). A direct
+The site is live at **[dcvlt.github.io/THY666](https://dcvlt.github.io/THY666/)**.
+The source repository is public; firmware and desktop release downloads have not
+yet been published. See [Project site](docs/project-site.md). A direct
 WebHID installer has [passed a Windows device test](docs/browser-installation.md),
 using the same Rust package checks and protocol as desktop. It supports explicit
 configuration backup, application verification and separately confirmed restoration.

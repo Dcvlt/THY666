@@ -36,9 +36,12 @@ local releases and backups are excluded. Never copy generated output wholesale.
 
 ## Publish on GitHub Pages
 
-The source repository is `Dcvlt/THY666` and must remain private. Pages publishes
-only the staged site artifact; repository visibility and website visibility are
-separate settings. Do not make the source repository public to enable Pages.
+Live site: **https://dcvlt.github.io/THY666/**.
+
+The owner has made `Dcvlt/THY666` public to use GitHub Pages on the current plan.
+Both the source and Git history are public. Pages publishes only the staged site
+artifact through GitHub Actions, with HTTPS enforced. Private configuration,
+captures and vendor packages remain excluded from source and site builds.
 
 1. Review the public source and assets, commit the intended files and push them.
 2. In GitHub **Settings → Pages → Build and deployment**, choose **GitHub Actions**.
