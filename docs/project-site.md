@@ -107,7 +107,8 @@ Client screenshot shows a disconnected session with no device identifiers; refre
 `site/assets/client-preview.png` when the interface changes. Large display titles retain Monoton; navigation and smaller headings use Orbitron,
 white on dark surfaces and dark in light mode.
 
-The timeline labels v0.1.0 as the current tooling version with hardware-alpha status.
-v0.2 and v0.3 are proposed editorial milestones for qualification and recovery,
-not published firmware versions or promised dates. Keep them aligned with README
-limits and device qualification evidence.
+The roadmap marks v0.2 as the available development milestone, with musical
+integration additions explicitly still planned within v0.2. v0.3 covers sequencer
+expansion; experimental features and MIDI expansion follow. These product milestones
+do not change package/build version metadata or imply downloadable release artifacts.
+Keep implemented behavior separate from planned work and device qualification.

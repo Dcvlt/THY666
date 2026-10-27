@@ -206,65 +206,56 @@
         <p class="eyebrow">Built in the open</p>
         <h2 id="status-heading">The road ahead.</h2>
         <p class="roadmap-intro">
-          Hardware alpha today. Each milestone earns its place through testing
-          on the instrument. Future version numbers below are proposed targets,
-          not released builds or delivery dates.
+          v0.2 is available as the current development version. Musical integration
+          continues within this milestone; planned additions are identified below.
+          Later milestones describe our direction, without promised release dates.
         </p>
         <ol class="release-timeline">
-          <li class="is-current">
-            <span class="release-version"
-              >v0.1.0 <small>Initial Release · hardware alpha</small></span
-            >
+          <li>
+            <span class="release-version">v0.1 <small>Initial release · hardware alpha</small></span>
             <div>
               <h3>Foundation.</h3>
-              <p>
-                Chords, scales, MIDI, Arps, sequencing, views and expanded settings.
-                Barebones updater on desktop (Windows)
-              </p>
-              <span class="roadmap-state">Available for testing</span>
+              <p>Chords, scales, MIDI, Arps, sequencing, views and expanded settings.
+                Initial Windows desktop updater.</p>
+              <span class="roadmap-state">Initial MVP</span>
+            </div>
+          </li>
+          <li class="is-current" aria-current="step">
+            <span class="release-version">v0.2 <small>Current version · integration</small></span>
+            <div>
+              <h3>A more musical instrument.</h3>
+              <p><strong>Available:</strong> browser and desktop Client, shared firmware
+                updater, expression settings and live-pad MPE. Local macOS builds
+                run; macOS/Linux hardware qualification remains in progress.</p>
+              <p><strong>Next within v0.2:</strong> suggested next chords, harmonic
+                following, modulation guidance and optional automatic voice leading.
+                Scale discovery and richer voicing tools complete this musical
+                integration work.</p>
+              <span class="roadmap-state">Available · musical additions planned</span>
             </div>
           </li>
           <li>
-            <span class="release-version"
-              >v0.2 <small>First Improvement · software alpha</small></span
-            >
+            <span class="release-version">v0.3 <small>Next · sequencer expansion</small></span>
             <div>
-              <h3>Integration.</h3>
-              <p>
-                MacOS / Windows / Web client and updater. Original firmware through the
-                Rust updater, and restoration checks with nonempty songs,
-                libraries and calibrated profiles.
-              </p>
-              <span class="roadmap-state">Not yet qualified</span>
+              <h3>Patterns that follow the music.</h3>
+              <p>Chord-aware tracks and progression entry, with explicit root/scale
+                following alongside existing absolute-note recordings. Integrate
+                chords, voicings and Arps into the sequencing workflow.</p>
+              <p>A fuller step-effects toolkit: gate and ties, probability, ratchets,
+                loop conditions, playback directions, Euclidean fills and rotation.
+                Expand pattern and song organization within the instrument’s timing
+                and memory budgets.</p>
+              <span class="roadmap-state">Planned</span>
             </div>
           </li>
           <li>
-            <span class="release-version"
-              >v0.3 <small>Proposed · recovery milestone</small></span
-            >
+            <span class="release-version">Beyond <small>Experimental features &amp; MIDI</small></span>
             <div>
-              <h3>Confidence through interruption.</h3>
-              <p>
-                Investigate interrupted-update recovery and configuration
-                preservation. Prove failure handling before promising rollback.
-              </p>
-              <span class="roadmap-state"
-                >Planned research &amp; validation</span
-              >
-            </div>
-          </li>
-          <li>
-            <span class="release-version"
-              >Beyond <small>Unversioned exploration</small></span
-            >
-            <div>
-              <h3>More ways to compose.</h3>
-              <p>
-                Named song and profile collections, advanced sequencing and
-                additional engines. Scope follows musical testing and the
-                instrument’s memory and timing budgets.
-              </p>
-              <span class="roadmap-state">Exploration</span>
+              <h3>New ways to play and connect.</h3>
+              <p>Explore new engines and live musical processors, including repeating
+                strum, note repeat, harmony and echo. Extend MIDI with clock/transport
+                output, assignable CC and Program Change, and pedal integration.</p>
+              <span class="roadmap-state">Exploration · scope to be defined</span>
             </div>
           </li>
         </ol>

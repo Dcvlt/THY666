@@ -87,17 +87,29 @@ remain unqualified; the desktop app retains its native updater and live Client.
   bootloader's erase range and the reset's precise cause remain unproved. There is
   no automatic restore or rollback, and configuration backups exclude raw flash.
 
-## Next release work
+## Development roadmap
 
-- Extend **update-aware configuration handling**: the shared wizard now
-  distinguishes healthy firmware from preserved settings and offers explicit,
-  verified backup restoration, exercised through the Windows browser flow.
-  Extend qualification to nonempty songs/libraries, calibration overrides and the
-  Original v5 route. Interrupted-update recovery remains separate.
-- Validate the complete development and update workflow on **Windows, macOS
-  and Linux**. Windows is the primary tested environment today. Compiler
-  downloads are pinned for several platforms, but this does not establish
-  end-to-end USB, packaging or device-tool compatibility on each one.
+**v0.2 is the current available development milestone.** Build from source using
+the instructions below; numbered firmware/desktop downloads are not published yet.
+This roadmap does not change package version metadata or hardware qualification.
+
+- **v0.2 — musical integration:** the browser/desktop Client, shared updater,
+  expression settings and live-pad MPE are available. Suggested next chords,
+  harmonic following, modulation guidance, optional automatic voice leading,
+  scale discovery and richer voicing tools are planned additions within v0.2.
+- **v0.3 — sequencer expansion:** chord-aware tracks and progression entry,
+  explicit root/scale following alongside absolute-note recordings, and integrated
+  chord/voicing/Arp workflows. Planned step effects include gate, ties, probability,
+  ratchets, loop conditions, playback directions, Euclidean fill and rotation,
+  followed by expanded pattern/song organization within resource budgets.
+- **Beyond — experiments and MIDI:** explore additional engines and live
+  processors, repeating strum, note repeat, harmony and echo; extend clock/transport
+  output, assignable CC/Program Change and pedal integration.
+
+Across these milestones, continue macOS/Linux USB qualification, Original firmware
+updates through Rust, and restoration checks with nonempty songs, libraries and
+calibrated profiles. Interrupted-update recovery and automatic rollback remain
+unverified. Future milestones have no promised release dates.
 
 ## Build and run
 
