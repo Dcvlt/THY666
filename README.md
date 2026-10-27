@@ -102,7 +102,7 @@ This roadmap does not change package version metadata or hardware qualification.
   chord/voicing/Arp workflows. Planned step effects include gate, ties, probability,
   ratchets, loop conditions, playback directions, Euclidean fill and rotation,
   followed by expanded pattern/song organization within resource budgets.
-- **Beyond — experiments and MIDI:** explore additional engines and live
+- **Beyond — experiments and MIDI:** explore drum mode, additional engines and live
   processors, repeating strum, note repeat, harmony and echo; extend clock/transport
   output, assignable CC/Program Change and pedal integration.
 
