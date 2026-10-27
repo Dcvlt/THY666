@@ -1,0 +1,23 @@
+{
+  "name": "thy666",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Open source TheoryBoard THY333 firmware and tools",
+  "scripts": {
+    "setup": "python tools/setup_core_tools.py",
+    "build": "python tools/build_core.py --test",
+    "build:core": "python tools/build_core.py --test --core-only",
+    "dev": "python tools/serve_workbench.py",
+    "test": "node --test tests/web/*.test.mjs",
+    "build:diagnostic": "python tools/build_diagnostic.py --test",
+    "build:updater": "python tools/build_updater.py --test",
+    "test:updater": "python tools/build_updater.py --test-only --offline",
+    "build:desktop": "python tools/build_desktop.py --test",
+    "test:desktop": "python tools/build_desktop.py --test-only --offline",
+    "build:site": "python tools/build_site.py",
+    "build:browser-updater": "python tools/build_browser_updater.py"
+  },
+  "engines": { "node": ">=20" }
+}

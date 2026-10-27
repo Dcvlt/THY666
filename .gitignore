@@ -1,0 +1,44 @@
+/Resources/
+/analysis/
+/.tools/
+/.venv/
+__pycache__/
+*.pyc
+/web/generated/
+/build/
+/node_modules/
+/updater/target/
+/desktop/target/
+/desktop/gen/
+/desktop/target/
+/desktop/gen/
+
+# Local configuration and editor/OS caches
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.log
+
+# Hardware captures and firmware packages belong in local evidence/releases.
+*.333
+*.bin
+*.dfu
+*.pcap
+*.pcapng
+*.etl
+*.dmp
+*.elf
+*.map
+*.pdb
+*.exe
+*.obj
+*.o
+
+# Preserved local work and original cleanup snapshots
+/.local-archive/

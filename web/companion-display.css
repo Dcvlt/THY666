@@ -1,0 +1,73 @@
+/* Both display modes share one bezel. Keep the 2:1 framebuffer inside equal
+   padding; expansion changes only the available width, never C coordinates. */
+.companion-app .companion-cockpit .physical-screen {
+  --companion-screen-width: 174px;
+  --companion-screen-inset: 3px;
+  --companion-screen-border: 1px;
+  --companion-screen-trim: calc(2 * (var(--companion-screen-inset) + var(--companion-screen-border)));
+  background: #000;
+}
+.companion-app .companion-cockpit.screen-expanded .physical-screen {
+  --companion-screen-width: 424px;
+}
+.companion-app .companion-cockpit .physical-center .physical-screen > :is(.hardware-display, .companion-web-screen) {
+  box-sizing: content-box;
+  width: calc(var(--companion-screen-width) - var(--companion-screen-trim));
+  max-width: calc(100% - var(--companion-screen-trim));
+  height: auto;
+  aspect-ratio: 2 / 1;
+  margin: 0;
+  padding: var(--companion-screen-inset);
+  border: var(--companion-screen-border) solid var(--theme-edge, var(--line));
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
+  background: #000;
+}
+.companion-app .companion-cockpit .physical-center .physical-screen > .hardware-display > canvas {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 1;
+  background: #000;
+}
+/* The Web screen enhances the received C framebuffer. Its 128x64 layout and
+   every unmatched graphical pixel are retained; there is no parallel UI. */
+.companion-display {
+  --display-ink: #fff;
+  --display-paper: #000;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--display-paper);
+  color: var(--display-ink);
+}
+.companion-display-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--display-paper);
+}
+.companion-display-graphics {
+  fill: var(--display-ink);
+  shape-rendering: crispEdges;
+}
+.companion-display-text {
+  fill: var(--display-ink);
+  font-family: var(--font-base, system-ui, sans-serif);
+  font-weight: 500;
+  font-synthesis: none;
+  dominant-baseline: alphabetic;
+  text-rendering: geometricPrecision;
+  white-space: pre;
+}
+.companion-display-text.is-inverse { fill: var(--display-paper); font-weight: 600; }
+.companion-display-text.is-dim { opacity: .45; }
+.companion-display[data-panel="off"] .companion-display-svg,
+.companion-display[data-panel="unavailable"] .companion-display-svg { visibility: hidden; }

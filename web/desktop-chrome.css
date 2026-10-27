@@ -1,0 +1,69 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later — bundled desktop window chrome only. */
+html.desktop-window,html.desktop-window body { width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important;background:transparent!important; }
+html.desktop-window body {
+  --desktop-title-height:34px;
+  /* Generated from the very same perimeter as the filled SVG and red traces. */
+  clip-path:var(--desktop-frame-clip);
+}
+html.desktop-window[data-window-maximized="true"] body { clip-path:none; }
+.desktop-window-background { position:fixed;inset:0;z-index:0;width:100%;height:100%;pointer-events:none;fill:var(--ui-paper,#000);stroke:none; }
+.desktop-window-chrome { position:fixed;inset:0;z-index:2147481000;pointer-events:none; }
+.desktop-window-frame { position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;fill:none;stroke:var(--theme-edge,#8e2034); }
+.desktop-window-frame path { vector-effect:non-scaling-stroke;stroke-width:1; }
+/* The exact silhouette clips the outside half, leaving a crisp 1px inner trace. */
+.desktop-window-frame :is(.desktop-frame-outer,.desktop-frame-side) { stroke-width:2; }
+.desktop-window-frame .desktop-frame-outer { stroke:var(--theme-bright,#ff414f);stroke-opacity:.85; }
+.desktop-window-frame .desktop-frame-side { stroke-opacity:.7; }
+.desktop-window-frame .desktop-frame-trace { stroke:var(--theme-bright,#ff414f);stroke-opacity:.55;stroke-width:.8; }
+.desktop-titlebar { position:absolute;top:3px;left:8px;right:8px;height:var(--desktop-title-height);display:flex;align-items:center;gap:16px;padding:0 0 0 7px;pointer-events:auto;user-select:none;touch-action:none;background:var(--ui-paper,#000);color:var(--ui-muted,#d2c5c7);font-family:var(--font-base,system-ui,sans-serif); }
+.desktop-titlebar::after { content:'';position:absolute;left:2px;right:2px;bottom:0;height:1px;background:var(--theme-edge,#8e2034);clip-path:polygon(0 0,20% 0,20.5% 100%,46% 100%,46.5% 0,68% 0,68.5% 100%,89% 100%,89.5% 0,100% 0,100% 100%,0 100%);pointer-events:none; }
+.desktop-window-identity { display:flex;align-items:center;gap:9px;min-width:0;pointer-events:none; }
+.desktop-window-logo { width:23px;height:23px;object-fit:contain;filter:hue-rotate(var(--accent-hue,0deg)) saturate(var(--accent-saturation,1)) brightness(var(--ui-logo-brightness,1)); }
+.desktop-window-name { color:var(--theme-bright,#ff414f);font:11px/1 var(--font-accent,system-ui,sans-serif);letter-spacing:.13em; }
+.desktop-window-caption { margin-left:8px;color:var(--ui-dim,#a99398);font-size:8px;line-height:1.3;letter-spacing:.18em; }
+.desktop-window-status { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;line-height:1.5;color:var(--theme-bright,#ff414f);text-align:right;pointer-events:none; }
+.desktop-window-controls { display:flex;align-items:stretch;align-self:stretch;gap:3px;flex:0 0 auto;margin-left:auto;padding:2px 0 3px; }
+html.desktop-window .desktop-window-button { display:grid;place-items:center;width:42px;min-width:42px;min-height:0;margin:0;padding:0;clip-path:polygon(0 0,calc(100% - 5px) 0,100% 5px,100% 100%,5px 100%,0 calc(100% - 5px));border:0;border-left:1px solid var(--theme-edge,#8e2034);border-radius:0;background:var(--ui-paper,#000);color:var(--ui-muted,#d2c5c7);cursor:pointer;transition:color 120ms ease,background-color 120ms ease; }
+html.desktop-window .desktop-window-button svg { width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.4;pointer-events:none; }
+html.desktop-window .desktop-window-button:hover { color:var(--theme-bright,#ff414f);background:var(--theme-soft,#170307); }
+html.desktop-window .desktop-window-close:hover { color:var(--ui-paper,#000);background:var(--theme-bright,#ff414f); }
+html.desktop-window .desktop-window-button:focus-visible { outline:2px solid var(--theme-bright,#ff414f);outline-offset:-3px; }
+.desktop-content-viewport { position:fixed;inset:calc(var(--desktop-title-height) + 5px) calc(.555556% + 10px) calc(1% + 6px);z-index:1;overflow:auto;overscroll-behavior:contain;background:var(--ui-paper,#000);scrollbar-gutter:stable; }
+html.desktop-window .desktop-content-viewport>.app-shell { min-height:100%; }
+html.desktop-window .companion-workspace { min-height:calc(100dvh - var(--desktop-title-height) - 13px - var(--companion-header-height,112px)); }
+html.desktop-window #companion-startup { inset:calc(var(--desktop-title-height) + 5px) 8px 8px; }
+html.desktop-window :is(.thy-help-overlay,.app-settings-overlay) { inset:calc(var(--desktop-title-height) + 5px) 8px 8px; }
+/* Native webview scrollbars use the same circuit palette as nested panels. */
+html.desktop-window,html.desktop-window * { scrollbar-width:thin;scrollbar-color:var(--theme-edge,#8e2034) var(--ui-paper,#000); }
+html.desktop-window ::-webkit-scrollbar { width:8px;height:8px; }
+html.desktop-window ::-webkit-scrollbar-track,html.desktop-window ::-webkit-scrollbar-corner { background:var(--ui-paper,#000); }
+html.desktop-window ::-webkit-scrollbar-thumb { border:2px solid var(--ui-paper,#000);border-radius:0;background:var(--theme-edge,#8e2034); }
+html.desktop-window ::-webkit-scrollbar-thumb:hover { background:var(--theme-bright,#ff414f); }
+html.desktop-window ::-webkit-scrollbar-button { display:none;width:0;height:0; }
+@supports selector(::-webkit-scrollbar) {
+  /* Chromium otherwise prefers its native thin scrollbar over thumb styling. */
+  html.desktop-window,html.desktop-window * { scrollbar-width:auto!important;scrollbar-color:auto!important; }
+}
+.desktop-resize-handles { position:absolute;inset:0;pointer-events:none; }
+.desktop-resize-handle { position:absolute;pointer-events:auto;touch-action:none;user-select:none;background:var(--theme-soft,rgb(255 65 79 / .09)); }
+.desktop-resize-handle::after { content:'';position:absolute;inset:0;border:1px solid var(--theme-edge,#8e2034);pointer-events:none; }
+.desktop-resize-handle:hover { background:var(--theme-mid,rgb(255 65 79 / .24)); }
+.desktop-resize-handle[hidden] { display:none; }
+/* Transparent pixels can pass through a native transparent window. Visible
+   grips supply real painted hit targets without filling the broken frame gaps.
+   Side grips follow the frame's recessed middle edge and stay outside the
+   content viewport, rather than sitting beyond the clipped silhouette. */
+.desktop-resize-n,.desktop-resize-s { left:calc(50% - 46px);width:92px;height:6px;clip-path:polygon(0 0,40% 0,44% 45%,56% 45%,60% 0,100% 0,100% 100%,0 100%); }
+.desktop-resize-n { top:2px;cursor:n-resize; }
+.desktop-resize-s { bottom:2px;cursor:s-resize;transform:rotate(180deg); }
+.desktop-resize-w,.desktop-resize-e { top:calc(50% - 46px);height:92px;width:6px;clip-path:polygon(0 0,100% 0,100% 100%,0 100%,0 60%,45% 56%,45% 44%,0 40%); }
+.desktop-resize-w { left:calc(.555556% + 2px);cursor:w-resize;transform:rotate(180deg); }
+.desktop-resize-e { right:calc(.555556% + 2px);cursor:e-resize; }
+.desktop-resize-nw,.desktop-resize-ne,.desktop-resize-sw,.desktop-resize-se { width:24px;height:24px;clip-path:polygon(76% 0,100% 0,100% 58%,58% 100%,0 100%,0 76%,48% 76%,76% 48%); }
+.desktop-resize-nw { top:3px;left:3px;cursor:nw-resize;transform:rotate(180deg); }
+.desktop-resize-ne { top:3px;right:3px;cursor:ne-resize;transform:rotate(270deg); }
+.desktop-resize-sw { bottom:3px;left:3px;cursor:sw-resize;transform:rotate(90deg); }
+.desktop-resize-se { bottom:3px;right:3px;cursor:se-resize; }
+html.desktop-window[data-window-maximized="true"] .desktop-window-frame { opacity:.45; }
+@media(max-width:700px) { .desktop-window-caption { display:none; }.desktop-titlebar { gap:8px; }.desktop-window-status { font-size:8px; } }
+@media(prefers-reduced-motion:reduce) { html.desktop-window .desktop-window-button { transition:none; } }

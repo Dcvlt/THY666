@@ -1,0 +1,282 @@
+[
+  {
+    "index": 0,
+    "name": "Byzantine Scale"
+  },
+  {
+    "index": 1,
+    "name": "Lydian #2 #6"
+  },
+  {
+    "index": 2,
+    "name": "Ultraphrygian"
+  },
+  {
+    "index": 3,
+    "name": "Hungarian Minor"
+  },
+  {
+    "index": 4,
+    "name": "Oriental"
+  },
+  {
+    "index": 5,
+    "name": "Ionian Aug #2"
+  },
+  {
+    "index": 6,
+    "name": "Byzantine Mode 7"
+  },
+  {
+    "index": 7,
+    "name": "Major Harmonic"
+  },
+  {
+    "index": 8,
+    "name": "Dorian b5"
+  },
+  {
+    "index": 9,
+    "name": "Phrygian b4"
+  },
+  {
+    "index": 10,
+    "name": "Lydian b3"
+  },
+  {
+    "index": 11,
+    "name": "Mixolydian b9"
+  },
+  {
+    "index": 12,
+    "name": "Lydian Aug #2"
+  },
+  {
+    "index": 13,
+    "name": "Maj Harmonic Mode 7"
+  },
+  {
+    "index": 14,
+    "name": "Harmonic Minor"
+  },
+  {
+    "index": 15,
+    "name": "Locrian #6"
+  },
+  {
+    "index": 16,
+    "name": "Ionian #5"
+  },
+  {
+    "index": 17,
+    "name": "Romanian Minor"
+  },
+  {
+    "index": 18,
+    "name": "Phrygian Major"
+  },
+  {
+    "index": 19,
+    "name": "Lydian #2"
+  },
+  {
+    "index": 20,
+    "name": "Harmonic Min Mode 7"
+  },
+  {
+    "index": 21,
+    "name": "Major"
+  },
+  {
+    "index": 22,
+    "name": "Dorian"
+  },
+  {
+    "index": 23,
+    "name": "Phrygian"
+  },
+  {
+    "index": 24,
+    "name": "Lydian"
+  },
+  {
+    "index": 25,
+    "name": "Mixolydian"
+  },
+  {
+    "index": 26,
+    "name": "Minor"
+  },
+  {
+    "index": 27,
+    "name": "Locrian"
+  },
+  {
+    "index": 28,
+    "name": "Melodic Major"
+  },
+  {
+    "index": 29,
+    "name": "Melodic Major Mode 2"
+  },
+  {
+    "index": 30,
+    "name": "Melodic Major Mode 3"
+  },
+  {
+    "index": 31,
+    "name": "Melodic Major Mode 4"
+  },
+  {
+    "index": 32,
+    "name": "Melodic Major Mode 5"
+  },
+  {
+    "index": 33,
+    "name": "Melodic Major Mode 6"
+  },
+  {
+    "index": 34,
+    "name": "Melodic Major Mode 7"
+  },
+  {
+    "index": 35,
+    "name": "Melodic Minor"
+  },
+  {
+    "index": 36,
+    "name": "Dorian b2"
+  },
+  {
+    "index": 37,
+    "name": "Lydian Augmented"
+  },
+  {
+    "index": 38,
+    "name": "Lydian Dominant"
+  },
+  {
+    "index": 39,
+    "name": "Hindu"
+  },
+  {
+    "index": 40,
+    "name": "Aeolian b5"
+  },
+  {
+    "index": 41,
+    "name": "Super Locrian"
+  },
+  {
+    "index": 42,
+    "name": "Neapolitan Major"
+  },
+  {
+    "index": 43,
+    "name": "Leading Whole Tone"
+  },
+  {
+    "index": 44,
+    "name": "Lydian Aug Dom"
+  },
+  {
+    "index": 45,
+    "name": "Lydian Dom b6"
+  },
+  {
+    "index": 46,
+    "name": "Major Locrian"
+  },
+  {
+    "index": 47,
+    "name": "Semilocrian b4"
+  },
+  {
+    "index": 48,
+    "name": "Superlocrian bb3"
+  },
+  {
+    "index": 49,
+    "name": "Neapolitan Minor"
+  },
+  {
+    "index": 50,
+    "name": "Lydian #6"
+  },
+  {
+    "index": 51,
+    "name": "Mixolydian Aug"
+  },
+  {
+    "index": 52,
+    "name": "Hungarian Gypsy"
+  },
+  {
+    "index": 53,
+    "name": "Locrian Dom"
+  },
+  {
+    "index": 54,
+    "name": "Ionian #2"
+  },
+  {
+    "index": 55,
+    "name": "Ultralocrian bb3"
+  },
+  {
+    "index": 56,
+    "name": "Pentatonic Major"
+  },
+  {
+    "index": 57,
+    "name": "Egyptian"
+  },
+  {
+    "index": 58,
+    "name": "Man Gong"
+  },
+  {
+    "index": 59,
+    "name": "Ritusen Yo"
+  },
+  {
+    "index": 60,
+    "name": "Pentatonic Minor"
+  },
+  {
+    "index": 61,
+    "name": "Iwato Japanese"
+  },
+  {
+    "index": 62,
+    "name": "Chinese"
+  },
+  {
+    "index": 63,
+    "name": "Hirajoshi"
+  },
+  {
+    "index": 64,
+    "name": "In Sen Japanese"
+  },
+  {
+    "index": 65,
+    "name": "12 Bar Blues"
+  },
+  {
+    "index": 66,
+    "name": "Prometheus"
+  },
+  {
+    "index": 67,
+    "name": "Dominant Bebop"
+  },
+  {
+    "index": 68,
+    "name": "Major Bebop"
+  },
+  {
+    "index": 69,
+    "name": "Minor Bebop"
+  }
+]

@@ -1,0 +1,173 @@
+{
+  "format": "thy666.web-font-assets",
+  "version": 1,
+  "upstream": "https://github.com/google/fonts",
+  "upstream_commit": "e7db6ca603fd4862010383ff17ffd6cc4ffac1c0",
+  "font_bytes": 133716,
+  "modified": false,
+  "conversion": "None; exact upstream TTF bytes, no subsetting or renaming font metadata",
+  "fonts": [
+    {
+      "family": "Oxanium",
+      "license": "SIL Open Font License 1.1",
+      "copyright": "Copyright 2019 The Oxanium Project Authors (https://github.com/sevmeyer/oxanium)",
+      "license_path": "oxanium/OFL.txt",
+      "metadata_path": "oxanium/METADATA.pb",
+      "font_path": "oxanium/Oxanium-Variable.ttf",
+      "files": [
+        {
+          "path": "oxanium/Oxanium-Variable.ttf",
+          "upstream_name": "Oxanium[wght].ttf",
+          "bytes": 43536,
+          "sha256": "2ce01d946e1e1ffc8d7eecfffbda8623bedd63eaf811a20488c4b69af45babb0",
+          "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/oxanium/Oxanium%5Bwght%5D.ttf"
+        },
+        {
+          "path": "oxanium/OFL.txt",
+          "upstream_name": "OFL.txt",
+          "bytes": 4384,
+          "sha256": "fe17c0f2581d71b4e1ea7e636e7f4877c29223e11bb1dd1a871e8c3f2a86336b",
+          "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/oxanium/OFL.txt"
+        },
+        {
+          "path": "oxanium/METADATA.pb",
+          "upstream_name": "METADATA.pb",
+          "bytes": 1583,
+          "sha256": "adf6faeb4238003d1d5eb8d15f59c940e145672e3f78bcf82b1802afe9f7c4d2",
+          "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/oxanium/METADATA.pb"
+        }
+      ],
+      "css_unicode_range": "U+0020-007E, U+00A0-0107, U+010C-0113, U+0116-011B, U+011E-011F, U+0122-0123, U+012A-012B, U+012E-0131, U+0136-0137, U+0139-013E, U+0141-0148, U+014C-014D, U+0150-015B, U+015E-0165, U+016A-016B, U+016E-0173, U+0178-017E, U+0192, U+0218-021B, U+0237, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+2044, U+20AC, U+2212, U+221E, U+2264-2265",
+      "glyph_coverage": {
+        "ascii_printable": {
+          "present": " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~",
+          "missing": ""
+        },
+        "french_letters": {
+          "present": "ÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸŒÆàâäçéèêëîïôöùûüÿœæ",
+          "missing": ""
+        },
+        "musical": {
+          "present": "",
+          "missing": "♯♭♮♪♫"
+        },
+        "arrows": {
+          "present": "",
+          "missing": "←↑→↓↔⇧"
+        },
+        "ui_symbols": {
+          "present": "…·°∞–—−×÷±≤≥",
+          "missing": "✓✕⚠⌁⌕ⓘ▶■●○⏺⌘"
+        }
+      }
+    },
+    {
+      "family": "Orbitron",
+      "license": "SIL Open Font License 1.1",
+      "copyright": "Copyright 2018 The Orbitron Project Authors (https://github.com/theleagueof/orbitron), with Reserved Font Name: \"Orbitron\"",
+      "license_path": "orbitron/OFL.txt",
+      "metadata_path": "orbitron/METADATA.pb",
+      "font_path": "orbitron/Orbitron-Variable.ttf",
+      "files": [
+        {
+          "path": "orbitron/Orbitron-Variable.ttf",
+          "upstream_name": "Orbitron[wght].ttf",
+          "bytes": 38576,
+          "sha256": "f42db2dd16e642258e35782916eceb1dcdbea06fb958d77ad71dc5963587e8fd",
+          "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/orbitron/Orbitron%5Bwght%5D.ttf"
+        },
+        {
+          "path": "orbitron/OFL.txt",
+          "upstream_name": "OFL.txt",
+          "bytes": 4426,
+          "sha256": "ab609b0e110d622435ff337cdf233288556e011bbf9bd0550be98846c0630819",
+          "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/orbitron/OFL.txt"
+        },
+        {
+          "path": "orbitron/METADATA.pb",
+          "upstream_name": "METADATA.pb",
+          "bytes": 679,
+          "sha256": "6e897c83b8fcdeccb78accb132efd7b279267b684484aa0735b78aba711d0b36",
+          "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/orbitron/METADATA.pb"
+        }
+      ],
+      "css_unicode_range": "U+0020-005D, U+005F-007E, U+00A0-00A3, U+00A8, U+00AF-00B0, U+00B4, U+00B6, U+00B8, U+00BF-00CF, U+00D1-00D7, U+00D9-00DD, U+00DF-00EF, U+00F1-00F7, U+00F9-00FD, U+00FF, U+0131, U+0152-0153, U+0160-0161, U+0178, U+017D-017E, U+2013-2014, U+2018-2019, U+201C-201D, U+2022, U+2026, U+20AC, U+2212",
+      "glyph_coverage": {
+        "ascii_printable": {
+          "present": " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]_`abcdefghijklmnopqrstuvwxyz{|}~",
+          "missing": "^"
+        },
+        "french_letters": {
+          "present": "ÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸŒÆàâäçéèêëîïôöùûüÿœæ",
+          "missing": ""
+        },
+        "musical": {
+          "present": "",
+          "missing": "♯♭♮♪♫"
+        },
+        "arrows": {
+          "present": "",
+          "missing": "←↑→↓↔⇧"
+        },
+        "ui_symbols": {
+          "present": "…°–—−×÷",
+          "missing": "✓✕⚠⌁⌕ⓘ·∞±≤≥▶■●○⏺⌘"
+        }
+      }
+    },
+    {
+      "family": "Monoton",
+      "license": "SIL Open Font License 1.1",
+      "copyright": "Copyright (c) 2011 by vernon adams (vern@newtypography.co.uk),\nwith Reserved Font Names \"Monoton\"",
+      "license_path": "monoton/OFL.txt",
+      "metadata_path": "monoton/METADATA.pb",
+      "font_path": "monoton/Monoton-Regular.ttf",
+      "files": [
+        {
+          "path": "monoton/Monoton-Regular.ttf",
+          "upstream_name": "Monoton-Regular.ttf",
+          "bytes": 51604,
+          "sha256": "951c4cea65ffede784a7c9672feec5d329a7e1e12216c42d53ecf36c90d04dea",
+          "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/monoton/Monoton-Regular.ttf"
+        },
+        {
+          "path": "monoton/OFL.txt",
+          "upstream_name": "OFL.txt",
+          "bytes": 4401,
+          "sha256": "585c6d2da8bcd8ffa651e0016f2e992a6891b625143a46a1dacf00699a817d9a",
+          "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/monoton/OFL.txt"
+        },
+        {
+          "path": "monoton/METADATA.pb",
+          "upstream_name": "METADATA.pb",
+          "bytes": 608,
+          "sha256": "8b58aa70c22e4917ee934ccb3b681dc364211933d428b3ab866d175835759c34",
+          "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/monoton/METADATA.pb"
+        }
+      ],
+      "css_unicode_range": "U+0020-007E, U+00A0-00AC, U+00AE, U+00B0-0107, U+010A-011B, U+011E-0148, U+014A-0154, U+0156-0173, U+0176-017E, U+0192, U+01C4-01C5, U+0218-021B, U+0237, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+2044, U+20AC, U+2212, U+221E, U+2264-2265",
+      "glyph_coverage": {
+        "ascii_printable": {
+          "present": " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~",
+          "missing": ""
+        },
+        "french_letters": {
+          "present": "ÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸŒÆàâäçéèêëîïôöùûüÿœæ",
+          "missing": ""
+        },
+        "musical": {
+          "present": "",
+          "missing": "♯♭♮♪♫"
+        },
+        "arrows": {
+          "present": "",
+          "missing": "←↑→↓↔⇧"
+        },
+        "ui_symbols": {
+          "present": "…·°∞–—−×÷±≤≥",
+          "missing": "✓✕⚠⌁⌕ⓘ▶■●○⏺⌘"
+        }
+      }
+    }
+  ]
+}

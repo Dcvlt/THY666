@@ -1,0 +1,101 @@
+{
+  "format": "thy666.brand-assets",
+  "version": 1,
+  "palette": {
+    "background": "#000000",
+    "red": "#ff2948",
+    "dim_red": "#781529"
+  },
+  "logo_source": "web/assets/thy666-web-logo.svg",
+  "logo_source_sha256": "59f5ba9a8a928a59af627521046d76342c63fe0e0cef5414066db345d0e1f6d0",
+  "logo_paths": 407,
+  "logo_policy": "Original supplied contours, normalized to solid red",
+  "compact_source": "docs/assets/branding/signal-labyrinth-oled/pixel-map.json",
+  "compact_source_sha256": "c9d15092d5c75d87b06478d96096e0a8f49996620a3bb262867bc026ae369b66",
+  "icon_policy": "Approved 14-pad/3-six arrangement; simplified geometric contours and original compact digit grid",
+  "font_license": "SIL Open Font License 1.1",
+  "reference_tools": {
+    "fonttools": "4.60.1",
+    "sharp": "0.35.5"
+  },
+  "fonts": {
+    "title": {
+      "path": "web/assets/fonts/monoton/Monoton-Regular.ttf",
+      "sha256": "951c4cea65ffede784a7c9672feec5d329a7e1e12216c42d53ecf36c90d04dea"
+    },
+    "body": {
+      "path": "web/assets/fonts/oxanium/Oxanium-Variable.ttf",
+      "sha256": "2ce01d946e1e1ffc8d7eecfffbda8623bedd63eaf811a20488c4b69af45babb0"
+    }
+  },
+  "files": {
+    "thy666-banner.svg": {
+      "sha256": "5035a3ee55ffa348be7c308ebb7d761ad05cff38588a92c94f77ff804621910f",
+      "bytes": 185505
+    },
+    "thy666-icon.svg": {
+      "sha256": "39738e71de65a6180256a7058cce6f50b4dd9812f6240898e604ec40f501de17",
+      "bytes": 5549
+    },
+    "thy666-logo.svg": {
+      "sha256": "ff12ca1c2c62c139fb49c340ba5cd08693c33d6e1bd7c7496f5b56dbd3201b73",
+      "bytes": 148680
+    },
+    "thy666-banner.png": {
+      "sha256": "94f011b411ac3870880f99bd7d0fc582d228e990a29c8e0da1bd94a6ce22feef",
+      "bytes": 85033,
+      "dimensions": [
+        1200,
+        400
+      ]
+    },
+    "thy666-icon.png": {
+      "sha256": "0f0c80ca0d868cc90d7b86462a769de329ec587a6b160097a3ceca1240363b70",
+      "bytes": 36013,
+      "dimensions": [
+        1024,
+        1024
+      ]
+    },
+    "thy666-logo.png": {
+      "sha256": "40b85776eca887be9a818acb3f84f1a3bc0a95a4e874fe1fae6c617bcdd7b2f4",
+      "bytes": 151823,
+      "dimensions": [
+        1024,
+        1024
+      ]
+    },
+    "thy666-icon-512.png": {
+      "sha256": "0fd4432c1e6d54047bb055313fbae795d8be8a12f72579be3d06355cf2218dfa",
+      "bytes": 15019,
+      "dimensions": [
+        512,
+        512
+      ]
+    },
+    "thy666-icon-128.png": {
+      "sha256": "b9a25a62f9bfa92769e16211024d3926cb256f844844849af2f58f4d82324394",
+      "bytes": 4017,
+      "dimensions": [
+        128,
+        128
+      ]
+    },
+    "thy666-icon-64.png": {
+      "sha256": "c2e63dfe969085a86ecb211c674a4e77ddae0c2d41124d839855753f75759bb9",
+      "bytes": 2453,
+      "dimensions": [
+        64,
+        64
+      ]
+    },
+    "thy666-icon-32.png": {
+      "sha256": "b6fb61083c36923d5527d5ba7d02d3c0e2a389c55369349c44b2409c27633369",
+      "bytes": 1027,
+      "dimensions": [
+        32,
+        32
+      ]
+    }
+  }
+}

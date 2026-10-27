@@ -1,0 +1,55 @@
+name: Desktop source checks
+
+on:
+  push:
+    paths:
+      - "desktop/**"
+      - "updater/**"
+      - "tools/build_desktop.py"
+      - "tools/prepare_desktop.py"
+      - "tests/test_desktop_build.py"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "updater/**"
+      - "tools/build_desktop.py"
+      - "tools/prepare_desktop.py"
+      - "tests/test_desktop_build.py"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    env:
+      RUSTUP_TOOLCHAIN: "1.98.1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Linux native/WebView build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libudev-dev libwebkit2gtk-4.1-dev libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev
+      - name: Install the requested Rust toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Check Python requirement
+        run: python -c "import sys; assert sys.version_info >= (3, 11), 'Desktop tooling requires Python 3.11+'"
+      - name: Synthetic staging and packaging tests
+        run: python -m unittest discover -s tests -p test_desktop_build.py -v
+      - name: Locked dependency sources
+        run: python -c "import sys,subprocess;sys.path.insert(0,'tools');from build_desktop import build_environment;host=subprocess.check_output(['rustc','-vV'],text=True).split('host: ')[1].splitlines()[0];subprocess.run(['cargo','fetch','--manifest-path','desktop/Cargo.toml','--locked'],env=build_environment(host),check=True)"
+      - name: Synthetic native tests with a compile-only frontend
+        run: python tools/build_desktop.py --test-only --offline
+      - name: Check source shell compilation
+        run: python tools/build_desktop.py --check --offline
+      # No usable release or private musical corpus is built or uploaded here.
+      # Full packaged-app, signing and physical USB validation are separate jobs.

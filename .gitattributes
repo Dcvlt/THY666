@@ -1,0 +1,12 @@
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.png -text
+*.jpg -text
+*.jpeg -text
+*.gif -text
+*.webp -text
+*.wasm -text
+*.bin -text
+updater/THIRD_PARTY_LICENSES.txt -text

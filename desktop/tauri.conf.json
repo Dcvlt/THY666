@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "THY666",
+  "version": "0.1.0",
+  "identifier": "org.thy666.companion",
+  "build": {
+    "frontendDist": "../build/desktop-web"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [{
+      "label": "main",
+      "create": false,
+      "title": "THY666",
+      "width": 1440,
+      "height": 960,
+      "minWidth": 850,
+      "minHeight": 600,
+      "center": true,
+      "decorations": false,
+      "shadow": false,
+      "resizable": true,
+      "backgroundColor": "#000000",
+      "dragDropEnabled": false
+    }],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'",
+      "capabilities": ["main"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "resources": {"../build/desktop-resources/": "resources/"},
+    "shortDescription": "THY666 TheoryBoard Companion and firmware updater",
+    "category": "Music"
+  }
+}

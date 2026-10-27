@@ -1,0 +1,27 @@
+/* First paint is guarded in index.html; this stylesheet adds the deliberate intro. */
+#companion-startup{transition:opacity 180ms ease-out;color:#ff2548}
+#companion-startup .startup-content{position:relative;display:grid;justify-items:center}
+#companion-startup .startup-mark{filter:drop-shadow(0 0 3px #e5183540)}
+#companion-startup .startup-tile{animation:startup-tile-in 180ms cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--tile)*48ms);transform-box:fill-box;transform-origin:center}
+#companion-startup .startup-center{animation:startup-center-in 210ms ease-out 860ms both}
+#companion-startup .startup-ripple{fill:none;stroke:#ff2548;stroke-width:3;stroke-linecap:square;transform-origin:721px 546px;stroke-dasharray:44 9 4 8 84 15}
+#companion-startup .startup-ripple-inner{animation:startup-ripple-out 520ms ease-out 1030ms both}
+#companion-startup .startup-ripple-outer{animation:startup-ripple-out 420ms ease-out 1140ms both;stroke-width:2}
+#companion-startup .startup-status{font:10px/1.5 "Oxanium",monospace;letter-spacing:.22em;text-transform:uppercase}
+#companion-startup .startup-status::before,#companion-startup .startup-status::after{content:"";display:inline-block;width:22px;height:3px;background:#cf1635;vertical-align:middle;margin:0 12px;clip-path:polygon(0 0,75% 0,100% 100%,25% 100%)}
+#companion-startup .startup-noscript{color:#ff7c8e;text-align:center;font:12px/1.5 monospace;letter-spacing:0}
+#companion-startup .startup-retry{clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px)}
+#companion-startup .startup-retry:focus-visible{outline:2px solid #ffb3bf;outline-offset:5px}
+#companion-startup[data-state="leaving"]{opacity:0;pointer-events:none}
+#companion-startup[data-state="failed"] .startup-tile,#companion-startup[data-state="failed"] .startup-center{animation:none;opacity:.65;transform:none}
+#companion-startup[data-state="failed"] .startup-ripple{animation:none;opacity:0}
+html[data-startup="complete"] .app-shell{animation:startup-app-in 200ms ease-out both}
+@keyframes startup-tile-in{from{opacity:0;transform:translateY(6px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes startup-center-in{0%{opacity:0;transform:translateY(3px)}55%{opacity:.65}75%{opacity:.3}100%{opacity:1;transform:none}}
+@keyframes startup-ripple-out{0%{opacity:0;transform:scale(.93);stroke-dashoffset:80}22%{opacity:.8}100%{opacity:0;transform:scale(1.08);stroke-dashoffset:0}}
+@keyframes startup-app-in{from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){
+  #companion-startup,#companion-startup .startup-tile,#companion-startup .startup-center,html[data-startup="complete"] .app-shell{animation:none;transition:none;transform:none}
+  #companion-startup .startup-tile,#companion-startup .startup-center{opacity:.89}
+  #companion-startup .startup-ripple{animation:none;opacity:0}
+}

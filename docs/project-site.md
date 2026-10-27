@@ -1,0 +1,92 @@
+# Project site and public user guide
+
+The GitHub Pages site contains a project overview, installation guidance and the
+same searchable, illustrated user guide as the Companion. The guide is read-only;
+the separate Install page offers an explicit WebHID updater with configuration
+backup/restore over Web Serial. Loading any page opens no device. No private
+musical corpus is loaded. The desktop Companion remains a separate app.
+
+## Preview locally
+
+From the repository root, with Python 3.11+, Node.js 20+ and Rust 1.89+:
+
+```sh
+rustup target add wasm32-unknown-unknown
+npm run build:browser-updater
+npm run build:site
+python -m http.server 3331 --bind 127.0.0.1 --directory build/site
+```
+
+Open `http://127.0.0.1:3331/`. Use HTTP rather than `file://` so JavaScript modules
+load normally. The guide is at `manual.html`; a topic link such as
+`manual.html#sequencer-editor` opens that topic directly.
+
+The site needs no npm packages, firmware, device or `.env`. Its portable Rust
+updater is built first and verified against its source/build manifest. It stages
+an explicit file list into `build/site`, with bundled font licenses and a SHA256
+asset manifest. It does not publish the repository root, `web/generated`, local
+backups, captures or desktop release bundles. Do not replace this with a recursive
+copy of the workspace or full Companion. The only WASM included is the bounded
+updater policy, not the musical core or its private corpus.
+
+## Publish on GitHub Pages
+
+The prepared repository is `Dcvlt/THY666`. At preparation time it was private,
+empty and had Pages disabled. Nothing in this task changes repository visibility,
+pushes source or enables hosting.
+
+1. Review the public source and assets, commit the intended files and push them.
+2. In GitHub **Settings → Pages → Build and deployment**, choose **GitHub Actions**.
+   Public repositories can use Pages on GitHub Free; private repositories require
+   an eligible plan. Making this repository public is a separate owner decision.
+3. Run the **Project site** workflow on the default branch, or push a site change
+   there. Pull requests build and check the site without deploying it.
+4. Use the URL reported by the deployment job. For the current repository name,
+   the expected public project path is `https://dcvlt.github.io/THY666/`.
+   That address is not evidence of a successful deployment by itself.
+
+The workflow uses a bounded artifact and SHA-pinned official Actions. Only the
+deploy job receives `pages: write` and `id-token: write`. Local asset paths are
+relative, so deployment beneath `/THY666/` needs no root-domain rewrite.
+
+The deployment checks also compile the portable C renderer with the pinned
+toolchain to verify the authored screenshots. This CI check needs a compiler
+download, but no private corpus; the static site build and delivered website
+themselves do not include that compiler or the musical-core WebAssembly. The
+browser updater has its own Rust target/build/test step.
+
+See [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)
+for publishing-source and environment configuration.
+
+## Keep the guide useful
+
+Edit `web/help-topics.js`, not a second website manual. `web/help.js` renders the
+same topic data in the Companion and public site. Use original descriptions that
+answer: what is it for, when would I use it, what do I press, what should happen,
+and what is the current limit? Add a short musical example where it helps.
+
+Keep topic IDs stable for external links. Use tables for options, diagrams for
+physical actions and synthetic screenshots from the shared C renderer for screen
+content. Regenerate changed screen examples using `tools/render_help_examples.mjs`
+and check them before publishing. Never use a personal device export or an
+identifying screenshot as a public fixture.
+
+```sh
+node --test tests/web/help.test.mjs tests/web/site.test.mjs
+python -m unittest discover -s tests -p test_site.py -v
+npm run build:site
+```
+
+## Release links and direct browser installation
+
+The Install page links to release downloads and source build instructions. No
+public release package has been published as part of site preparation. Change
+that notice once reviewed release assets actually exist; do not offer a guessed
+firmware file or bundle vendor firmware without redistribution permission.
+
+Direct browser installation is implemented with the shared Rust protocol and
+WebHID adapter, with its first device test pending. The
+[browser installation guide](browser-installation.md) separates that route from
+the earlier qualified Windows native update, and explains backup/restore and
+recovery boundaries. The default catalog remains empty; no firmware is bundled
+or fetched from another project. Reviewed release choices can be added later.

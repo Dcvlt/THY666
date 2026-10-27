@@ -1,0 +1,52 @@
+/* Exact upstream OFL1.1 fonts. See assets/fonts/manifest.json and per-font OFL.txt.
+   Monoton is for large display titles only (at least 28px); body/forms use Oxanium.
+   Unicode ranges include only actual mapped Latin/typographic glyphs.
+   Music, arrows and UI pictograms intentionally use the fallback stack. */
+
+@font-face {
+  font-family: 'Oxanium';
+  src: url('assets/fonts/oxanium/Oxanium-Variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0-0107, U+010C-0113, U+0116-011B, U+011E-011F, U+0122-0123, U+012A-012B, U+012E-0131, U+0136-0137, U+0139-013E, U+0141-0148, U+014C-014D, U+0150-015B, U+015E-0165, U+016A-016B, U+016E-0173, U+0178-017E, U+0192, U+0218-021B, U+0237, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+2044, U+20AC, U+2212, U+221E, U+2264-2265;
+}
+
+@font-face {
+  font-family: 'Orbitron';
+  src: url('assets/fonts/orbitron/Orbitron-Variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  unicode-range: U+0020-005D, U+005F-007E, U+00A0-00A3, U+00A8, U+00AF-00B0, U+00B4, U+00B6, U+00B8, U+00BF-00CF, U+00D1-00D7, U+00D9-00DD, U+00DF-00EF, U+00F1-00F7, U+00F9-00FD, U+00FF, U+0131, U+0152-0153, U+0160-0161, U+0178, U+017D-017E, U+2013-2014, U+2018-2019, U+201C-201D, U+2022, U+2026, U+20AC, U+2212;
+}
+
+@font-face {
+  font-family: 'Monoton';
+  src: url('assets/fonts/monoton/Monoton-Regular.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0-00AC, U+00AE, U+00B0-0107, U+010A-011B, U+011E-0148, U+014A-0154, U+0156-0173, U+0176-017E, U+0192, U+01C4-01C5, U+0218-021B, U+0237, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+2044, U+20AC, U+2212, U+221E, U+2264-2265;
+}
+
+:root {
+  --font-base: 'Oxanium', system-ui, 'Segoe UI', 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2', sans-serif;
+  --font-display: 'Monoton', 'Oxanium', system-ui, 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2', sans-serif;
+  --font-accent: 'Orbitron', 'Oxanium', system-ui, 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2', sans-serif;
+  --font-symbol: 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2', 'Noto Sans Symbols', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2', monospace;
+}
+
+body, button, input, select, textarea { font-family: var(--font-base); }
+
+/* Apply display treatment only to a deliberately large title. */
+.font-display {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 3vw, 44px);
+  font-weight: 400;
+  font-synthesis: none;
+}
+.font-accent { font-family: var(--font-accent); }
+.font-symbol { font-family: var(--font-symbol); }
+.font-mono { font-family: var(--font-mono); }

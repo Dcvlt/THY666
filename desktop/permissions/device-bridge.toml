@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "device-bridge"
+description = "Explicit THY666 discovery, bounded CDC commands, validated update packages and operation status."
+commands.allow = [
+  "desktop_info", "companion_list", "companion_open", "companion_read",
+  "companion_write", "companion_close", "companion_exchange", "companion_exchange_many", "updater_status", "updater_releases",
+  "updater_devices", "updater_progress", "updater_inspect",
+  "updater_select_release", "updater_install"
+]

@@ -1,0 +1,385 @@
+{
+  "format": "thy666.feature-contract",
+  "version": 1,
+  "scope": "Approved capabilities referenced by the shared THY666 menu; implementation status is defined by each menu row.",
+  "features": {
+    "settings.configuration-surface": {
+      "decision": "modify"
+    },
+    "settings.keep_transpose": {
+      "decision": "keep"
+    },
+    "settings.menu-navigation": {
+      "decision": "modify"
+    },
+    "settings.value-pickers": {
+      "decision": "keep"
+    },
+    "playing.control_overlays": {
+      "decision": "keep"
+    },
+    "playing.drum_layers": {
+      "decision": "keep"
+    },
+    "playing.drums": {
+      "decision": "keep"
+    },
+    "playing.expression_velocity": {
+      "decision": "keep"
+    },
+    "playing.guitar_preset": {
+      "decision": "keep"
+    },
+    "playing.lightboard": {
+      "decision": "keep"
+    },
+    "playing.live_update": {
+      "decision": "keep"
+    },
+    "playing.mode_selection": {
+      "decision": "keep"
+    },
+    "playing.octave_shift": {
+      "decision": "keep"
+    },
+    "playing.piano_placeholder": {
+      "decision": "modify"
+    },
+    "playing.scales_performance": {
+      "decision": "keep"
+    },
+    "playing.user_mode": {
+      "decision": "keep"
+    },
+    "chords.chord_layouts": {
+      "decision": "keep"
+    },
+    "chords.classic_catalog": {
+      "decision": "keep"
+    },
+    "chords.extended_catalog": {
+      "decision": "keep"
+    },
+    "chords.held_snapshots": {
+      "decision": "keep"
+    },
+    "chords.melody_layouts": {
+      "decision": "keep"
+    },
+    "chords.modal_shortcuts": {
+      "decision": "keep"
+    },
+    "chords.note_slots": {
+      "decision": "keep"
+    },
+    "chords.octave_stack_12": {
+      "decision": "keep"
+    },
+    "chords.octave_stack_24": {
+      "decision": "keep"
+    },
+    "chords.octave_stack_36": {
+      "decision": "keep"
+    },
+    "chords.root_keys": {
+      "decision": "keep"
+    },
+    "chords.strum_continuous": {
+      "decision": "keep"
+    },
+    "chords.strum_cutoff": {
+      "decision": "keep"
+    },
+    "chords.strum_delay": {
+      "decision": "keep"
+    },
+    "chords.strum_direction": {
+      "decision": "keep"
+    },
+    "chords.strum_latched": {
+      "decision": "keep"
+    },
+    "chords.strum_pattern": {
+      "decision": "keep"
+    },
+    "chords.strum_repeat_delay": {
+      "decision": "keep"
+    },
+    "chords.strum_route": {
+      "decision": "keep"
+    },
+    "chords.strummer": {
+      "decision": "keep"
+    },
+    "chords.user_scale_slots": {
+      "decision": "keep"
+    },
+    "chords.voicing_swap_1": {
+      "decision": "keep"
+    },
+    "chords.voicing_swap_2": {
+      "decision": "keep"
+    },
+    "chords.voicing_swap_3": {
+      "decision": "keep"
+    },
+    "arpeggiators.keep_key": {
+      "decision": "keep"
+    },
+    "arpeggiators.length": {
+      "decision": "keep"
+    },
+    "arpeggiators.note_value": {
+      "decision": "keep"
+    },
+    "arpeggiators.output_route": {
+      "decision": "keep"
+    },
+    "arpeggiators.patterns": {
+      "decision": "keep"
+    },
+    "arpeggiators.step_enables": {
+      "decision": "keep"
+    },
+    "arpeggiators.sustain": {
+      "decision": "keep"
+    },
+    "arpeggiators.swing": {
+      "decision": "keep"
+    },
+    "arpeggiators.sync": {
+      "decision": "keep"
+    },
+    "arpeggiators.to_strum": {
+      "decision": "keep"
+    },
+    "arpeggiators.trigger_latch": {
+      "decision": "keep"
+    },
+    "arpeggiators.two_instances": {
+      "decision": "keep"
+    },
+    "sequencers.active_route": {
+      "decision": "keep"
+    },
+    "sequencers.clear": {
+      "decision": "keep"
+    },
+    "sequencers.controller_messages": {
+      "decision": "keep"
+    },
+    "sequencers.follow_tempo": {
+      "decision": "keep"
+    },
+    "sequencers.latency": {
+      "decision": "keep"
+    },
+    "sequencers.layouts": {
+      "decision": "keep"
+    },
+    "sequencers.midi_files": {
+      "decision": "keep"
+    },
+    "sequencers.name_presets": {
+      "decision": "keep"
+    },
+    "sequencers.note_cut_pressure": {
+      "decision": "keep"
+    },
+    "sequencers.performance_controls": {
+      "decision": "keep"
+    },
+    "sequencers.play_modes": {
+      "decision": "keep"
+    },
+    "sequencers.position_swapcut": {
+      "decision": "keep"
+    },
+    "sequencers.quantization": {
+      "decision": "keep"
+    },
+    "sequencers.record_capture": {
+      "decision": "keep"
+    },
+    "sequencers.root_scale": {
+      "decision": "keep"
+    },
+    "sequencers.save_recall": {
+      "decision": "keep"
+    },
+    "sequencers.song_mix": {
+      "decision": "keep"
+    },
+    "sequencers.startup_animation": {
+      "decision": "keep"
+    },
+    "sequencers.track_interaction_mode": {
+      "decision": "keep"
+    },
+    "sequencers.tracks": {
+      "decision": "keep"
+    },
+    "sequencers.transport": {
+      "decision": "keep"
+    },
+    "midi.bank-route-modes": {
+      "decision": "modify"
+    },
+    "midi.clock-source": {
+      "decision": "keep"
+    },
+    "midi.din-output": {
+      "decision": "modify"
+    },
+    "midi.output-destinations": {
+      "decision": "modify"
+    },
+    "midi.packet-capabilities-boundary": {
+      "decision": "modify"
+    },
+    "midi.pedal-cc": {
+      "decision": "modify"
+    },
+    "midi.pedal-polarity": {
+      "decision": "keep"
+    },
+    "midi.pedal-transport": {
+      "decision": "keep"
+    },
+    "midi.poly-aftertouch": {
+      "decision": "keep"
+    },
+    "midi.pressure-pitchbend": {
+      "decision": "keep"
+    },
+    "midi.tempo_editor": {
+      "decision": "keep"
+    },
+    "midi.transport-position": {
+      "decision": "keep"
+    },
+    "midi.usb-personality": {
+      "decision": "keep"
+    },
+    "midi.usb-remote-sequence": {
+      "decision": "modify"
+    },
+    "display.boot-splash": {
+      "decision": "modify"
+    },
+    "display.contrast": {
+      "decision": "keep"
+    },
+    "display.menu-navigation": {
+      "decision": "modify"
+    },
+    "display.mode-layout-overview": {
+      "decision": "keep"
+    },
+    "display.note-chord-view": {
+      "decision": "modify"
+    },
+    "display.oled-framebuffer": {
+      "decision": "keep"
+    },
+    "display.pickers-editors": {
+      "decision": "keep"
+    },
+    "display.route-overview": {
+      "decision": "keep"
+    },
+    "display.sensitivity-curve-view": {
+      "decision": "keep"
+    },
+    "display.track-song-overview": {
+      "decision": "keep"
+    },
+    "lights.brightness-banks": {
+      "decision": "keep"
+    },
+    "lights.center-backlights": {
+      "decision": "keep"
+    },
+    "lights.control-state-indicators": {
+      "decision": "modify"
+    },
+    "lights.held-feedback": {
+      "decision": "modify"
+    },
+    "lights.led-exploder": {
+      "decision": "keep"
+    },
+    "lights.live-fade": {
+      "decision": "keep"
+    },
+    "lights.note-palette": {
+      "decision": "keep"
+    },
+    "controls.chord-functions": {
+      "decision": "keep"
+    },
+    "controls.curve-reset": {
+      "decision": "modify"
+    },
+    "controls.custom-velocity-curve": {
+      "decision": "keep"
+    },
+    "controls.navigation": {
+      "decision": "modify"
+    },
+    "controls.noise-floor": {
+      "decision": "modify"
+    },
+    "controls.pad-acquisition": {
+      "decision": "modify"
+    },
+    "controls.root-buttons": {
+      "decision": "keep"
+    },
+    "controls.top-shortcuts": {
+      "decision": "keep"
+    },
+    "controls.velocity-presets": {
+      "decision": "keep"
+    },
+    "storage.chord-flash-library": {
+      "decision": "modify"
+    },
+    "storage.format-migration": {
+      "decision": "modify"
+    },
+    "storage.reload": {
+      "decision": "keep"
+    },
+    "storage.reset-settings": {
+      "decision": "keep"
+    },
+    "storage.save-all": {
+      "decision": "keep"
+    },
+    "storage.snapshot-slots": {
+      "decision": "modify"
+    },
+    "storage.usb-disk": {
+      "decision": "keep"
+    },
+    "storage.user-scale-records": {
+      "decision": "keep"
+    },
+    "system.about": {
+      "decision": "modify"
+    },
+    "system.shutdown": {
+      "decision": "keep"
+    },
+    "system.sleep": {
+      "decision": "keep"
+    },
+    "system.startup": {
+      "decision": "keep"
+    },
+    "system.updater-boundary": {
+      "decision": "modify"
+    }
+  }
+}

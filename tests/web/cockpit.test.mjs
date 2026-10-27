@@ -1,0 +1,242 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { initializeCockpit } from '../../web/cockpit.js';
+import { decodeCompanionSnapshot } from '../../web/companion-protocol.js';
+
+const dataKey = key => key.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+class Element {
+  constructor(document, tag) {
+    this.ownerDocument = document; this.tagName = tag.toUpperCase(); this.children = [];
+    this.parentNode = null; this.dataset = {}; this.attributes = {}; this.className = '';
+    this.hidden = false; this.listeners = []; this._text = '';
+    this.style = { setProperty(key, value) { this[key] = String(value); },
+      getPropertyValue(key) { return this[key] || ''; }, removeProperty(key) { delete this[key]; } };
+    this.classList = {
+      contains: name => this.className.split(/\s+/).includes(name),
+      add: (...names) => { this.className = [...new Set([...this.className.split(/\s+/).filter(Boolean), ...names])].join(' '); },
+      remove: (...names) => { this.className = this.className.split(/\s+/).filter(name => !names.includes(name)).join(' '); },
+      toggle: (name, force) => { const on = force ?? !this.classList.contains(name); on ? this.classList.add(name) : this.classList.remove(name); return on; },
+    };
+  }
+  set textContent(value) { this._text = String(value); this.replaceChildren(); }
+  get textContent() { return this._text + this.children.map(node => node.textContent).join(''); }
+  set innerHTML(_) { throw new Error('Cockpit device values must never become HTML.'); }
+  get parentElement() { return this.parentNode; }
+  get firstChild() { return this.children[0] || null; }
+  setAttribute(key, value) {
+    this.attributes[key] = String(value);
+    if (key === 'class') this.className = String(value);
+    if (key.startsWith('data-')) this.dataset[dataKey(key.slice(5))] = String(value);
+  }
+  getAttribute(key) { return key.startsWith('data-') ? this.dataset[dataKey(key.slice(5))] ?? null : this.attributes[key] ?? null; }
+  removeAttribute(key) { delete this.attributes[key]; if (key.startsWith('data-')) delete this.dataset[dataKey(key.slice(5))]; }
+  append(...nodes) {
+    for (let node of nodes) {
+      if (typeof node === 'string') { const text = this.ownerDocument.createElement('#text'); text.textContent = node; node = text; }
+      node.remove(); node.parentNode = this; this.children.push(node);
+    }
+  }
+  appendChild(node) { this.append(node); return node; }
+  prepend(...nodes) { for (const node of [...nodes].reverse()) { node.remove(); node.parentNode = this; this.children.unshift(node); } }
+  insertBefore(node, reference) {
+    if (!reference) return this.appendChild(node);
+    node.remove(); node.parentNode = this; this.children.splice(this.children.indexOf(reference), 0, node); return node;
+  }
+  before(...nodes) { if (this.parentNode) for (const node of nodes) this.parentNode.insertBefore(node, this); }
+  replaceChildren(...nodes) { for (const child of this.children) child.parentNode = null; this.children = []; this.append(...nodes); }
+  remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(child => child !== this); this.parentNode = null; }
+  contains(node) { return node === this || this.children.some(child => child.contains(node)); }
+  addEventListener(type, listener) { this.listeners.push([type, listener]); }
+  removeEventListener(type, listener) { this.listeners = this.listeners.filter(item => item[0] !== type || item[1] !== listener); }
+  matches(selector) {
+    return selector.split(',').some(branch => {
+      const tag = /^[a-z][\w-]*/i.exec(branch.trim())?.[0];
+      if (tag && this.tagName !== tag.toUpperCase()) return false;
+      for (const [, name] of branch.matchAll(/\.([\w-]+)/g)) if (!this.classList.contains(name)) return false;
+      for (const [, name, value] of branch.matchAll(/\[([\w-]+)(?:="([^"]*)")?\]/g)) {
+        const actual = this.getAttribute(name);
+        if (actual === null || value !== undefined && actual !== value) return false;
+      }
+      return true;
+    });
+  }
+  querySelectorAll(selector) {
+    const found = []; const walk = node => { for (const child of node.children) { if (child.matches(selector)) found.push(child); walk(child); } };
+    walk(this); return found;
+  }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+}
+
+function snapshot() {
+  const packet = new Uint8Array(1680), view = new DataView(packet.buffer), encoder = new TextEncoder();
+  const string = (offset, text) => packet.set(encoder.encode(text), offset);
+  const bit = (offset, index) => { packet[offset + (index >>> 3)] |= 1 << (index & 7); };
+  string(0, 'THYCMP1'); view.setUint16(8, 1, true); view.setUint16(10, 1680, true);
+  view.setUint32(12, 8, true); view.setUint32(16, 1111, true); view.setUint32(20, 1100, true);
+  string(32, 'b2240f946ad045db'); string(48, '0123456789abcdef01234567'); string(72, 'ab'.repeat(32));
+  string(1517, 'A MIN7'); string(1549, 'DORIAN A');
+  for (const pad of [0, 52, 95]) bit(1467, pad);
+  for (const note of [57, 60, 64, 67]) bit(1485, note);
+  for (const note of [57, 60, 62, 64, 67]) bit(1501, note);
+  packet[1604] = 31; packet[1605] = 9; packet[1608] = 39; packet[1609] = 108;
+  packet[1612] = 94; packet[1613] = 98; packet[1615] = 1;
+  packet[1616] = 44; packet[1617] = 101; packet[1618] = 3; packet[1619] = 4;
+  view.setUint16(1620, 8, true); view.setUint16(1622, 4, true); view.setUint32(1624, 123500, true);
+  packet[1628] = 1; packet[1629] = 2; packet[1630] = 1; packet[1631] = 3;
+  packet[1632] = 52; packet[1633] = 7; view.setUint16(1634, 2123, true);
+  view.setInt16(1636, -9, true); packet[1638] = 63; packet[1639] = 5; packet[1640] = 104;
+  view.setUint16(1642, 1300, true); view.setUint16(1644, 1277, true); packet[1658] = 1;
+  return decodeCompanionSnapshot(packet);
+}
+
+function fixture(t) {
+  let hardwareCalls = 0;
+  const document = { createElement(tag) { return new Element(this, tag); },
+    createElementNS(_namespace, tag) { return new Element(this, tag); } };
+  document.body = document.createElement('body');
+  const mount = document.createElement('section'), instrument = document.createElement('div');
+  instrument.className = 'instrument'; mount.append(instrument); document.body.append(mount);
+  const descriptors = new Map();
+  for (const [key, value] of Object.entries({ document, navigator: {
+    get serial() { hardwareCalls++; throw new Error('No serial access in presentation code.'); },
+    get usb() { hardwareCalls++; throw new Error('No USB access in presentation code.'); },
+    requestMIDIAccess() { hardwareCalls++; throw new Error('No MIDI access in presentation code.'); },
+  } })) {
+    descriptors.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
+  const cockpit = initializeCockpit({ mount });
+  t.after(() => {
+    cockpit.destroy();
+    for (const [key, descriptor] of descriptors) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key];
+    }
+  });
+  const value = name => {
+    const node = mount.querySelector(`[data-cockpit-value="${name}"]`);
+    assert.ok(node, `Missing cockpit telemetry field ${name}`);
+    return node.textContent;
+  };
+  const nodes = () => { let count = 0; const walk = node => { count++; node.children.forEach(walk); }; walk(mount); return count; };
+  return { cockpit, mount, instrument, value, nodes, hardwareCalls: () => hardwareCalls };
+}
+
+test('the cockpit stays hidden offline and labels its optional local design preview explicitly', t => {
+  const f = fixture(t);
+  f.cockpit.update(null);
+  assert.equal(f.mount.dataset.cockpitState, 'offline');
+  const huds = f.mount.querySelectorAll('.cockpit-hud');
+  assert.ok(huds.length > 0); assert.ok(huds.every(node => node.hidden));
+  assert.equal(f.value('source'), 'OFFLINE');
+  f.cockpit.update(snapshot(), { preview: true });
+  assert.equal(f.mount.dataset.cockpitState, 'preview');
+  assert.match(f.value('source'), /DESIGN MODE/);
+  assert.doesNotMatch(f.value('source'), /LIVE DEVICE|CONNECTED/i);
+  assert.ok(huds.every(node => !node.hidden));
+  f.cockpit.update(snapshot(), { connected: true, preview: true });
+  assert.equal(f.mount.dataset.cockpitState, 'device');
+  assert.equal(f.value('source'), 'LIVE DEVICE');
+  assert.equal(f.hardwareCalls(), 0);
+});
+
+test('connected gauges and labels report actual decoded packet fields without touching the snapshot', t => {
+  const f = fixture(t), actual = snapshot(), before = structuredClone(actual);
+  f.cockpit.update(actual, { connected: true });
+  assert.equal(f.value('pressure-left'), '39 / 127');
+  assert.equal(f.value('pressure-right'), '108 / 127');
+  assert.equal(f.value('notes'), '4'); assert.equal(f.value('pads'), '3');
+  assert.equal(f.value('tempo'), '123.5');
+  assert.equal(f.value('clock-source'), 'USB'); assert.equal(f.value('clock-status'), 'LOCKED');
+  assert.equal(f.value('oled-age'), '11 ms');
+  assert.equal(f.value('inspect'), 'RIGHT R1 C2');
+  assert.equal(f.value('harmony'), 'A MIN7'); assert.equal(f.value('scale'), 'DORIAN A');
+  const contacts = f.mount.querySelectorAll('[data-cockpit-pad]');
+  assert.equal(contacts.length, 96);
+  assert.deepEqual(contacts.filter(node => node.classList.contains('is-held')).map(node => Number(node.dataset.cockpitPad)), [0, 52, 95]);
+  const pitches = f.mount.querySelectorAll('[data-cockpit-pitch]');
+  assert.equal(pitches.length, 12);
+  assert.deepEqual(pitches.filter(node => node.classList.contains('is-sounding')).map(node => Number(node.dataset.cockpitPitch)).sort((a, b) => a - b), [0, 4, 7, 9]);
+  assert.deepEqual(pitches.filter(node => node.classList.contains('is-pool')).map(node => Number(node.dataset.cockpitPitch)).sort((a, b) => a - b), [0, 2, 4, 7, 9]);
+  assert.equal(pitches.find(node => node.classList.contains('is-root')).dataset.cockpitPitch, '9');
+  for (const flag of ['mpe', 'arp1', 'arp2', 'running', 'recording'])
+    assert.equal(f.mount.querySelector(`[data-cockpit-flag="${flag}"]`).classList.contains('is-on'), true, flag);
+  assert.deepEqual(actual, before);
+  assert.equal(f.hardwareCalls(), 0);
+});
+
+test('clock wrap and expression stage changes remain direct telemetry rather than a local timer', t => {
+  const f = fixture(t), actual = snapshot();
+  f.cockpit.update({ ...actual, now: 5, frameMs: 4294967293, mpe: false, aftertouchStage: [false, true] }, { connected: true });
+  assert.equal(f.value('oled-age'), '8 ms');
+  assert.equal(f.value('expression'), 'MIDI / UPPER STAGE');
+  f.cockpit.update({ ...actual, now: 100, frameMs: 200 }, { connected: true });
+  assert.equal(f.value('oled-age'), '—', 'A future timestamp cannot become a fabricated multi-day age.');
+  f.cockpit.update({ ...actual, now: 100, frameMs: 0, pressure: [-1, 128], tempo: NaN, noteCount: 129, heldPads: 97, inspect: { logical: 255 } }, { connected: true });
+  for (const key of ['oled-age', 'pressure-left', 'pressure-right', 'tempo', 'notes', 'pads', 'inspect'])
+    assert.equal(f.value(key), '—', key);
+  assert.equal(f.hardwareCalls(), 0);
+});
+
+test('missing live measurements remain unknown instead of fabricated defaults', t => {
+  const f = fixture(t);
+  f.cockpit.update({}, { connected: true });
+  for (const key of ['pressure-left', 'pressure-right', 'notes', 'pads', 'tempo', 'oled-age', 'inspect'])
+    assert.equal(f.value(key), '—', key);
+  assert.equal(f.mount.querySelectorAll('[data-cockpit-pad].is-held').length, 0);
+  assert.equal(f.value('source'), 'LIVE DEVICE');
+  assert.equal(f.hardwareCalls(), 0);
+});
+
+test('telemetry updates keep one connected session and bounded DOM rather than restarting its entry motion', t => {
+  const f = fixture(t), actual = snapshot();
+  f.cockpit.update(actual, { connected: true });
+  const session = Number(f.mount.dataset.cockpitSession), count = f.nodes();
+  const source = f.mount.querySelector('[data-cockpit-value="source"]');
+  const hud = f.mount.querySelector('.cockpit-hud');
+  assert.ok(session > 0);
+  for (let index = 0; index < 250; index++) {
+    f.cockpit.update({ ...actual, now: actual.now + index, pressure: [index % 128, (index * 3) % 128] }, { connected: true });
+    assert.equal(Number(f.mount.dataset.cockpitSession), session);
+    assert.equal(f.nodes(), count);
+    assert.equal(f.mount.querySelector('[data-cockpit-value="source"]'), source);
+    assert.equal(f.mount.querySelector('.cockpit-hud'), hud);
+  }
+  f.cockpit.update(actual, { connected: true, preview: true });
+  assert.equal(Number(f.mount.dataset.cockpitSession), session, 'Preview cannot replace a real connected session.');
+  f.cockpit.update(null, { connected: false });
+  assert.ok(f.mount.querySelectorAll('.cockpit-hud').every(node => node.hidden));
+  f.cockpit.update(actual, { connected: true });
+  assert.equal(Number(f.mount.dataset.cockpitSession), session + 1);
+  assert.equal(f.nodes(), count);
+  assert.equal(f.hardwareCalls(), 0);
+});
+
+test('untrusted musical labels stay text and teardown preserves the playable board', t => {
+  const f = fixture(t), actual = snapshot();
+  actual.harmony = '<img src=x>'; actual.scale = '<svg/onload=x>';
+  f.cockpit.update(actual, { connected: true });
+  assert.equal(f.value('harmony'), '<img src=x>'); assert.equal(f.value('scale'), '<svg/onload=x>');
+  assert.equal(f.mount.querySelector('img,script'), null);
+  assert.ok(f.mount.contains(f.instrument));
+  f.cockpit.destroy();
+  assert.equal(f.mount.querySelector('.cockpit-hud'), null);
+  assert.equal(f.mount.classList.contains('cockpit-active'), false);
+  assert.equal(f.mount.dataset.cockpitState, undefined);
+  assert.equal(f.mount.dataset.cockpitSession, undefined);
+  assert.ok(f.mount.contains(f.instrument));
+  const count = f.nodes();
+  f.cockpit.update(actual, { connected: true }); f.cockpit.destroy();
+  assert.equal(f.nodes(), count);
+  assert.equal(f.mount.querySelector('.cockpit-hud'), null);
+  assert.equal(f.hardwareCalls(), 0);
+});
+
+test('cockpit presentation provides a static reduced-motion policy for its entry and ongoing animation', async () => {
+  const css = await readFile(new URL('../../web/cockpit.css', import.meta.url), 'utf8');
+  const policies = [...css.matchAll(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{/g)]
+    .map(match => css.slice(match.index, match.index + 3500)).join('\n');
+  assert.match(policies, /\.cockpit/);
+  assert.match(policies, /animation(?:-duration)?\s*:\s*(?:none|0(?:s|ms)|0?\.0*1ms)/);
+  assert.match(policies, /transition(?:-duration)?\s*:\s*(?:none|0(?:s|ms)|0?\.0*1ms)/);
+});

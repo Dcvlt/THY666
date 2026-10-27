@@ -1,0 +1,7 @@
+[[permission]]
+identifier = "window-chrome"
+description = "Allow the bundled main window to control only its own native frame and standard move/resize gestures."
+commands.allow = [
+  "window_minimize", "window_toggle_maximize", "window_is_maximized",
+  "window_begin_drag", "window_begin_resize", "window_close"
+]
