@@ -1,6 +1,7 @@
 {
-  "last_allocated": 1,
+  "last_allocated": 2,
   "allocations": {
-    "01": "feature/01-branch-governance"
+    "01": "feature/01-branch-governance",
+    "02": "feature/02-readme-front-door"
   }
 }
