@@ -102,12 +102,14 @@ class Node {
   getContext() { return { createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData:()=>{this.writes.canvas++;} }; }
 }
 
-function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, hash = '', runtime=null } = {}) {
+function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, hash = '', runtime=null, projectSite=false } = {}) {
   const document = { hidden: false, listeners: new Map(), activeElement: null,
     createElement(tag) { return new Node(this, tag); },
     createElementNS(namespace,tag) { return new Node(this,tag); },
     addEventListener: Node.prototype.addEventListener, removeEventListener: Node.prototype.removeEventListener,
     querySelector(selector) { return this.body.querySelector(selector); }, querySelectorAll(selector) { return this.body.querySelectorAll(selector); } };
+  document.documentElement = document.createElement('html');
+  document.documentElement.dataset.projectSite=String(projectSite);
   document.body = document.createElement('body');
   const add = (parent, tag, className = '', id = '') => { const node = document.createElement(tag); node.className = className; node.id = id; parent.append(node); return node; };
   const app = add(document.body, 'div', 'app-shell'), header = add(app, 'header', 'masthead');
@@ -163,7 +165,7 @@ function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, h
   const selected={groupId:'performance',selectedId:'performance.pressureMode'};
   const studio = { model: { groups: STUDIO_MENU.groups, decode: (row, value) => row.type === 'toggle' ? Boolean(value) : row.type === 'select' && !row.dynamic ? row.options[value]?.value : value },
     snapshot: () => ({...selected}), refresh() {}, setDeviceBridge(value) { bridge = value; } };
-  // Simulate legacy handlers that must never run from the companion surface.
+  // Simulate legacy handlers that must never run from the client surface.
   pad.addEventListener('pointerdown', () => localNotes++); pad.addEventListener('click', () => localNotes++);
   nav.addEventListener('click', () => localControls++); func.addEventListener('click', () => localControls++);
   document.addEventListener('keydown', event => { if (event.key === 'Escape') { localKeys++; keyboardHeld=false; return; } if (!event.target.closest('input,textarea,select') && /^[q ]$/i.test(event.key)){localKeys++;keyboardHeld=true;} });
@@ -230,7 +232,7 @@ function choosePollInterval(f,ms){
   select.value=String(ms);f.fire(select,'change');f.fire(f.byText('Done'),'click');
 }
 
-test('shell starts offline with one visible page and routes Documentation independently from Companion', t => {
+test('shell starts offline with one visible page and routes Documentation independently from Client', t => {
   const f = fixture(t); assert.deepEqual(f.calls, []);
   assert.equal(f.document.body.querySelectorAll('.companion-page').filter(node => !node.hidden).length, 1);
   assert.equal(f.document.querySelector('#companion-board').hidden, false);
@@ -264,11 +266,11 @@ test('header uses the original logo alone and groups navigation with connection 
   assert.equal(actions.contains(header.querySelector('.companion-main-nav')),true);
   assert.equal(actions.contains(f.byText('Connect board')),true);
   assert.equal(actions.contains(brand),false);assert.deepEqual(f.calls,[]);
-  assert.deepEqual(header.querySelector('.companion-main-nav').children.map(node=>node.textContent),['Update','Companion','Documentation']);
-  assert.equal(f.byText('Companion').attributes['aria-pressed'],'true');assert.equal(f.byText('Update').attributes['aria-pressed'],'false');
+  assert.deepEqual(header.querySelector('.companion-main-nav').children.map(node=>node.textContent),['Update','Client','Documentation']);
+  assert.equal(f.byText('Client').attributes['aria-pressed'],'true');assert.equal(f.byText('Update').attributes['aria-pressed'],'false');
 });
 
-test('offline installation link opens the top-level updater silently and Companion returns to Board',async t=>{
+test('offline installation link opens the top-level updater silently and Client returns to Board',async t=>{
   const helperCalls=[],f=fixture(t,{updaterHelper:{connected:false,busy:false,status(){helperCalls.push('status');},async disconnect(){}}});
   const prompt=f.document.querySelector('.companion-onboarding'),link=prompt.querySelector('a');
   assert.equal(prompt.hidden,false);
@@ -277,23 +279,23 @@ test('offline installation link opens the top-level updater silently and Compani
   assert.ok(prompt.parentNode.children.indexOf(prompt)>prompt.parentNode.children.indexOf(f.document.querySelector('.companion-cockpit')));
   const click=f.fire(link,'click');assert.equal(click.defaultPrevented,true);assert.equal(location.hash,'update');
   assert.equal(f.document.querySelector('#companion-update').hidden,false);assert.equal(f.document.querySelector('.companion-workspace').hidden,true);
-  assert.equal(f.byText('Update').attributes['aria-pressed'],'true');assert.equal(f.byText('Companion').attributes['aria-pressed'],'false');
-  f.fire(f.byText('Companion'),'click');assert.equal(location.hash,'client/board');
+  assert.equal(f.byText('Update').attributes['aria-pressed'],'true');assert.equal(f.byText('Client').attributes['aria-pressed'],'false');
+  f.fire(f.byText('Client'),'click');assert.equal(location.hash,'client/board');
   assert.equal(f.document.querySelector('#companion-update').hidden,true);assert.equal(f.document.querySelector('.companion-workspace').hidden,false);
   assert.deepEqual(f.calls,[]);assert.deepEqual(helperCalls,[]);
   f.fire(f.byText('Connect board'),'click');await flush();assert.equal(prompt.hidden,true);
   f.fire(f.byText('Disconnect'),'click');await flush();assert.equal(prompt.hidden,false);
 });
 
-test('updater direct links and legacy routes select Update without losing the last Companion page',async t=>{
+test('updater direct links and legacy routes select Update without losing the last Client page',async t=>{
   let f=fixture(t,{hash:'#update'});assert.equal(f.document.querySelector('#companion-update').hidden,false);
   assert.equal(f.byText('Update').attributes['aria-pressed'],'true');assert.deepEqual(f.calls,[]);await f.cleanup();
   f=fixture(t,{hash:'#client/update'});assert.equal(location.hash,'update');
   assert.equal(f.document.querySelector('#companion-update').hidden,false);assert.deepEqual(f.calls,[]);
-  f.fire(f.byText('Companion'),'click');f.fire(f.byText('Connect board'),'click');await flush();f.shell.showPage('parameters');
-  f.calls.length=0;f.fire(f.byText('Update'),'click');f.fire(f.byText('Companion'),'click');
+  f.fire(f.byText('Client'),'click');f.fire(f.byText('Connect board'),'click');await flush();f.shell.showPage('parameters');
+  f.calls.length=0;f.fire(f.byText('Update'),'click');f.fire(f.byText('Client'),'click');
   assert.equal(f.document.querySelector('#companion-parameters').hidden,false);
-  assert.equal(f.byText('Companion').attributes['aria-pressed'],'true');
+  assert.equal(f.byText('Client').attributes['aria-pressed'],'true');
   assert.deepEqual(f.calls.filter(([kind])=>!['read','snapshot'].includes(kind)),[]);
 });
 
@@ -340,7 +342,7 @@ test('direct browser installation warns before unloading only while it owns USB 
   await f.cleanup();assert.equal((window.listeners.get('beforeunload')||[]).length,0);
 });
 
-test('updater ownership blocks connected Companion navigation, controls and parameter writes until terminal status', async t => {
+test('updater ownership blocks connected Client navigation, controls and parameter writes until terminal status', async t => {
   const id='00000000-0000-4000-8000-000000000001';
   const updaterHelper={connected:false,busy:false,
     async connect(){this.connected=true;return{operation:{operation_id:id,sequence:1,state:'running',simulation:false}};},
@@ -349,7 +351,7 @@ test('updater ownership blocks connected Companion navigation, controls and para
   const f=fixture(t,{updaterHelper});f.fire(f.byText('Connect board'),'click');await flush();
   f.shell.showArea('update');f.fire(f.byText('Connect helper'),'click');await flush();
   assert.equal(f.client.connected,true);assert.equal(f.shell.updater.usbBusy,true);
-  assert.equal(f.pad.disabled,true);assert.equal(f.byText('Companion').disabled,true);
+  assert.equal(f.pad.disabled,true);assert.equal(f.byText('Client').disabled,true);
   const before=f.calls.length;
   f.shell.showPage('parameters');f.fire(f.nav,'click');f.bridge().select('performance.root');
   await assert.rejects(f.bridge().commit('performance.root',0,1),/updater owns USB/);
@@ -358,7 +360,7 @@ test('updater ownership blocks connected Companion navigation, controls and para
   assert.equal(f.document.querySelector('#companion-update').hidden,false);
   f.fire(f.byText('Check update status'),'click');await flush();
   assert.equal(f.shell.updater.usbBusy,false);assert.equal(f.pad.disabled,false);
-  assert.equal(f.byText('Companion').disabled,false);
+  assert.equal(f.byText('Client').disabled,false);
 });
 
 test('disconnected outline represents the whole board without exposing playable controls',async t=>{
@@ -890,4 +892,12 @@ test('documentation uses a low-rate connection refresh and browser visibility pa
   f.document.hidden=false;f.fire(f.document.body,'visibilitychange');assert.equal(clock.nextDelay(),0);
   await clock.advance(0);f.shell.showPage('board');assert.equal(clock.nextDelay(),100);
   f.shell.showArea('update');f.calls.length=0;await clock.advance(2000);assert.deepEqual(f.calls,[],'The update wizard owns application transactions; its hidden Board poll cannot compete.');
+});
+
+test('public site Client exposes Install, Client, User guide and project navigation without connecting',t=>{
+  const f=fixture(t,{projectSite:true});
+  const nav=f.document.querySelector('.companion-main-nav');
+  assert.deepEqual(nav.children.map(node=>node.textContent),['Install','Client','User guide','Project']);
+  assert.equal(nav.children[3].href,'../index.html');
+  assert.deepEqual(f.calls,[]);
 });

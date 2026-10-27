@@ -37,11 +37,11 @@ updates. These software measurements do not measure optical panel scan rate.
 There is no single claimed refresh-rate number covering renderer, SPI transfer,
 OLED electronics and browser polling.
 
-## Companion view
+## Client view
 
 The OLED option copies the driver's sent buffer and visibility state. Web
 presents that same image at higher scale with recognized text; it does not run a
-second menu renderer. Companion polling adds latency independently of panel
+second menu renderer. Client polling adds latency independently of panel
 refresh. The default 100 ms interval is configurable down to 50 ms; commands
 remain serialized and foreground musical work retains priority.
 

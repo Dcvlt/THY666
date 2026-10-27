@@ -43,17 +43,17 @@ class PublicSiteTests(unittest.TestCase):
         self.assertIn("guide/help-topics.js", self.files)
         self.assertIn("LICENSE.txt", self.files)
         self.assertIn("installer/THIRD_PARTY_LICENSES.txt", self.files)
-        forbidden = (".env", "generated/", "Resources/", "analysis/", "before.thyb")
+        forbidden = (".env", "chords.runtime.json", "Resources/", "analysis/", "before.thyb")
         for name in self.files:
             self.assertFalse(any(value in name for value in forbidden), name)
             self.assertNotIn(Path(name).suffix, (".333", ".bin", ".thyb", ".exe"))
             if name.endswith(".wasm"):
-                self.assertEqual(name, "installer/browser-updater.wasm")
-        # The guide is exactly the Companion's authored guide, not a stale copy.
+                self.assertIn(name, ("installer/browser-updater.wasm", "client/generated/browser-updater.wasm", "client/generated/core.wasm"))
+        # The guide is exactly the Client's authored guide, not a stale copy.
         for name in ("help.js", "help.css", "help-topics.js", "studio-menu.js"):
             self.assertEqual(self.files["guide/" + name], (ROOT / "web" / name).read_bytes())
         for name, data in self.files.items():
-            if name.endswith(".js") and not name.startswith("installer/"):
+            if name.endswith(".js") and not name.startswith(("installer/", "client/")):
                 source = data.decode()
                 self.assertNotRegex(source, r"navigator\.(?:hid|serial|requestMIDIAccess)")
                 self.assertNotRegex(source, r"\bfetch\s*\(")
@@ -82,7 +82,20 @@ class PublicSiteTests(unittest.TestCase):
                         parts.pop()
                     elif part not in ("", "."):
                         parts.append(part)
-                self.assertIn("/".join(parts), self.files, (name, url))
+                resolved = "/".join(parts) + ("/index.html" if parsed.path.endswith("/") else "")
+                self.assertIn(resolved, self.files.keys(), (name, url))
+
+    def test_client_navigation_and_public_runtime(self):
+        for page in ("index.html", "install.html", "manual.html"):
+            source = self.files[page].decode()
+            self.assertLess(source.index('>Install<'), source.index('>Client<'))
+            self.assertLess(source.index('>Client<'), source.index('>User guide<'))
+        self.assertIn(b'data-project-site="true"', self.files['client/index.html'])
+        self.assertIn(b"client/index.html", self.files['install.js'])
+        self.assertIn('client/generated/menu-schema.js', self.files)
+        self.assertEqual({name for name in self.files if name.startswith('client/generated/')}, {
+            'client/generated/' + name for name in ('core.wasm', 'menu-schema.js', 'oled-profile.json',
+            'build-info.json', 'browser-updater.wasm', 'browser-updater.json', 'THIRD_PARTY_LICENSES.txt')})
 
     def test_font_licenses_and_exact_hashes_travel_with_site(self):
         manifest = json.loads(self.files["assets/fonts/manifest.json"])
@@ -135,13 +148,11 @@ class PublicSiteTests(unittest.TestCase):
 
     def test_release_page_does_not_promise_unpublished_or_qualified_paths(self):
         page = self.files["install.html"].decode()
-        for fact in ("not been published", "awaits its first device test", "reset settings",
-                     "not raw flash", "remain unverified"):
-            # Raw-flash boundary is phrased directly on the landing page.
-            if fact == "not raw flash":
-                self.assertIn(fact, self.files["index.html"].decode())
-            else:
-                self.assertIn(fact, page)
+        text = " ".join(page.split())
+        for fact in ("reset settings", "not a full-device image", "remain unverified"):
+            self.assertIn(fact, text)
+        self.assertEqual(json.loads(self.files["releases.json"])["releases"], [])
+
 
 
 if __name__ == "__main__":

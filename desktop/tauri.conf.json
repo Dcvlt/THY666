@@ -33,7 +33,7 @@
     "targets": "all",
     "icon": ["icons/icon.png", "icons/icon.ico"],
     "resources": {"../build/desktop-resources/": "resources/"},
-    "shortDescription": "THY666 TheoryBoard Companion and firmware updater",
+    "shortDescription": "THY666 TheoryBoard Client and firmware updater",
     "category": "Music"
   }
 }

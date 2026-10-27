@@ -1,4 +1,4 @@
-# Companion and current-state backup
+# Client and current-state backup
 
 The [desktop app](desktop.md) packages this interface with native USB serial and
 the Rust updater in one window. Its device selection is explicit, and the same
@@ -6,11 +6,16 @@ identity, schema, command serialization and backup validation rules apply. The
 Web Serial/browser requirements below apply to the browser version; the desktop
 app does not need a localhost server or a separately launched helper.
 
+The browser and desktop client build without the private musical archive. Public
+scale names and the shared C schema support parameter editing; musical pad data
+and display frames come from the connected board. Archival musical data remains
+a separate input for firmware and optional standalone workbench builds.
+
 ## Three application areas
 
-The header tabs are **Update**, **Companion** and **Documentation**, in that
-order. The app opens **Companion → Board** by default. **Update** is a separate
-application area, outside the Companion sidebar. **Companion** contains Board,
+The header tabs are **Update**, **Client** and **Documentation**, in that
+order. The app opens **Client → Board** by default. **Update** is a separate
+application area, outside the Client sidebar. **Client** contains Board,
 Parameters, Songs & library, Backups and Diagnostics. **Documentation** contains
 searchable guides, related articles and contextual help for controls/settings.
 Opening the app or reading help
@@ -78,7 +83,7 @@ separate bounded song-only protocol; full current-state transfer uses BACKUP/1.
 
 ## Firmware updates
 
-The first header tab, **Update**, is a four-step wizard: **Detect → Backup →
+The first header tab, **Update**, is a three-step wizard: **Backup →
 Update → Verification**. It remains available without an application connection.
 With the local app server running on port **3330**, double-click the Rust updater
 or run it without arguments to open the wizard through `serve --open`. The page
@@ -86,9 +91,9 @@ consumes and removes its ephemeral token fragment. Manual helper connection is
 available in advanced details. This still requires the served local app; it is
 not a self-contained public installer. Opening Update sends no install command.
 
-Detect can explicitly connect a running THY666 application and show its build,
-then advance to its configuration backup. Alternatively, detect the compatible
-held-pad update-mode HID interface. Those descriptors identify compatible
+Backup can explicitly connect a running THY666 application before saving its
+configuration. Update then detects the compatible held-pad update-mode HID
+interface. Those descriptors identify compatible
 hardware, not the installed firmware version. Hold the top-left and bottom-left
 large LEFT chord pads while reconnecting USB to enter **the update mode**.
 The animated 96-pad/43-control diagram is an instruction, not live input data;
@@ -110,8 +115,10 @@ invented transfer progress.
 
 Verification requires an explicit THY666 application reconnect, matching full build and
 target UID, then passing read-only status, I/O, settings and display checks.
-Only all passing checks produce green **Update successful** and a route to
-Companion. Original v5 produces neutral **Update finished** after the checked
+Passing firmware checks produce white **Firmware verified**. If restoration
+was requested, the retained backup is selected automatically; confirm restoration
+to write it. Durable readback must pass before green **Settings Restored**.
+The Client route becomes available when the requested restoration is resolved. Original v5 produces neutral **Update finished** after the checked
 transfer; it does not have THY666 application-health verification. Simulation
 never verifies a physical installation. There is no automatic retry, reconnect,
 restore or rollback, and actual playing/persistence remain separate checks.
@@ -119,7 +126,7 @@ restore or rollback, and actual playing/persistence remain separate checks.
 The native Windows wizard has passed a same-build THY666 installation and its
 application checks. Configuration reset to factory defaults during that test;
 the retained backup restored the previous settings and survived cold reboot.
-The wizard's green firmware result alone does not establish settings preservation.
+The white firmware result alone does not establish settings preservation.
 Original v5 through Rust and macOS/Linux runtime qualification remain pending. See
 [Updater](updater.md) and [Installation](installation.md) for the complete workflow.
 
@@ -131,7 +138,7 @@ uses a muted warm off-white background with darker accents, firmer outlines
 and slightly heavier small text for legibility. Choose Red,
 Orange, Amber, Yellow, Light green, Green, Teal, Cyan, Blue, Violet, Purple,
 Pink or Monochrome. Dark / Red remains the default, and existing browser color
-preferences are retained. Both choices apply to Update, Companion and Documentation
+preferences are retained. Both choices apply to Update, Client and Documentation
 and are saved only in this browser when local storage is available. The
 board chassis and touch controls follow the selected appearance. Pad hues and
 held feedback remain musical; the OLED/Web framebuffer alone stays black with
@@ -218,9 +225,9 @@ reduces sampling delay but does not change the physical OLED refresh or MIDI
 timing. Serial requests remain serialized; hidden/minimized windows and transfer work
 retain their scheduling limits.
 
-Browser and Windows desktop Companion connection, bidirectional navigation, silent
+Browser and Windows desktop Client connection, bidirectional navigation, silent
 inspection and live pad/note/pressure sync have been exercised on device. DIN
-delivery and clean releases were confirmed while the native Companion was connected.
+delivery and clean releases were confirmed while the native Client was connected.
 Configuration backup export has been captured and validated through both transports;
 repeated native exports saved separate valid files without changing the earlier file.
 An explicitly restored configuration passed saved readback and cold reboot; its
@@ -229,3 +236,9 @@ contained nondefault musical/routing/expression settings but an empty song/libra
 and default pad profiles. Nonempty songs/libraries and calibration overrides still
 need restoration tests. Interrupted-update recovery and automatic rollback remain
 unqualified. A configuration round trip is not a raw firmware/bootloader backup.
+
+The project site exposes the same browser Client through **Install / Client / User guide**.
+It opens disconnected and needs no private musical archive. Use desktop Chrome or Edge
+over HTTPS or localhost for explicit Web Serial connection. After the standalone
+installer finishes, **Go to Client** releases its port and opens the Client; use
+**Connect board** there to establish a new connection.

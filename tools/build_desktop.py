@@ -1,6 +1,6 @@
 """Build the bundled Tauri desktop app without opening USB or launching it.
 
-Full builds stage the existing authorized Companion data. --check uses a clearly
+Full builds stage the public Client and generated portable core assets. --check uses a clearly
 labelled compile-only frontend fixture and never produces a distributable app.
 The wrapper uses the exact Cargo.lock, workspace caches and private-path remaps.
 """
@@ -10,6 +10,7 @@ import argparse
 import io
 import json
 import os
+import plistlib
 from pathlib import Path
 import re
 import shutil
@@ -241,6 +242,33 @@ def package_desktop(executable: Path, host: str, assets: dict, notices: bytes) -
     return {"file": output.relative_to(ROOT).as_posix(), "bytes": len(data), "sha256": digest(data), "files": sorted(files), "artifact": artifact}
 
 
+def macos_development_bundle(executable: Path, assets: dict, notices: bytes) -> Path:
+    """Stage an unsigned local app for Finder; this is not a release installer."""
+    if assets.get("compile_check_only") is not False:
+        raise ValueError("A compile-check fixture cannot become a desktop app")
+    config = tomllib.loads((ROOT / "desktop/Cargo.toml").read_text(encoding="utf-8"))
+    files = {
+        "Contents/MacOS/thy666-desktop": bounded_file(executable, parent=ROOT / "build", limit=128 * 1024 * 1024),
+        "Contents/Info.plist": plistlib.dumps({
+            "CFBundleExecutable": "thy666-desktop", "CFBundleIdentifier": "org.thy666.companion",
+            "CFBundleName": "THY666", "CFBundleDisplayName": "THY666", "CFBundlePackageType": "APPL",
+            "CFBundleShortVersionString": config["package"]["version"], "CFBundleVersion": config["package"]["version"],
+            "LSMinimumSystemVersion": "13.0", "NSHighResolutionCapable": True,
+        }),
+        "Contents/Resources/LICENSE": (ROOT / "LICENSE").read_bytes(),
+        "Contents/Resources/THIRD_PARTY_LICENSES.txt": notices,
+    }
+    for row in assets["resources"]:
+        data = bounded_file(ROOT / "build/desktop-resources" / row["file"], parent=ROOT / "build/desktop-resources")
+        if digest(data) != row["sha256"]:
+            raise ValueError("Desktop resource changed after staging")
+        files["Contents/Resources/resources/" + row["file"]] = data
+    destination = executable.parent / "THY666.app"
+    replace_stage(destination, files)
+    (destination / "Contents/MacOS/thy666-desktop").chmod(0o755)
+    return destination
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group()
@@ -282,11 +310,13 @@ def main() -> None:
     (target / "release/THIRD_PARTY_LICENSES.txt").write_bytes(notices)
     shutil.copyfile(ROOT / "LICENSE", target / "release/LICENSE")
     replace_stage(target / "release/resources", {row["file"]: bounded_file(ROOT / "build/desktop-resources" / row["file"], parent=ROOT / "build/desktop-resources") for row in assets["resources"]})
+    app_bundle = macos_development_bundle(executable, assets, notices) if host.endswith("apple-darwin") else None
     release = package_desktop(executable, host, assets, notices) if host.endswith("windows-msvc") else None
     result = {"format": "thy666.desktop-build", "version": 1, "host": host,
               "rustc": compiler.splitlines()[0], "tests_run": bool(args.test),
               "native_source_sha256": native_inputs, "assets": assets,
-              "hardware_access_performed": False, "artifact": verify_artifact(executable, host), "package": release}
+              "hardware_access_performed": False, "artifact": verify_artifact(executable, host), "package": release,
+              "development_app": str(app_bundle.relative_to(ROOT)) if app_bundle else None}
     (TARGET / "desktop-build.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, indent=2))
 

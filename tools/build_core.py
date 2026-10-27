@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 from pathlib import Path
 import re
 import subprocess
@@ -73,13 +74,20 @@ def main():
     subprocess.run(compiler + common + wasm_args + [f"-Wl,--export={name}" for name in exports] +
                    [str(path) for path in sources] + [str(byte_runtime),str(bridge), "-o", str(wasm)], cwd=ROOT, env=env, check=True)
     built = {"webassembly": {"path": "web/generated/core.wasm", "sha256": sha(wasm), "bytes": wasm.stat().st_size}}
+    native_target = []
+    if sys.platform == "darwin" and not args.cc:
+        # Zig 0.14.1 cannot resolve libc for newer automatically detected macOS
+        # versions. Use its supported deployment target, retaining the pinned
+        # compiler and its bundled Darwin SDK stubs for native regressions.
+        arch = {"arm64": "aarch64", "x86_64": "x86_64"}[platform.machine()]
+        native_target = ["-target", f"{arch}-macos.13.0"]
     if not args.wasm_only:
         build = ROOT / "build/core"
         build.mkdir(parents=True, exist_ok=True)
         native = build / ("core-tests.exe" if os.name == "nt" else "core-tests")
         tests = [ROOT / "tests/core/test_core.c", ROOT / "tests/core/test_midi.c"]
         print("Building native C regression tests", flush=True)
-        subprocess.run(compiler + common + ["-O2"] + [str(path) for path in sources] +
+        subprocess.run(compiler + common + native_target + ["-O2"] + [str(path) for path in sources] +
                        [str(test) for test in tests] + ["-o", str(native)], cwd=ROOT, env=env, check=True)
         built["native"] = {"path": str(native.relative_to(ROOT)), "sha256": sha(native)}
         if args.test:
@@ -131,7 +139,7 @@ def main():
                             ("test_settings", ["test_settings.c"])):
             target = build / (name + (".exe" if os.name == "nt" else ""))
             suite_sources = [ROOT / "tests/core" / filename for filename in extra]
-            subprocess.run(compiler + common + ["-O2"] + [str(path) for path in sources + suite_sources] +
+            subprocess.run(compiler + common + native_target + ["-O2"] + [str(path) for path in sources + suite_sources] +
                            ["-o", str(target)], cwd=ROOT, env=env, check=True)
             entry = {"name": name, "path": str(target.relative_to(ROOT)), "sha256": sha(target)}
             if args.test:
@@ -163,7 +171,7 @@ def main():
     elif args.core_only:
         print("Core built; local preview packaging skipped.")
     else:
-        print("Core built; import the lossless chord archive before using the browser dataset.")
+        print("Client ready. Archival workbench packaging requires a separately supplied lossless chord archive.")
     print(f"WebAssembly: {wasm} ({wasm.stat().st_size:,} bytes)")
 
 

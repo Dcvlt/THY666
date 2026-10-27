@@ -14,7 +14,7 @@ export function initializeStartup({doc=globalThis.document,view=globalThis,now=(
     if(phase==='complete'||phase==='failed')return;
     phase='failed';cancel(revealTimer);cancel(hideTimer);cancel(view.__thyStartupTimer);
     root.dataset.startup='failed';if(screen)screen.dataset.state='failed';
-    if(status)status.textContent='The companion could not start. Reload to try again.';
+    if(status)status.textContent='The client could not start. Reload to try again.';
     const retry=doc.getElementById('startup-retry');
     if(retry){retry.hidden=false;retry.onclick=()=>view.location?.reload();retry.focus?.();}
   }

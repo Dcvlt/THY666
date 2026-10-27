@@ -11,7 +11,7 @@ const showNotice = (message, kind = 'info') => {
 };
 panel = initializeUpdaterPanel({
   mount, client,
-  runtime: { kind: 'browser-direct', companionLabel: 'Companion guide' },
+  runtime: { kind: 'browser-direct', companionLabel: 'Go to Client' },
   createHelper: () => createBrowserUpdaterClient({
     wasmURL: new URL('./installer/browser-updater.wasm', import.meta.url),
     coreManifestURL: new URL('./installer/browser-updater.json', import.meta.url),
@@ -23,7 +23,7 @@ panel = initializeUpdaterPanel({
     await client.connect();
   },
   onCompanion() {
-    void client.disconnect().then(() => { location.href = 'manual.html#companion'; });
+    void client.disconnect().then(() => { location.href = 'client/index.html'; });
   },
 });
 document.addEventListener('visibilitychange', () => panel.setHostActive(!document.hidden));

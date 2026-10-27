@@ -1,10 +1,10 @@
 # Project site and public user guide
 
-The GitHub Pages site contains a project overview, installation guidance and the
-same searchable, illustrated user guide as the Companion. The guide is read-only;
+The GitHub Pages site contains a project overview, installation guidance, browser Client and the
+same searchable, illustrated user guide as the Client. The guide is read-only;
 the separate Install page offers an explicit WebHID updater with configuration
 backup/restore over Web Serial. Loading any page opens no device. No private
-musical corpus is loaded. The desktop Companion remains a separate app.
+musical corpus is loaded. The desktop Client remains a separate app.
 
 ## Preview locally
 
@@ -12,28 +12,33 @@ From the repository root, with Python 3.11+, Node.js 20+ and Rust 1.89+:
 
 ```sh
 rustup target add wasm32-unknown-unknown
+npm run setup
+npm run build:core
 npm run build:browser-updater
 npm run build:site
 python -m http.server 3331 --bind 127.0.0.1 --directory build/site
 ```
 
 Open `http://127.0.0.1:3331/`. Use HTTP rather than `file://` so JavaScript modules
-load normally. The guide is at `manual.html`; a topic link such as
+load normally. The Client is at `client/index.html`, opening disconnected with explicit Web Serial
+connection in desktop Chrome or Edge over HTTPS or localhost. The installer releases
+its connection before **Go to Client** navigates there; reconnect explicitly in the Client.
+The guide is at `manual.html`; a topic link such as
 `manual.html#sequencer-editor` opens that topic directly.
 
 The site needs no npm packages, firmware, device or `.env`. Its portable Rust
 updater is built first and verified against its source/build manifest. It stages
 an explicit file list into `build/site`, with bundled font licenses and a SHA256
 asset manifest. It does not publish the repository root, `web/generated`, local
-backups, captures or desktop release bundles. Do not replace this with a recursive
-copy of the workspace or full Companion. The only WASM included is the bounded
-updater policy, not the musical core or its private corpus.
+backups, captures or desktop release bundles. The Client reuses the desktop public asset boundary: checked core WASM, public menu
+metadata and OLED profile, source modules and licensed assets. Private chord data,
+local releases and backups are excluded. Never copy generated output wholesale.
 
 ## Publish on GitHub Pages
 
-The prepared repository is `Dcvlt/THY666`. At preparation time it was private,
-empty and had Pages disabled. Nothing in this task changes repository visibility,
-pushes source or enables hosting.
+The source repository is `Dcvlt/THY666` and must remain private. Pages publishes
+only the staged site artifact; repository visibility and website visibility are
+separate settings. Do not make the source repository public to enable Pages.
 
 1. Review the public source and assets, commit the intended files and push them.
 2. In GitHub **Settings → Pages → Build and deployment**, choose **GitHub Actions**.
@@ -51,8 +56,8 @@ relative, so deployment beneath `/THY666/` needs no root-domain rewrite.
 
 The deployment checks also compile the portable C renderer with the pinned
 toolchain to verify the authored screenshots. This CI check needs a compiler
-download, but no private corpus; the static site build and delivered website
-themselves do not include that compiler or the musical-core WebAssembly. The
+download, but no private corpus; the delivered website includes the portable musical-core WebAssembly, but not
+the compiler or private musical archive. The
 browser updater has its own Rust target/build/test step.
 
 See [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)
@@ -61,7 +66,7 @@ for publishing-source and environment configuration.
 ## Keep the guide useful
 
 Edit `web/help-topics.js`, not a second website manual. `web/help.js` renders the
-same topic data in the Companion and public site. Use original descriptions that
+same topic data in the Client and public site. Use original descriptions that
 answer: what is it for, when would I use it, what do I press, what should happen,
 and what is the current limit? Add a short musical example where it helps.
 
@@ -90,3 +95,16 @@ WebHID adapter, with its first device test pending. The
 the earlier qualified Windows native update, and explains backup/restore and
 recovery boundaries. The default catalog remains empty; no firmware is bundled
 or fetched from another project. Reviewed release choices can be added later.
+
+## Presentation assets and roadmap
+
+The screen carousel draws Simple, Piano and Circle of fifths directly from the
+shared guide figures. It advances only by explicit controls or arrow keys. The
+Client screenshot shows a disconnected session with no device identifiers; refresh
+`site/assets/client-preview.png` when the interface changes. Large display titles retain Monoton; navigation and smaller headings use Orbitron,
+white on dark surfaces and dark in light mode.
+
+The timeline labels v0.1.0 as the current tooling version with hardware-alpha status.
+v0.2 and v0.3 are proposed editorial milestones for qualification and recovery,
+not published firmware versions or promised dates. Keep them aligned with README
+limits and device qualification evidence.

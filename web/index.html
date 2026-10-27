@@ -4,15 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#000000">
-  <title>THY666 · Companion</title>
+  <title>THY666 · Client</title>
+  <script>
+    // Apply the existing saved appearance before the splash can paint.
+    try { document.documentElement.dataset.appearance=localStorage.getItem('thy666.companion.appearance.v1')==='light'?'light':'dark'; } catch {}
+  </script>
   <style id="startup-critical">
-    html,body{margin:0;background:#000;color:#f32b49}
+    html{--startup-paper:#000}html[data-appearance="light"]{--startup-paper:#e5e2da}
+    html,body{margin:0;background:var(--startup-paper);color:#f32b49}
     html[data-startup]:not([data-startup="complete"]){overflow:hidden}
     html[data-startup]:not([data-startup="complete"]) body>:not(#companion-startup):not(#desktop-window-background):not(#desktop-window-chrome):not(script):not(noscript),html[data-startup]:not([data-startup="complete"]) body>:not(#companion-startup):not(#desktop-window-background):not(#desktop-window-chrome):not(script):not(noscript) *{visibility:hidden!important;pointer-events:none!important}
     .companion-brand-logo{width:56px;height:43px;object-fit:contain}
-    #companion-startup{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:#000;overflow:hidden;font:11px/1.5 monospace;letter-spacing:.15em}
+    #companion-startup{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:var(--ui-paper,var(--startup-paper));overflow:hidden;font:11px/1.5 monospace;letter-spacing:.15em}
     #companion-startup[hidden]{display:none!important}.startup-mark{display:block;width:min(62vw,360px);height:auto;max-height:54vh;overflow:visible}.startup-tile,.startup-center{opacity:0}.startup-ripple{opacity:0}.startup-status{text-align:center;margin:32px 24px 0;color:#df5265}.startup-retry{display:none}
-    #companion-startup[data-state="failed"] .startup-tile,#companion-startup[data-state="failed"] .startup-center{opacity:.65}#companion-startup[data-state="failed"] .startup-retry{display:block;margin:20px auto;background:#000;border:1px solid #f32b49;padding:12px 22px;color:#ff5d76;font:inherit;cursor:pointer}
+    #companion-startup[data-state="failed"] .startup-tile,#companion-startup[data-state="failed"] .startup-center{opacity:.65}#companion-startup[data-state="failed"] .startup-retry{display:block;margin:20px auto;background:var(--ui-paper,var(--startup-paper));border:1px solid #f32b49;padding:12px 22px;color:#ff5d76;font:inherit;cursor:pointer}
   </style>
   <script>
     // Remove the launch token before loading app modules, fonts or artwork.
@@ -29,7 +34,7 @@
       document.documentElement.dataset.startup='failed';
       var panel=document.getElementById('companion-startup'),status=document.getElementById('startup-status'),retry=document.getElementById('startup-retry');
       if(panel)panel.dataset.state='failed';
-      if(status)status.textContent='The companion could not start. Reload to try again.';
+      if(status)status.textContent='The client could not start. Reload to try again.';
       if(retry){retry.hidden=false;retry.onclick=function(){location.reload();};retry.focus();}
     };
     window.__thyStartupTimer=setTimeout(window.__thyStartupFallback,16000);
@@ -48,12 +53,12 @@
   <script type="module" src="./app.js"></script>
 </head>
 <body>
-  <section id="companion-startup" data-state="loading" aria-label="Starting THY666 companion">
+  <section id="companion-startup" data-state="loading" aria-label="Starting THY666 client">
     <div class="startup-content">
       <svg class="startup-mark" viewBox="0 0 1442 1091" role="img" aria-label="THY666"><defs><image id="startup-brand" href="./assets/thy666-web-logo.svg" width="1442" height="1091"/><clipPath id="startup-tile-0"><polygon points="721,49 853,181 721,313 589,181"/></clipPath><clipPath id="startup-tile-1"><polygon points="568,197 700,329 568,461 436,329"/></clipPath><clipPath id="startup-tile-2"><polygon points="875,197 1007,329 875,461 743,329"/></clipPath><clipPath id="startup-tile-3"><polygon points="416,345 548,477 416,609 284,477"/></clipPath><clipPath id="startup-tile-4"><polygon points="1028,345 1160,477 1028,609 896,477"/></clipPath><clipPath id="startup-tile-5"><polygon points="264,494 396,626 264,758 132,626"/></clipPath><clipPath id="startup-tile-6"><polygon points="1180,494 1312,626 1180,758 1048,626"/></clipPath><clipPath id="startup-tile-7"><polygon points="416,642 548,774 416,906 284,774"/></clipPath><clipPath id="startup-tile-8"><polygon points="721,642 853,774 721,906 589,774"/></clipPath><clipPath id="startup-tile-9"><polygon points="1028,642 1160,774 1028,906 896,774"/></clipPath><clipPath id="startup-tile-10"><polygon points="264,791 396,923 264,1055 132,923"/></clipPath><clipPath id="startup-tile-11"><polygon points="568,791 700,923 568,1055 436,923"/></clipPath><clipPath id="startup-tile-12"><polygon points="875,791 1007,923 875,1055 743,923"/></clipPath><clipPath id="startup-tile-13"><polygon points="1180,791 1312,923 1180,1055 1048,923"/></clipPath><mask id="startup-center-mask"><rect width="1442" height="1091" fill="white"/><polygon points="721,49 853,181 721,313 589,181" fill="black"/><polygon points="568,197 700,329 568,461 436,329" fill="black"/><polygon points="875,197 1007,329 875,461 743,329" fill="black"/><polygon points="416,345 548,477 416,609 284,477" fill="black"/><polygon points="1028,345 1160,477 1028,609 896,477" fill="black"/><polygon points="264,494 396,626 264,758 132,626" fill="black"/><polygon points="1180,494 1312,626 1180,758 1048,626" fill="black"/><polygon points="416,642 548,774 416,906 284,774" fill="black"/><polygon points="721,642 853,774 721,906 589,774" fill="black"/><polygon points="1028,642 1160,774 1028,906 896,774" fill="black"/><polygon points="264,791 396,923 264,1055 132,923" fill="black"/><polygon points="568,791 700,923 568,1055 436,923" fill="black"/><polygon points="875,791 1007,923 875,1055 743,923" fill="black"/><polygon points="1180,791 1312,923 1180,1055 1048,923" fill="black"/></mask></defs><g class="startup-tile" style="--tile:0"><use href="#startup-brand" clip-path="url(#startup-tile-0)"/></g><g class="startup-tile" style="--tile:1"><use href="#startup-brand" clip-path="url(#startup-tile-1)"/></g><g class="startup-tile" style="--tile:2"><use href="#startup-brand" clip-path="url(#startup-tile-2)"/></g><g class="startup-tile" style="--tile:3"><use href="#startup-brand" clip-path="url(#startup-tile-3)"/></g><g class="startup-tile" style="--tile:4"><use href="#startup-brand" clip-path="url(#startup-tile-4)"/></g><g class="startup-tile" style="--tile:5"><use href="#startup-brand" clip-path="url(#startup-tile-5)"/></g><g class="startup-tile" style="--tile:6"><use href="#startup-brand" clip-path="url(#startup-tile-6)"/></g><g class="startup-tile" style="--tile:7"><use href="#startup-brand" clip-path="url(#startup-tile-7)"/></g><g class="startup-tile" style="--tile:8"><use href="#startup-brand" clip-path="url(#startup-tile-8)"/></g><g class="startup-tile" style="--tile:9"><use href="#startup-brand" clip-path="url(#startup-tile-9)"/></g><g class="startup-tile" style="--tile:10"><use href="#startup-brand" clip-path="url(#startup-tile-10)"/></g><g class="startup-tile" style="--tile:11"><use href="#startup-brand" clip-path="url(#startup-tile-11)"/></g><g class="startup-tile" style="--tile:12"><use href="#startup-brand" clip-path="url(#startup-tile-12)"/></g><g class="startup-tile" style="--tile:13"><use href="#startup-brand" clip-path="url(#startup-tile-13)"/></g><g class="startup-center"><use href="#startup-brand" mask="url(#startup-center-mask)"/></g><g class="startup-ripple startup-ripple-inner"><path d="M233 180 430 74H590M851 74h160l197 106v150M1208 762v150l-197 106H851M590 1018H430L233 912V762M233 550v-72M1208 550v-72"/><path d="m196 412 20-20h37m935 0h37l20 20M480 45h58m368 0h58M480 1046h58m368 0h58"/></g><g class="startup-ripple startup-ripple-outer"><path d="M125 338V182l93-93h142M1080 89h142l94 93v156M1316 752v156l-94 94h-142M360 1002H218l-93-94V752M72 478v125m1297-125v125"/><path d="m108 313-33 33v70m1291-103 33 33v70M75 678v70l33 33m1291-103v70l-33 33M557 10h95m139 0h95M557 1080h95m139 0h95"/></g></svg>
       <p id="startup-status" class="startup-status" role="status" aria-live="polite">INITIALIZING / THY666</p>
-      <button id="startup-retry" class="startup-retry" type="button" hidden>Reload companion</button>
-      <noscript><p class="startup-noscript">JavaScript is required to load the companion.</p></noscript>
+      <button id="startup-retry" class="startup-retry" type="button" hidden>Reload client</button>
+      <noscript><p class="startup-noscript">JavaScript is required to load the client.</p></noscript>
     </div>
   </section>
 
@@ -81,7 +86,7 @@
   </defs></svg>
   <div class="app-shell" inert>
     <header class="masthead">
-      <a class="wordmark" href="./" aria-label="THY666 companion home"><img class="companion-brand-logo" src="./assets/thy666-web-logo.svg" alt=""></a>
+      <a class="wordmark" href="./" aria-label="THY666 client home"><img class="companion-brand-logo" src="./assets/thy666-web-logo.svg" alt=""></a>
       <div class="header-actions"><span id="core-status" class="status-pill loading"><span class="status-dot"></span><span>Loading core</span></span></div>
     </header>
 

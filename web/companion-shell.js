@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
- * Companion owns connection and navigation. The C engine still owns music,
+ * Client owns connection and navigation. The C engine still owns music,
  * menus and settings; the help center is read-only and independently routed.
  */
 import { STUDIO_MENU, MENU_ROWS } from './studio-menu.js';
@@ -44,7 +44,9 @@ function buildBoardOutline(){
     for(let row=0;row<4;row++)svg.append(make('rect',{class:'standby-pad',x:x+column*43,y:66+row*45,width:39,height:39}));
   }
   svg.append(make('path',{class:'standby-screen',d:'M560 32H720V113H560ZM565 38H604M565 108H715M715 38V64'}));
-  for(let n=0;n<5;n++)svg.append(make(n===2?'ellipse':'path',n===2?{class:'standby-control',cx:640,cy:137,rx:10,ry:7}:{class:'standby-control',d:`M${570+n*35} 129l9 16h-18Z`}));
+  // Physical order: Left, Up, Select, Down, Right.
+  const navigationAngles=[-90,0,null,180,90];
+  for(let n=0;n<5;n++)svg.append(make(n===2?'ellipse':'path',n===2?{class:'standby-control',cx:640,cy:137,rx:10,ry:7}:{class:'standby-control',d:`M${570+n*35} 129l9 16h-18Z`,transform:`rotate(${navigationAngles[n]} ${570+n*35} 137)`}));
   for(const [y,count] of [[174,4],[195,3],[216,4],[237,2],[258,1]])for(let n=0;n<count;n++){
     const x=640+(n-(count-1)/2)*31;svg.append(make('path',{class:'standby-control',d:`M${x} ${y-8}l13 8-13 8-13-8Z`}));
   }
@@ -56,7 +58,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   notify:externalNotice=()=>{},getPreviewSnapshot,createClient=createDeviceClient,createUpdaterHelper,runtime=null}={}){
   const oldMain=document.querySelector('.app-shell > main'),oldHeader=document.querySelector('.masthead');
   if(!oldMain||!oldHeader||!engine||!studio)throw new Error('The board and shared engine must be initialized first.');
-  document.title='THY666 · Companion';document.body.classList.add('companion-app');
+  document.title='THY666 · Client';document.body.classList.add('companion-app');
   let page='board',area='client',display='web',snapshot=null,previewSnapshot=null,expanded=false;
   let previewPayload=null,restoringPreview=null,polling=false,disposed=false,lastGeneration=null,lastRevision='',lastValues=0,readIndex=0,selectedPad=0;
   let pollTimer=null,pollEpoch=0,pollConnectionActive=false,hostActive=true,lastConnectionKey='';
@@ -65,21 +67,27 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   const records=new Map(),panes=new Map(),subButtons=new Map(),rowIndex=new Map(MENU_ROWS.map((row,n)=>[row.id,n]));
   const oldActions=oldHeader.querySelector('.header-actions');
   const top=el('header','companion-topbar');const brand=oldHeader.querySelector('.wordmark');
-  brand.setAttribute('aria-label','THY666 companion home');brand.href='#client/board';
+  brand.setAttribute('aria-label','THY666 client home');brand.href='#client/board';
   for(const node of [...brand.children])if(node.tagName.toLowerCase()==='span')node.remove();
   brand.classList.add('companion-centered-brand');
   top.append(brand);
+  const projectSite=document.documentElement.dataset.projectSite==='true';
   const mainNav=el('nav','companion-main-nav');mainNav.setAttribute('aria-label','Application areas');
-  const updateAreaButton=button('Update','',()=>showArea('update'));
-  const clientAreaButton=button('Companion','is-selected',()=>showArea('client'));
-  const docsAreaButton=button('Documentation','',()=>{showArea('documentation');help.open('getting-started');});
+  const updateAreaButton=button(projectSite?'Install':'Update','',()=>showArea('update'));
+  const clientAreaButton=button('Client','is-selected',()=>showArea('client'));
+  const docsAreaButton=button(projectSite?'User guide':'Documentation','',()=>{showArea('documentation');help.open('getting-started');});
   mainNav.append(updateAreaButton,clientAreaButton,docsAreaButton);
+  if(projectSite){
+    const home=el('a','button','Project');home.href='../index.html';
+    home.addEventListener('click',event=>{if(updater?.usbBusy||client.busy)event.preventDefault();});
+    mainNav.append(home);
+  }
   const headerActions=el('div','companion-header-actions');headerActions.append(mainNav);top.append(headerActions);
   const connection=el('div','companion-connection'),status=el('span','connection-status','');status.setAttribute('role','status');status.hidden=true;
   const connect=button('Connect board','button companion-connect',()=>void toggleConnection());
   connection.append(status,connect);headerActions.append(connection);if(oldActions){oldActions.classList.add('legacy-status');top.append(oldActions);}oldHeader.replaceWith(top);
   const workspace=el('div','companion-workspace'),rail=el('aside','companion-rail'),content=el('main','companion-content');
-  const clientNav=el('nav','companion-client-nav');clientNav.setAttribute('aria-label','Companion pages');
+  const clientNav=el('nav','companion-client-nav');clientNav.setAttribute('aria-label','Client pages');
   const railToggle=button('','button rail-toggle',()=>setRailCollapsed(!workspace.classList.contains('rail-collapsed')));
   railToggle.append(el('span','rail-icon','«'),el('span','rail-toggle-text','Collapse'));railToggle.setAttribute('aria-controls','companion-client-navigation');
   clientNav.id='companion-client-navigation';rail.append(railToggle,clientNav);
@@ -194,6 +202,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     createHelper:browserDirect?()=>createBrowserUpdaterClient({
       wasmURL:new URL('./generated/browser-updater.wasm',import.meta.url),
       coreManifestURL:new URL('./generated/browser-updater.json',import.meta.url),
+      ...(projectSite?{releasesURL:new URL('../releases.json',import.meta.url)}:{}),
     }):createUpdaterHelper,
     connectApplication:()=>toggleConnection(),onCompanion:()=>showPage('board'),onRestored:async()=>{await readConfiguration();await poll();},notify:message=>{if(area!=='update')tell(message);},onOwnershipChange:()=>updateConnection(client.status)});
   const bridge={
@@ -229,7 +238,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     status.textContent=updateBusy?'Updater owns USB':state.connecting?'Connecting':state.connected&&!state.compatible?'Read-only':'';status.hidden=!status.textContent;
     status.dataset.mode=state.connected?'connected':'preview';connect.textContent=state.connected?'Disconnect':'Connect board';connect.disabled=state.connecting||client.available===false||updateBusy;
     connect.title=updateBusy?'The updater owns USB. Wait for its terminal status before reconnecting the application.':client.available===false?
-      runtime?.kind==='desktop'?'Native USB is unavailable. Restart the desktop app and check its diagnostics.':'USB requires Web Serial. Open this local app in Chrome or Edge to connect.':'';
+      runtime?.kind==='desktop'?'Native USB is unavailable. Restart the desktop app and check its diagnostics.':'USB requires Web Serial. Open this app in Chrome or Edge over HTTPS or localhost to connect.':'';
     firmwareLabel.textContent=state.connected?`THY666 / ${state.identity.build.slice(0,8)}`:'THY666';
     parameterSource.textContent=state.connected?(state.compatible?'RIGHT applies on the board and autosave follows.':'This client and firmware have different menus. Monitoring and backups remain available; parameter writes are disabled.'):'Connect your board to edit parameters.';
     libraryNote.textContent=state.connected?'Use the board or Parameters to edit songs and library settings. These diagrams mirror the shared engine.':'Connect your board to inspect songs and library settings.';
@@ -284,7 +293,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   function showPage(next){
     // Keep existing links/API callers working while Update is a separate area.
     if(next==='update'){showArea('update');return;}
-    if(updater?.usbBusy){tell('The updater owns USB. Wait for it to finish before opening Companion.');return;}
+    if(updater?.usbBusy){tell('The updater owns USB. Wait for it to finish before opening Client.');return;}
     if(devicePages.has(next)&&!client.connected){tell('Connect your board to open this page. Board, Update and Documentation remain available offline.');next='board';}
     if(!panes.has(next))next='board';if(page==='board'&&next!=='board'&&!client.connected)onPreviewStart?.();page=next;selectArea('client');
     for(const [id,pane] of panes)pane.hidden=id!==next;

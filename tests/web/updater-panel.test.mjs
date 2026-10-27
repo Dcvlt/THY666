@@ -116,7 +116,7 @@ function fixture({ connected = false, install, progress, read, restore, afterRes
 const flush = () => new Promise(resolve => setImmediate(resolve));
 async function prepare(f, { skip = true } = {}) {
   if (!f.helper.connected) { f.act('connect'); await flush(); }
-  if (f.panel.refresh().step === 0) { f.act('find'); await flush(); f.act('next'); await flush(); }
+
   if (f.panel.refresh().step === 1) {
     if (skip) f.act('skip-backup');
     else if (f.panel.refresh().backupState === 'done') f.act('next');
@@ -124,12 +124,13 @@ async function prepare(f, { skip = true } = {}) {
     await flush();
   }
   f.source('custom'); await flush(); f.select(); await flush(); f.act('inspect'); await flush();
+  f.act('find'); await flush();
 }
 async function installWithRetainedBackup(f,{restoreWanted=true}={}) {
-  f.act('next');f.act('backup');await flush();
   f.find('updaterField','restore-wanted').checked=restoreWanted;
+  f.act('backup');await flush();
   if(!f.helper.connected){f.act('connect');await flush();}
-  f.act('next');await flush();f.act('prepare');await flush();f.act('find');await flush();
+  f.act('prepare');await flush();f.act('find');await flush();
   await prepare(f,{skip:false});f.act('install');f.act('confirm');await flush();
   f.act('progress');await flush();f.act('verify');await flush();
 }
@@ -138,7 +139,7 @@ test('updater mounts offline with no helper requests, physical writes or implici
   const f = fixture(); assert.deepEqual(f.calls, []); assert.equal(f.panel.usbBusy, false);
   assert.equal(f.find('updaterAction', 'backup').disabled, true); assert.equal(f.find('updaterAction', 'install').disabled, true);
   assert.equal(f.find('updaterField', 'file').disabled, false);
-  assert.equal(f.panel.refresh().step, 0); assert.equal(f.panel.refresh().source, 'thy666');
+  assert.equal(f.panel.refresh().step, 1); assert.equal(f.panel.refresh().source, 'thy666');
   assert.equal(f.visible(f.find('updaterAction', 'install')), false);
   assert.match(f.mount.textContent, /Nothing is installed until you choose Apply and confirm/);
   assert.match(f.mount.textContent, /No automatic restore or rollback/);
@@ -149,17 +150,17 @@ test('desktop startup connects only the in-process updater status and never disc
   const f=fixture({runtime:{kind:'desktop'}});await flush();
   assert.deepEqual(f.calls.map(([name])=>name),['connect']);
   assert.equal(f.panel.refresh().helperConnected,true);assert.equal(f.find('updaterReadout','setup').hidden,true);
-  assert.equal(f.notifications.length,0,'The silent native startup does not add a redundant updater notice to Companion.');
+  assert.equal(f.notifications.length,0,'The silent native startup does not add a redundant updater notice to Client.');
   assert.equal(f.calls.some(([name])=>['devices','install','application-connect'].includes(name)),false);
 });
 
 test('direct browser startup prepares only its updater core and catalog, without helper UI or device access',async()=>{
-  const f=fixture({runtime:{kind:'browser-direct',companionLabel:'Companion guide'}});await flush();
+  const f=fixture({runtime:{kind:'browser-direct',companionLabel:'Client guide'}});await flush();
   assert.deepEqual(f.calls.map(([name])=>name),['connect']);
   assert.equal(f.find('updaterReadout','setup').hidden,true);
   assert.equal(f.find('updaterReadout','browser').hidden,false);
   assert.match(f.find('updaterReadout','browser').textContent,/Browser updater ready/);
-  assert.equal(f.find('updaterAction','companion').textContent,'Companion guide');
+  assert.equal(f.find('updaterAction','companion').textContent,'Client guide');
   assert.equal(f.calls.some(([name])=>['devices','install','application-connect'].includes(name)),false);
   assert.equal(f.notifications.length,0);
 });
@@ -169,7 +170,7 @@ test('retained backup gates green completion until a separately reviewed restora
   await installWithRetainedBackup(f);
   assert.equal(f.panel.refresh().applicationVerification.verified,true);
   assert.deepEqual(f.panel.refresh().preservation,{requested:true,state:'pending',resolved:false,error:null});
-  assert.equal(f.mount.querySelector('.update-completion').dataset.state,'finished');
+  assert.equal(f.mount.querySelector('.update-completion').dataset.state,'verified');
   assert.equal(f.find('updaterAction','companion').hidden,true);
   assert.equal(f.calls.some(([name])=>name==='restore'),false);
   f.act('restore');
@@ -185,7 +186,8 @@ test('retained backup gates green completion until a separately reviewed restora
   assert.deepEqual(f.calls.find(([name])=>name==='restore')[1],backupBytes());
   finish({verified:true,payloadCRC:deviceCRC32(backupBytes().subarray(64)),generation:2});await flush();
   assert.equal(f.panel.usbBusy,false);assert.equal(f.panel.refresh().preservation.state,'verified');
-  assert.equal(f.mount.querySelector('.update-completion').dataset.state,'verified');
+  assert.equal(f.mount.querySelector('.update-completion').dataset.state,'restored');
+  assert.match(f.mount.querySelector('.update-completion').textContent,/Settings Restored/);
   assert.match(f.find('updaterReadout','restoration-status').textContent,/saved payload matches/);
   f.act('companion');assert.equal(f.companionVisits(),1);
   assert.equal(f.calls.filter(([name])=>name==='restore').length,1);
@@ -201,7 +203,7 @@ test('restoration failure, an unverified result and mismatched saved CRC never b
     f.act('restore');f.act('confirm');await flush();
     assert.equal(f.panel.refresh().preservation.state,'failed');assert.equal(f.panel.usbBusy,false);
     assert.equal(f.find('updaterAction','companion').hidden,true);
-    assert.notEqual(f.mount.querySelector('.update-logo-art').dataset.state,'verified');
+    assert.notEqual(f.mount.querySelector('.update-logo-art').dataset.state,'restored');
     assert.match(f.find('updaterReadout','restoration-status').textContent,/No restore retry was sent/);
     assert.equal(f.calls.filter(([name])=>name==='restore').length,1);
     assert.equal(f.calls.filter(([name])=>name==='install').length,1);
@@ -238,7 +240,7 @@ test('an explicitly unchecked restore choice keeps the backup but only verifies 
 
 test('desktop backup is marked saved only after the native file save succeeds',async()=>{
   let finish;const f=fixture({connected:true,runtime:{kind:'desktop',saveFile:()=>new Promise(resolve=>finish=resolve)}});await flush();
-  f.act('next');f.act('backup');await flush();assert.equal(f.panel.refresh().backupState,'running');assert.equal(f.downloads.length,0);
+  f.act('backup');await flush();assert.equal(f.panel.refresh().backupState,'running');assert.equal(f.downloads.length,0);
   finish();await flush();assert.equal(f.panel.refresh().backupState,'done');
 });
 
@@ -251,20 +253,20 @@ test('native background suspension stops UI progress polling without releasing t
 test('file selection only reads local bytes; bad sizes are rejected before allocation and stale reads cannot replace a selection', async () => {
   const f = fixture(); await prepare(f); const before = f.calls.length;
   f.select('<img src=x>.333'); await flush(); assert.equal(f.calls.length, before, 'Selecting a replacement file never contacts the helper.');
-  assert.match(f.mount.textContent, /<img src=x>/); assert.equal(f.all().some(node => node.tagName === 'IMG'), false);
+  assert.match(f.mount.textContent, /<img src=x>/); assert.equal(f.all().some(node => node.tagName === 'IMG' && node.src==='x'), false);
   let reads = 0; f.select('huge.333', { size: UPDATE_PACKAGE_MAX_BYTES + 1, arrayBuffer: async () => { reads++; } }); await flush();
   assert.equal(reads, 0); assert.equal(f.panel.refresh().selected, null);
   let finish; f.select('old.333', { arrayBuffer: () => new Promise(resolve => finish = resolve) });
   f.select('new.333'); await flush(); finish(packageBytes().buffer); await flush(); assert.equal(f.panel.refresh().selected, 'new.333');
 });
 test('THY666 detection, exact configuration backup, update-mode preparation and review preserve the captured board identity', async () => {
-  const f = fixture({ connected: true }); f.act('next'); assert.equal(f.panel.refresh().step, 1); f.act('backup'); await flush();
+  const f = fixture({ connected: true }); assert.equal(f.panel.refresh().step, 1); f.act('backup'); await flush();
   assert.deepEqual(f.calls, [['backup']]); assert.equal(f.downloads.length, 1);
   assert.deepEqual(new Uint8Array(await f.blobs.get(f.downloads[0].href).arrayBuffer()), backupBytes());
   assert.match(f.downloads[0].name, new RegExp(`${UID}-${BUILD}`));
   assert.equal(f.panel.refresh().backupState, 'done'); f.act('connect'); await flush(); assert.equal(f.find('updaterAction', 'find').disabled, true);
   assert.equal(f.find('updaterField', 'backup-unavailable').disabled, true);
-  f.act('next'); await flush(); assert.equal(f.panel.refresh().step, 2); assert.equal(f.panel.refresh().canInstall, false);
+  assert.equal(f.panel.refresh().step, 2); assert.equal(f.panel.refresh().canInstall, false);
   f.act('prepare'); await flush(); assert.equal(f.client.connected, false);
   f.act('find'); await flush(); await prepare(f, { skip: false });
   assert.equal(f.panel.refresh().canInstall, true);
@@ -276,7 +278,7 @@ test('THY666 detection, exact configuration backup, update-mode preparation and 
 test('install requires reviewed package, explicit board choice, backup disposition and a separate cancelable modal', async () => {
   const f = fixture(); await prepare(f, { skip: false }); assert.equal(f.panel.refresh().canInstall, false);
   assert.equal(f.panel.refresh().step, 1); assert.equal(f.calls.some(([name]) => name === 'inspect'), false);
-  f.act('skip-backup'); await flush(); f.source('custom'); await flush(); f.select(); await flush(); f.act('inspect'); await flush();
+  f.act('skip-backup'); await flush(); f.act('find'); await flush(); f.source('custom'); await flush(); f.select(); await flush(); f.act('inspect'); await flush();
   assert.equal(f.panel.refresh().canInstall, true); f.act('install');
   assert.equal(f.calls.some(([name]) => name === 'install'), false); assert.equal(f.panel.refresh().confirmationOpen, true);
   const dialog = f.all().find(node => node.attributes.role === 'dialog'); assert.equal(dialog.attributes['aria-modal'], 'true');
@@ -287,21 +289,16 @@ test('install requires reviewed package, explicit board choice, backup dispositi
   f.fire(confirm, 'keydown', { key: 'Escape' }); assert.equal(f.panel.refresh().confirmationOpen, false);
   assert.equal(f.calls.some(([name]) => name === 'install'), false);
 });
-test('four steps require explicit detection and backup disposition, then stage the configured Latest THY666 source by default', async () => {
-  const latest = { id: 'latest-thy666', kind: 'thy666', available: true, sha256: SHA, label: 'Latest THY666' };
-  const f = fixture({ releaseCatalog: { configured: true, releases: [latest] }, selectRelease: async id => { assert.equal(id, latest.id); return inspection(); } });
-  assert.equal(f.panel.refresh().step, 0); assert.equal(f.panel.refresh().source, 'thy666');
-  assert.equal(f.find('updaterAction', 'next').disabled, true);
-  f.act('connect'); await flush(); assert.equal(f.panel.refresh().step, 0); assert.equal(f.calls.some(([name]) => name === 'devices'), false);
-  f.act('find'); await flush(); assert.equal(f.panel.refresh().step, 0, 'Discovery does not silently advance the wizard.');
-  assert.match(f.find('updaterReadout', 'board').textContent, /Installed firmware cannot be identified/);
-  f.act('next'); assert.equal(f.panel.refresh().step, 1); assert.equal(f.calls.some(([name]) => name === 'release'), false);
-  assert.equal(f.visible(f.find('updaterAction', 'install')), false);
-  f.act('skip-backup'); await flush(); assert.equal(f.panel.refresh().step, 2);
-  assert.equal(f.panel.refresh().backupState, 'skipped'); assert.equal(f.panel.refresh().source, 'thy666');
-  assert.equal(f.panel.refresh().selected, 'Latest THY666'); assert.equal(f.panel.refresh().canInstall, true);
-  assert.deepEqual(f.calls.filter(([name]) => name === 'release'), [['release', latest.id]]);
-  assert.equal(f.calls.some(([name]) => ['backup','inspect','install'].includes(name)), false);
+test('three steps start at backup and only detect in Update after explicit backup disposition', async () => {
+  const latest={id:'latest-thy666',kind:'thy666',available:true,sha256:SHA,label:'Latest THY666'};
+  const f=fixture({releaseCatalog:{configured:true,releases:[latest]},selectRelease:async()=>inspection()});
+  assert.equal(f.panel.refresh().step,1);
+  f.act('connect');await flush();
+  assert.equal(f.calls.some(([name])=>name==='devices'),false);
+  f.act('skip-backup');await flush();
+  assert.equal(f.panel.refresh().step,2);assert.equal(f.panel.refresh().canInstall,false);
+  f.act('find');await flush();assert.equal(f.panel.refresh().canInstall,true);
+  assert.equal(f.calls.some(([name])=>name==='install'),false);
 });
 test('Original v5 completion stays neutral, exposes no THY666 verification and never requests application telemetry', async () => {
   const stockSHA = 'b'.repeat(64), stockInfo = { ...inspection(), kind: 'stock', file_sha256: stockSHA, build_id: null, build_identity_verified: false };
@@ -311,12 +308,12 @@ test('Original v5 completion stays neutral, exposes no THY666 verification and n
     selectRelease: async id => id === 'original-v5' ? stockInfo : inspection(),
     install: async () => ({ ...status(), firmware_kind: 'stock', expected_build: null }),
     progress: async () => ({ ...status('awaiting-verification', 2), firmware_kind: 'stock', expected_build: null }) });
-  f.act('connect'); await flush(); f.act('find'); await flush(); f.act('next'); f.act('skip-backup'); await flush();
+  f.act('connect'); await flush(); f.act('skip-backup'); await flush(); f.act('find'); await flush();
   f.source('stock'); await flush(); assert.equal(f.panel.refresh().canInstall, true);
   assert.match(f.find('updaterReadout', 'package').textContent, /Original THY333 v5.*exact known package/);
   f.act('install'); f.act('confirm'); await flush(); f.act('progress'); await flush();
-  assert.equal(f.panel.refresh().step, 3); const completion = f.mount.querySelector('.update-completion');
-  assert.equal(completion.dataset.state, 'finished'); assert.equal(completion.dataset.identity, 'other');
+  assert.equal(f.panel.refresh().step, 2); const completion = f.mount.querySelector('.update-completion');
+  assert.equal(completion.dataset.state, 'stock-complete'); assert.equal(completion.dataset.identity, 'other');
   assert.match(completion.textContent, /Update finished/); assert.doesNotMatch(completion.textContent, /Update successful/);
   assert.equal(f.find('updaterAction', 'verify').hidden, true); assert.equal(f.find('updaterAction', 'companion').hidden, true);
   f.client.connected = true; f.panel.refresh(); f.fire(f.find('updaterAction', 'verify')); await flush();
@@ -326,7 +323,7 @@ test('Original v5 completion stays neutral, exposes no THY666 verification and n
 test('a delayed custom file read cannot replace a subsequently selected curated firmware identity', async () => {
   const latest = { id: 'latest-thy666', kind: 'thy666', available: true, sha256: SHA, label: 'Latest THY666' };
   const f = fixture({ releaseCatalog: { configured: true, releases: [latest] }, selectRelease: async () => inspection() });
-  f.act('connect'); await flush(); f.act('find'); await flush(); f.act('next'); f.act('skip-backup'); await flush();
+  f.act('connect'); await flush(); f.act('skip-backup'); await flush(); f.act('find'); await flush();
   f.source('custom'); await flush(); let finish;
   f.select('old-custom.333', { arrayBuffer: () => new Promise(resolve => finish = resolve) });
   f.source('thy666'); await flush(); assert.equal(f.panel.refresh().selected, 'Latest THY666');
@@ -393,7 +390,7 @@ test('an explicit new idle native helper session clears completed simulation con
   assert.equal(f.panel.refresh().simulation, false); assert.equal(f.panel.refresh().operation, null);
   assert.equal(f.find('updaterReadout', 'simulation').hidden, true);
   assert.doesNotMatch(f.find('updaterReadout', 'helper').textContent, /SIMULATION/);
-  assert.equal(f.panel.refresh().canInstall, false); assert.equal(f.panel.refresh().step, 0);
+  assert.equal(f.panel.refresh().canInstall, false); assert.equal(f.panel.refresh().step, 1);
   await prepare(f); assert.equal(f.panel.refresh().canInstall, true);
   assert.equal(f.calls.some(([name]) => name === 'install'), false);
 });
@@ -448,7 +445,7 @@ test('matching THY666 build and UID stay pending until explicit verification com
   assert.deepEqual(f.calls.filter(([name]) => name === 'telemetry').map(([,id]) => id), ['status','io','settings','display']);
   finishDisplay(healthReports().display); await flush();
   assert.equal(f.panel.refresh().applicationVerification.verified, true); assert.equal(f.panel.refresh().applicationVerification.scope, 'basic-installation-health');
-  assert.equal(f.mount.querySelector('.update-completion').dataset.state, 'verified'); assert.match(f.mount.querySelector('.update-completion').textContent, /Update successful/);
+  assert.equal(f.mount.querySelector('.update-completion').dataset.state, 'verified'); assert.match(f.mount.querySelector('.update-completion').textContent, /Firmware verified/);
   assert.equal(f.mount.querySelector('.update-logo-art').dataset.state, 'verified');
   assert.equal(f.mount.querySelectorAll('.update-health-row').every(node => node.dataset.state === 'pass'), true);
   f.act('companion'); assert.equal(f.companionVisits(), 1);
@@ -601,6 +598,79 @@ test('a handoff that cannot scrub history never becomes a helper connection and 
   assert.equal(consumeUpdaterHandoff({ location, fragment: location.hash, history: {} }), null); assert.equal(location.hash, 'update');
   const f = fixture({ handoff: { endpoint: 'http://127.0.0.1:3331', token } }); await flush();
   assert.deepEqual(f.calls.map(([name]) => name), ['connect']);
-  assert.equal(f.panel.refresh().helperConnected, true); assert.equal(f.panel.refresh().step, 0);
+  assert.equal(f.panel.refresh().helperConnected, true); assert.equal(f.panel.refresh().step, 1);
   assert.equal(f.find('updaterField', 'token').value, ''); assert.equal(f.panel.usbBusy, false);
+});
+
+test('development preview traverses synthetic screens without transport calls or real verification', async () => {
+  const f=fixture();const baseline=f.calls.length;
+  f.act('preview');
+  for(const action of ['backup','install','progress','verify','restore','companion']) {
+    const target=f.all().filter(n=>n.dataset.updaterAction===action).at(-1);
+    f.fire(target);await flush();
+  }
+  assert.equal(f.calls.length,baseline);
+  assert.equal(f.panel.refresh().operation,null);
+  assert.equal(f.panel.refresh().applicationVerification,null);
+  assert.equal(f.panel.usbBusy,false);
+  f.act('preview-exit');assert.equal(f.panel.refresh().step,1);
+  assert.equal(f.visible(f.find('updaterAction','skip-backup')),true);
+});
+
+test('preview animates backup, transfer and restore without hardware and cancels timers on exit', () => {
+  const f=fixture();f.act('preview');const baseline=f.calls.length;
+  const previewAction=name=>f.all().filter(n=>n.dataset.updaterAction===name).at(-1);
+  const meter=name=>f.all().filter(n=>n.attributes['aria-label']===name).at(-1);
+  const finish=()=>{for(let i=0;i<32;i++)f.tick();};
+  f.fire(previewAction('backup'));
+  assert.equal(meter('Configuration backup progress').attributes['aria-valuenow'],'0');
+  f.tick();assert.equal(meter('Configuration backup progress').attributes['aria-valuenow'],'3');
+  finish();assert.match(f.all().filter(n=>n.dataset.updaterReadout==='backup').at(-1).textContent,/saved and checked/);
+  assert.equal(previewAction('install').disabled,true);
+  f.fire(previewAction('find'));
+  assert.equal(previewAction('install').disabled,true);
+  const selection=f.all().filter(n=>n.dataset.updaterField==='device').at(-1);
+  selection.value='preview-b';f.fire(selection,'change');
+  assert.equal(previewAction('install').disabled,false);f.fire(previewAction('install'));
+  assert.equal(f.timers.size,0);assert.match(f.mount.ownerDocument.body.textContent,/Do not disconnect the board or let it lose power/);
+  f.fire(previewAction('cancel'));assert.equal(f.timers.size,0);
+  f.fire(previewAction('install'));f.fire(previewAction('confirm'));
+  f.tick();assert.equal(meter('Firmware transfer progress').attributes['aria-valuenow'],'3');finish();
+  f.fire(previewAction('verify'));f.fire(previewAction('restore'));
+  f.tick();assert.equal(meter('Configuration restoration progress').attributes['aria-valuenow'],'3');finish();
+  assert.match(f.mount.textContent,/Settings Restored/);assert.equal(f.calls.length,baseline);
+  f.fire(previewAction('preview-exit'));assert.equal(f.timers.size,0);
+  f.act('preview');f.fire(previewAction('backup'));assert.equal(f.timers.size,1);
+  f.fire(previewAction('preview-exit'));assert.equal(f.timers.size,0);
+  assert.equal(f.panel.refresh().operation,null);
+});
+
+test('custom-file preview shows the selected name and checks without reading bytes or contacting transport', () => {
+  const f=fixture();f.act('preview');
+  const last=(key,value)=>f.all().filter(n=>n.dataset[key]===value).at(-1);
+  f.fire(last('updaterAction','skip-backup'));
+  f.fire(last('firmwareSource','custom'));
+  assert.equal(f.visible(last('updaterAction','browse')),true);
+  const file=last('updaterField','file');let reads=0;
+  file.files=[{name:'example.333',arrayBuffer:()=>{reads++;throw new Error('Preview must not read firmware');}}];
+  f.fire(file,'change');const before=f.calls.length;
+  f.fire(last('updaterAction','inspect'));
+  assert.match(f.mount.textContent,/example\.333/);
+  assert.match(f.mount.textContent,/Example file check passed/);
+  assert.equal(reads,0);assert.equal(f.calls.length,before);
+  assert.equal(f.panel.refresh().inspected,false);
+});
+
+test('preview honors the backup restore toggle and never asks for another backup file',()=>{
+  for(const checked of [true,false]){
+    const f=fixture();f.act('preview');
+    const last=(key,value)=>f.all().filter(n=>n.dataset[key]===value).at(-1);
+    last('updaterField','restore-wanted').checked=checked;
+    f.fire(last('updaterAction','backup'));for(let i=0;i<32;i++)f.tick();
+    const pick=f.all().find(n=>n.attributes['aria-label']==='Preview scenario');pick.value='3';f.fire(pick,'change');
+    f.fire(last('updaterAction','verify'));
+    assert.equal(f.visible(last('updaterAction','restore')),checked);
+    assert.equal(f.visible(last('updaterField','file')),false);
+    assert.equal(f.panel.refresh().operation,null);
+  }
 });

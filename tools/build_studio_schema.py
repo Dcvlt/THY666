@@ -167,7 +167,8 @@ def projection():
             '// Wire compatibility identity, followed by source and table provenance.\n'
             f'export const MENU_SCHEMA_SHA256 = "{schema_hash}";\n'
             f'export const MENU_SOURCE_SHA256 = "{source_digest}";\n'
-            f'export const MENU_PROJECTION_SHA256 = "{projection_digest}";\n'}
+            f'export const MENU_PROJECTION_SHA256 = "{projection_digest}";\n'
+            f'export const SCALE_CATALOG = {json.dumps(scales)};\n'}
 
 
 def main():

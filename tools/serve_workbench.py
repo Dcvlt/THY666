@@ -47,13 +47,13 @@ def main():
     port = args.port if args.port is not None else env_int("THY666_WORKBENCH_PORT", 3330, 1, 65535)
     if not 1 <= port <= 65535:
         parser.error("--port must be in 1..65535")
-    for name in ("core.wasm", "chords.runtime.json"):
+    for name in ("core.wasm", "menu-schema.js"):
         if not (ROOT / "web/generated" / name).exists():
-            raise SystemExit("First run python tools/build_core.py --test (and import the chord archive if missing)")
+            raise SystemExit("First run python3 tools/build_core.py --test --core-only")
     handler = partial(WorkbenchHandler, directory=str(ROOT / "web"))
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     print(f"THY666 workbench: http://127.0.0.1:{server.server_address[1]}/", flush=True)
-    print("Local C/WebAssembly preview; Ctrl+C stops the server.", flush=True)
+    print("Connected Client; Ctrl+C stops the server.", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

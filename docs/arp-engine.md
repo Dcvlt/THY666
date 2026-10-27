@@ -118,7 +118,7 @@ boundary where its last contact is released.
   Browser controls synchronize C time before commands. JavaScript does not
   calculate pitches, move playheads or run an independent musical scheduler.
 
-The Companion's connected Parameters page edits the device's Arp configuration.
+The Client's connected Parameters page edits the device's Arp configuration.
 Use the controller and a receiving instrument to audition it. Host/WebAssembly
 regressions exercise both instances, grouping, timing, step masks and routing
 without opening hardware. Documentation examples show synthetic states rendered

@@ -16,7 +16,7 @@ from package_updater import catalog_files
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
-GENERATED = ("core.wasm", "chords.runtime.json", "oled-profile.json", "build-info.json", "menu-schema.js")
+GENERATED = ("core.wasm", "oled-profile.json", "build-info.json", "menu-schema.js")
 MAX_ASSET = 16 * 1024 * 1024
 
 
@@ -45,7 +45,7 @@ def bounded_file(path: Path, *, parent: Path, limit: int = MAX_ASSET) -> bytes:
 def web_assets(*, compile_check: bool = False) -> dict[str, bytes]:
     """Use a small explicit generated allowlist, never web/generated wholesale."""
     if compile_check:
-        return {"index.html": b'<!doctype html><html lang="en"><meta charset="utf-8"><title>THY666 compile check only</title><body>Compile-check fixture. This is not the Companion release.</body></html>\n'}
+        return {"index.html": b'<!doctype html><html lang="en"><meta charset="utf-8"><title>THY666 compile check only</title><body>Compile-check fixture. This is not the Client release.</body></html>\n'}
     paths = [WEB / "index.html"]
     paths += sorted(path for path in WEB.iterdir() if path.suffix in (".js", ".css") and path.is_file())
     paths += [WEB / "generated" / name for name in GENERATED]
@@ -129,7 +129,7 @@ def prepare(*, compile_check: bool = False, updater: Path | None = None, with_re
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--compile-check", action="store_true", help="Stage a labelled static fixture, never a usable Companion release")
+    parser.add_argument("--compile-check", action="store_true", help="Stage a labelled static fixture, never a usable Client release")
     parser.add_argument("--without-releases", action="store_true", help="Do not include local firmware catalog/packages")
     parser.add_argument("--updater", type=Path, help="Verified offline inspector beside the optional release catalog")
     args = parser.parse_args()

@@ -34,7 +34,7 @@ class DesktopBuildTests(unittest.TestCase):
         files["assets/fonts/manifest.json"] = json.dumps({"fonts": [{"family": "Synthetic face", "files": [{"path": "face/font.ttf", "sha256": stage.digest(files["assets/fonts/face/font.ttf"])}], "license_path": "face/OFL.txt"}]}).encode()
         for name, data in files.items():
             (self.web / name).write_bytes(data)
-        for name in ("generated/updater/private-download.zip", "generated/old-preview.html", "private.log", ".env"):
+        for name in ("generated/chords.runtime.json", "generated/updater/private-download.zip", "generated/old-preview.html", "private.log", ".env"):
             (self.web / name).write_text("must not be included")
         for module, name, value in [(stage, "ROOT", self.root), (stage, "WEB", self.web),
                                     (build, "ROOT", self.root), (build, "TARGET", self.root / "build/desktop-target"),
@@ -49,7 +49,27 @@ class DesktopBuildTests(unittest.TestCase):
         self.assertNotIn("generated/updater/private-download.zip", files)
         self.assertNotIn("generated/old-preview.html", files)
         self.assertNotIn("private.log", files)
+        self.assertNotIn("generated/chords.runtime.json", files)
         self.assertNotIn(".env", files)
+
+    def test_macos_development_bundle_contains_exact_executable_and_scoped_resources(self):
+        import plistlib
+        (self.root / "desktop").mkdir()
+        (self.root / "desktop/Cargo.toml").write_text('[package]\nversion = "0.1.0"\n')
+        (self.root / "LICENSE").write_text("Synthetic license")
+        assets = stage.prepare(with_releases=False)
+        executable = self.root / "build/release/thy666-desktop"
+        executable.parent.mkdir(parents=True)
+        executable.write_bytes(b"synthetic executable")
+        app = build.macos_development_bundle(executable, assets, b"synthetic notices")
+        self.assertEqual((app / "Contents/MacOS/thy666-desktop").read_bytes(), executable.read_bytes())
+        self.assertTrue((app / "Contents/MacOS/thy666-desktop").stat().st_mode & 0o100)
+        info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
+        self.assertEqual(info["CFBundleExecutable"], "thy666-desktop")
+        self.assertTrue((app / "Contents/Resources/resources/README.txt").is_file())
+        self.assertFalse((app / "Contents/Resources/resources/releases.json").exists())
+        with self.assertRaisesRegex(ValueError, "compile-check"):
+            build.macos_development_bundle(executable, {**assets, "compile_check_only": True}, b"")
 
     def test_core_and_font_identities_are_checked_before_staging(self):
         (self.web / "generated/core.wasm").write_bytes(b"changed")
@@ -65,7 +85,7 @@ class DesktopBuildTests(unittest.TestCase):
             result = stage.prepare(compile_check=True)
         self.assertTrue(result["compile_check_only"])
         self.assertEqual([row["file"] for row in result["web"]], ["index.html"])
-        self.assertIn(b"not the Companion release", (self.root / "build/desktop-web/index.html").read_bytes())
+        self.assertIn(b"not the Client release", (self.root / "build/desktop-web/index.html").read_bytes())
         self.assertFalse(result["hardware_access_performed"])
 
     def test_stage_replacement_discards_stale_output_and_rejects_escaping_targets(self):

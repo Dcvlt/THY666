@@ -1,7 +1,7 @@
 """Build the bounded public site, guide and explicit browser installer.
 
-No firmware, generated core data, device state, environment or network is used.
-The explicit allowlist is deliberately separate from the full Companion bundle.
+No firmware, private musical corpus, device state, environment or network is used.
+The Client reuses the verified public asset boundary and generated allowlist.
 """
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from prepare_desktop import bounded_file, replace_stage
+from prepare_desktop import bounded_file, replace_stage, web_assets
 from browser_updater_assets import browser_core_assets
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,7 +25,7 @@ def site_assets() -> dict[str, bytes]:
             raise ValueError("Duplicate public site path")
         files[destination] = bounded_file(source, parent=parent)
 
-    for name in ("index.html", "manual.html", "install.html", "site.css", "site.js", "guide.js", "install.js", "releases.json"):
+    for name in ("index.html", "manual.html", "install.html", "site.css", "site.js", "screen-carousel.js", "guide.js", "install.js", "releases.json"):
         add(SITE / name, name, parent=SITE)
     for name in ("help.js", "help.css", "help-topics.js", "studio-menu.js"):
         add(ROOT / "web" / name, "guide/" + name, parent=ROOT / "web")
@@ -37,7 +37,9 @@ def site_assets() -> dict[str, bytes]:
         files["installer/" + name] = data
     for source, name in (("thy666-web-logo.svg", "logo.svg"),):
         add(ROOT / "web/assets" / source, "assets/" + name, parent=ROOT / "web/assets")
+    add(ROOT / "web/assets/thy333-logo.svg", "installer/assets/thy333-logo.svg", parent=ROOT / "web/assets")
     add(ROOT / "docs/assets/thy666-icon.svg", "assets/icon.svg", parent=ROOT / "docs/assets")
+    add(SITE / "assets/client-preview.png", "assets/client-preview.png", parent=SITE)
     add(ROOT / "LICENSE", "LICENSE.txt")
     fonts = ROOT / "web/assets/fonts"
     manifest = json.loads(bounded_file(fonts / "manifest.json", parent=fonts))
@@ -50,6 +52,11 @@ def site_assets() -> dict[str, bytes]:
                 raise ValueError("A public font differs from its license manifest")
             if "assets/fonts/" + path not in files:
                 files["assets/fonts/" + path] = data
+    # Reuse the verified public Client asset boundary, never generated/ wholesale.
+    for name, data in web_assets().items():
+        if name == "index.html":
+            data = data.replace(b'<html lang="en"', b'<html data-project-site="true" lang="en"', 1)
+        files["client/" + name] = data
     files[".nojekyll"] = b""
     return files
 
@@ -73,7 +80,7 @@ def main() -> None:
     args = parser.parse_args()
     records = build(args.output)
     print(f"Built public site: {len(records)} files, {sum(item['bytes'] for item in records):,} bytes")
-    print("Read-only guide and explicit browser installer; no firmware, device bindings or private corpus included.")
+    print("Browser Client, read-only guide and explicit browser installer; no firmware, device bindings or private corpus included.")
 
 
 if __name__ == "__main__":

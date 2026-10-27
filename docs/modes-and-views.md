@@ -50,7 +50,7 @@ reinterprets a saved view as another visualization.
 
 The OLED is binary monochrome. Dimming uses dithering rather than extra pixel
 colors. Panel transport and browser polling have separate schedules; see
-[Display](display.md) and [Companion](companion-and-backup.md).
+[Display](display.md) and [Client](companion-and-backup.md).
 
 ## Pad and control lighting
 
@@ -69,4 +69,4 @@ configurable percentage rather than assuming color alone distinguishes them.
 Center brightness controls the white markings. Voicing, Spread, Strum and lower
 buttons reflect enabled state with brightness, following the selected lower-
 button mode/scope. Play shortcut arrows hide their marking when configured Off.
-These indicators derive from applied C state, including in the companion.
+These indicators derive from applied C state, including in the client.

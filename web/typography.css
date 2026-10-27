@@ -1,5 +1,6 @@
 /* Exact upstream OFL1.1 fonts. See assets/fonts/manifest.json and per-font OFL.txt.
-   Monoton is for large display titles only (at least 28px); body/forms use Oxanium.
+   Monoton is for large display titles; Orbitron for navigation and smaller headings.
+   Body text and forms use Oxanium.
    Unicode ranges include only actual mapped Latin/typographic glyphs.
    Music, arrows and UI pictograms intentionally use the fallback stack. */
 

@@ -207,11 +207,11 @@ const topic = (id, group, title, summary, sections, related = [], keywords = [])
 
 export const HELP_TOPICS = [
   topic('getting-started', 'start', 'Start here',
-    'Play the instrument, adjust its settings, or connect the Companion to inspect and manage your device.', [
+    'Play the instrument, adjust its settings, or connect the Client to inspect and manage your device.', [
       section('Choose an area', [], [
-        'Companion is the device-facing workspace. Connect explicitly before reading or changing the controller.',
+        'Client is the device-facing workspace. Connect explicitly before reading or changing the controller.',
         'Documentation is this guide. Searching or opening an article does not connect to or modify the controller.',
-        'The header tabs are Update, Companion and Documentation, in that order. The app opens Companion Board by default. Without a board, the surface is an inactive wireframe; live screen, settings and pad inspection require connection. Update and Documentation remain available.',
+        'The app header tabs are Update, Client and Documentation, in that order. On the project site they are Install, Client and User guide; Project returns to the overview. The site includes the same browser Client, with explicit Web Serial connection in desktop Chrome or Edge over HTTPS or localhost. The app opens Client Board by default. Without a board, the surface is an inactive wireframe; live screen, settings and pad inspection require connection. Update and Documentation remain available.',
         'Beneath the offline wireframe, “Connect a theoryboard with THY666 firmware or install the firmware on your device” provides the next step. The final words link to the separate Update screen; following that link does not connect hardware or start installation.',
       ]),
       section('First playing check', [
@@ -221,13 +221,13 @@ export const HELP_TOPICS = [
         'Wait for Saved before removing power after changing settings. Current-state saving is not a named profile collection.',
       ]),
       section('Development state', [
-        'THY666 is a hardware alpha. Play, Hold Arps, the sequencer and Windows desktop Companion have been exercised on a device. The native Windows updater passed a same-build THY666 installation; that test reset settings, and an explicit backup restore recovered the tested configuration through cold reboot. Nonempty song/library restoration, calibrated profiles, Original v5 through Rust and macOS/Linux USB still need qualification. Named collections and extra engines remain separate work.',
+        'THY666 is a hardware alpha. Play, Hold Arps, the sequencer and Windows desktop Client have been exercised on a device. The native Windows updater passed a same-build THY666 installation; that test reset settings, and an explicit backup restore recovered the tested configuration through cold reboot. Nonempty song/library restoration, calibrated profiles, Original v5 through Rust and macOS/Linux USB still need qualification. Named collections and extra engines remain separate work.',
       ]),
     ], ['companion', 'controls', 'engines', 'midi-routing', 'backup'], ['start', 'connect', 'overview', 'setup']),
-  topic('companion', 'start', 'Use the Companion',
+  topic('companion', 'start', 'Use the Client',
     'Connect deliberately, inspect the physical controller, and make explicit device edits.', [
       section('Pages and offline use', [
-        'Companion Board is the default opening screen. Its sidebar contains Board, Parameters, Songs & library, Backups and Diagnostics. Update is the first top-level header tab, followed by Companion and Documentation; it is outside the Companion sidebar.',
+        'Client Board is the default opening screen. Its sidebar contains Board, Parameters, Songs & library, Backups and Diagnostics. Update is the first top-level header tab, followed by Client and Documentation; it is outside the Client sidebar.',
         'Board shows an inactive outline until a controller is connected. Parameters, Songs & library, Backups and Diagnostics are disabled; Update and Documentation remain available. Disconnecting from one of those device pages returns to Board. The install the firmware on your device link beneath the offline wireframe opens Update without connecting hardware.',
         'The THY666 mark appears in the web branding and OLED startup/credits artwork. Opening the client does not install firmware or change the physical controller.',
       ]),
@@ -253,14 +253,14 @@ export const HELP_TOPICS = [
       section('App appearance', [
         'Use the App settings gear at the bottom right to choose Dark or Light appearance and an independent accent color. Every color option has a preview swatch. The palette spans the pad spectrum plus Monochrome. Dark with Red is the default; Light uses a muted warm off-white background, darker accents and firmer outlines for readable text and circuit lines.',
         'Live refresh is saved locally: 100 ms by default, with 50, 250, 500 and 1000 ms choices. These are maximum requested rates. The client waits for an in-flight transfer, and native windows pause live polling while inactive or minimized. Hidden or busy views send no extra polls; this preference does not change the firmware.',
-        'Appearance and color apply to Update, Companion and Documentation and are saved locally in the desktop app or browser when storage is available. The OLED and Web instrument screen retain their black panel. Themes do not change device settings, musical pad colors, MIDI routing or the current song.',
+        'Appearance and color apply to Update, Client and Documentation and are saved locally in the desktop app or browser when storage is available. The OLED and Web instrument screen retain their black panel. Themes do not change device settings, musical pad colors, MIDI routing or the current song.',
       ]),
     ], ['controls', 'settings', 'backup', 'sensitivity'], ['desktop', 'native', 'browser', 'Chrome', 'Edge', 'serial', 'connected', 'device', 'inspect', 'readback']),
   topic('controls', 'start', 'Navigation & physical controls',
     'CENTER toggles Settings and Play; RIGHT enters, edits and applies. Most shortcuts depend on the open workspace.', [
       illustrated('Find the controls', [HELP_FIGURES.navigation]),
       illustrated('Pick one physical pad for editing', [HELP_FIGURES.pick], [
-        'Use this in Sensitivity after opening Pick pad. Large-pad clicks in the connected Companion inspect the clicked pad; the device picker is a separate silent physical selection operation.',
+        'Use this in Sensitivity after opening Pick pad. Large-pad clicks in the connected Client inspect the clicked pad; the device picker is a separate silent physical selection operation.',
       ]),
       table('Center navigation', ['Where', 'Control', 'Result'], [
         ['Play', 'CENTER', 'Open Settings'],
@@ -567,7 +567,7 @@ export const HELP_TOPICS = [
         'Occupied steps take a representative note color. The selected step brightens and the playhead is white. Right pads retain their musical colors and held feedback. Switching solo/all playback restarts sequencer loops; it does not release independent live pads.',
       ]),
       illustrated('The editor screen', [screenExample('steps')]),
-      walkthrough('Example: build a four-step melody', [
+      walkthrough('Example: build a three-step melody', [
         'Create an empty track and leave playback stopped. Use Notes input (M4), Replace (M3) and right Scale degrees. With root C and Major, tap/release LEFT step 1, then play/release RIGHT top-row pad 1 for C.',
         'Repeat for LEFT steps 2, 3 and 4, entering RIGHT top-row pads 2, 3 and 5 for D, E and G. Each occupied left cell now has a note color. The selected step stays selected after you lift your finger.',
         'Press RIGHT, set Length to 4 and check Track channel/Outputs against your synth. LEFT returns to the same step. M1 plays this track alone; press again to stop. You should hear C–D–E–G looping.',
@@ -691,7 +691,7 @@ export const HELP_TOPICS = [
     'Use an explicit connected backup before risky changes. A saved-state comparison verifies restoration; it is not firmware recovery.', [
       section('Create a backup', [
         'Use a backup before an update or a substantial settings/library change, and keep a known-good copy alongside experiments. Autosave follows your latest edits; it does not give you an older version to return to.',
-        'Connect the intended THY666 device, verify its identity, stop playback and release pads and controls. Wait for Saved, then use the Companion backup/export action.',
+        'Connect the intended THY666 device, verify its identity, stop playback and release pads and controls. Wait for Saved, then use the Client backup/export action.',
         'Choose Backups → Read backup to download a .thyb file, and keep a copy outside the project too. It contains applied settings, per-pad overrides, custom library and current song. It does not contain the bootloader, firmware image, external-flash dump or unsaved editor/calibration drafts.',
       ]),
       section('Restore with verification', [
@@ -719,7 +719,7 @@ export const HELP_TOPICS = [
       ]),
     ], ['views', 'storage', 'controls', 'updates'], ['system', 'boot', 'startup', 'credits', 'sleep', 'shutdown', 'button response']),
   topic('updates', 'system', 'Firmware updates & recovery limits',
-    'Use Detect → Backup → Update → Verification. A native Windows THY666 installation has passed on device; settings reset in that test, so retain your backup and restore explicitly when needed. Automatic rollback is not implemented.', [
+    'Use Backup → Update → Verification. A native Windows THY666 installation has passed on device; settings reset in that test, so retain your backup and restore explicitly when needed. Automatic rollback is not implemented.', [
       illustrated('Enter update mode deliberately', [HELP_FIGURES.update]),
       table('Enter update mode', ['Step', 'Action'], [
         ['1 · Power down', 'Disconnect USB and the 9V supply, if used. Wait until the screen and all LEDs are off.'],
@@ -728,16 +728,16 @@ export const HELP_TOPICS = [
         ['4 · Detect the board', 'Release both pads, then click Detect board.'],
       ]),
       section('Open the wizard', [
-        'Choose Update, the first header tab before Companion and Documentation, or follow install the firmware on your device beneath the disconnected Board wireframe. Update is a separate application area. The app opens Companion Board by default.',
+        'Choose Update, the first header tab before Client and Documentation, or follow install the firmware on your device beneath the disconnected Board wireframe. Update is a separate application area. The app opens Client Board by default.',
         'In the desktop app, the updater is already built in. Stay in the same window: there is no separate updater download, Python server, helper launch or session token to enter.',
         'The project site offers direct browser installation in supported desktop Chrome/Edge over HTTPS or localhost, without a helper download. WebHID selects the update interface; Web Serial connects an existing THY666 application for backup and verification. The same Rust package checks and transfer policy run in WebAssembly. A same-build Windows browser installation passed transfer, application checks and integrated configuration restoration with durable readback and complete payload comparison. Other platforms, nonempty songs/libraries and calibrated overrides remain unqualified. The optional local Rust helper route remains available; file:// is unsupported.',
+        'Development preview in the Update heading lets you review synthetic backup, transfer, verification, restoration and failure screens while disconnected. It never accesses a device or verifies a real installation. Exit preview returns to the real wizard.',
         'Update uses #update; older #client/update links remain supported. Opening the screen does not install firmware.',
       ]),
-      table('Four steps', ['Step', 'Action'], [
-        ['Detect', 'Explicitly connect a running THY666 application to read its build and UID, or detect a compatible board in the update mode. Bootloader HID descriptors do not identify the installed firmware version.'],
-        ['Backup', 'Save applied THY666 settings, calibration, library and current song. If unavailable, explicitly acknowledge the skipped/unavailable backup; no stock backup is verified. Never install diagnostic firmware to obtain one.'],
+      table('Three steps', ['Step', 'Action'], [
+        ['Backup', 'Save applied THY666 settings, calibration, library and current song; a saved and checked backup advances directly to Update. If unavailable, explicitly acknowledge the skipped/unavailable backup; no stock backup is verified. Never install diagnostic firmware to obtain one.'],
         ['Update', 'Choose an available reviewed release or Custom. Inspect the package, close other updaters, release the application connection and enter update mode before reviewing Apply. Keep USB connected and the app or browser page open during the single transfer. The optional local-helper route also needs its helper kept running.'],
-        ['Verification', 'For THY666, reconnect explicitly, match full build and target UID, then pass the read-only status, I/O, settings and display checks. All passing checks produce green Update successful and a route to Companion.'],
+        ['Verification', 'For THY666, reconnect explicitly, match full build and target UID, then pass the read-only status, I/O, settings and display checks. All passing checks produce white Firmware verified and a route to Client.'],
       ]),
       section('Firmware choices', [
         'Latest THY666 and Original v5 use the optional reviewed release catalog supplied with this app or helper. Latest means that local package; there is no hosted latest release yet. Authorized firmware packages are prepared separately and are not committed to the public source.',
@@ -745,10 +745,10 @@ export const HELP_TOPICS = [
       ]),
       section('Read the result', [
         'THY666 stays pending until the explicit application connection and read-only checks pass. A matching build and UID alone do not make the complete success state. These checks are not raw-flash readback or a qualification of every musical and electrical behavior; test actual playing and persistence separately.',
-        'A green Update successful result means the requested application passed those health checks. It does not mean your previous settings, song or calibration were preserved. Compare the resulting configuration with your retained backup before treating the instrument as ready for a performance.',
+        'A white Firmware verified result means the requested application passed those health checks. It does not mean your previous settings, song or calibration were preserved. Compare the resulting configuration with your retained backup before treating the instrument as ready for a performance.',
         'Original v5 has no THY666 telemetry checks here. Its neutral Update finished result confirms the CRC-checked transfer, not the running application build or health. SIMULATION is visibly labeled and never turns a synthetic run into green physical verification.',
         'The animation shows instructions or activity; it never invents transfer progress or pass states, and reduced motion is supported. A running THY666 application can be detected and backed up before entering the update mode for Apply. A board already in the update mode can continue with the explicit unavailable-backup choice.',
-        'If a response is lost, check the existing operation status. Do not launch a replacement automatically. Short writes, unexpected replies and checksum failures stop transfer without retrying payload writes. Reconnection stays explicit. When restoration was requested, firmware verification is followed by a separate Restore review; durable save and complete payload readback must pass before configuration is reported restored. Keep current settings is also an explicit decision.',
+        'If a response is lost, check the existing operation status. Do not launch a replacement automatically. Short writes, unexpected replies and checksum failures stop transfer without retrying payload writes. Reconnection stays explicit. When restoration was requested, firmware verification is followed by a separate Restore review using the checked backup retained in this session, without another file chooser; durable save and complete payload readback must pass before configuration is reported restored. Keep current settings is also an explicit decision.',
       ]),
       section('Official route and recovery limits', [
         'Completed installations through the official updater are already exercised; keep it and a known working package available. Some completed tests showed “patching failed” while the correct application started. Confirm the actual build and behavior before considering any new attempt.',

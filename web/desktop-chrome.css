@@ -67,3 +67,20 @@ html.desktop-window ::-webkit-scrollbar-button { display:none;width:0;height:0; 
 html.desktop-window[data-window-maximized="true"] .desktop-window-frame { opacity:.45; }
 @media(max-width:700px) { .desktop-window-caption { display:none; }.desktop-titlebar { gap:8px; }.desktop-window-status { font-size:8px; } }
 @media(prefers-reduced-motion:reduce) { html.desktop-window .desktop-window-button { transition:none; } }
+
+/* macOS keeps the same frame, with compact left-hand traffic-light controls. */
+html.desktop-window .desktop-window-macos .desktop-titlebar { padding:0 12px; }
+html.desktop-window .desktop-window-macos .desktop-window-controls { margin:0;align-self:center;align-items:center;gap:10px;padding:0; }
+html.desktop-window .desktop-window-macos .desktop-window-identity { margin-left:auto; }
+html.desktop-window .desktop-window-macos .desktop-window-status { text-align:left; }
+html.desktop-window .desktop-window-macos .desktop-window-button {
+  position:relative;width:14px;min-width:14px;height:14px;padding:0;clip-path:none;border:1px solid rgb(0 0 0 / .22);
+  border-radius:50%;background:var(--window-control-color);color:rgb(0 0 0 / .65);display:grid;place-items:center;
+}
+html.desktop-window .desktop-window-macos .desktop-window-button::before { content:'';position:absolute;inset:-4px;border-radius:50%; }
+html.desktop-window .desktop-window-macos .desktop-window-button svg { width:10px;height:10px;stroke-width:2; }
+html.desktop-window .desktop-window-macos .desktop-window-close { --window-control-color:#ff5f57; }
+html.desktop-window .desktop-window-macos .desktop-window-minimize { --window-control-color:#febc2e; }
+html.desktop-window .desktop-window-macos .desktop-window-maximize { --window-control-color:#28c840; }
+html.desktop-window .desktop-window-macos .desktop-window-button:hover { background:var(--window-control-color);color:#111;filter:brightness(1.12); }
+html.desktop-window .desktop-window-macos .desktop-window-button:focus-visible { outline:2px solid var(--ui-muted,#d2c5c7);outline-offset:3px; }

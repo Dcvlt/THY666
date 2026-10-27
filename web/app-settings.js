@@ -35,7 +35,7 @@ export function initializeAppSettings({mount=document.body,storage,onOpen=()=>{}
   try{const saved=storage?.getItem(APP_APPEARANCE_KEY);if(APP_APPEARANCES.some(item=>item.id===saved))appearance=saved;}catch{/* Dark is available without storage. */}
   try{const saved=Number(storage?.getItem(APP_POLL_KEY));if(APP_POLL_INTERVALS.some(item=>item.ms===saved))pollIntervalMs=saved;}catch{/* Use the healthy default without storage. */}
   function apply(value,persist=true){if(disposed||!APP_THEMES.some(item=>item.id===value))return false;theme=value;doc.body.dataset.theme=theme;if(persist)try{storage?.setItem(APP_THEME_KEY,theme);}catch{}return true;}
-  function applyAppearance(value,persist=true){if(disposed||!APP_APPEARANCES.some(item=>item.id===value))return false;appearance=value;doc.body.dataset.appearance=appearance;if(persist)try{storage?.setItem(APP_APPEARANCE_KEY,appearance);}catch{}return true;}
+  function applyAppearance(value,persist=true){if(disposed||!APP_APPEARANCES.some(item=>item.id===value))return false;appearance=value;doc.body.dataset.appearance=appearance;if(doc.documentElement)doc.documentElement.dataset.appearance=appearance;if(persist)try{storage?.setItem(APP_APPEARANCE_KEY,appearance);}catch{}return true;}
   function applyPollInterval(value){
     if(disposed||value===pollIntervalMs||!APP_POLL_INTERVALS.some(item=>item.ms===value))return false;
     pollIntervalMs=value;try{storage?.setItem(APP_POLL_KEY,String(value));}catch{}
@@ -85,7 +85,7 @@ export function initializeAppSettings({mount=document.body,storage,onOpen=()=>{}
     overlay=make('div','app-settings-overlay');const card=make('section','app-settings-dialog');
     card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');card.setAttribute('aria-labelledby','app-settings-title');
     const tag=make('p','eyebrow','LOCAL / APPLICATION'),title=make('h2','','App settings');title.id='app-settings-title';
-    const copy=make('p','','Appearance, accent color and live refresh are saved locally on this computer. They apply throughout the Companion and Documentation; musical pad colors and the instrument display stay unchanged.');
+    const copy=make('p','','Appearance, accent color and live refresh are saved locally on this computer. They apply throughout the Client and Documentation; musical pad colors and the instrument display stay unchanged.');
     const appearanceLabel=make('label','app-appearance-field','Appearance'),appearanceSelect=make('select','');appearanceSelect.dataset.appSetting='appearance';appearanceSelect.setAttribute('aria-label','Appearance');
     for(const item of APP_APPEARANCES){const option=make('option','',item.label);option.value=item.id;appearanceSelect.append(option);}appearanceSelect.value=appearance;
     appearanceSelect.addEventListener('change',()=>{if(!applyAppearance(appearanceSelect.value))appearanceSelect.value=appearance;});appearanceLabel.append(appearanceSelect);

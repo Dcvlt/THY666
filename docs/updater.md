@@ -2,7 +2,7 @@
 
 The Rust updater installs supported `.333` packages through the existing held-pad
 bootloader. Its native host or direct WebHID adapter drives the **Update** wizard:
-**Detect → Backup → Update → Verification**. The executable also has command-line
+**Backup → Update → Verification**. The executable also has command-line
 tools. Same-build THY666 installations through native Windows and direct browser
 WebHID have passed physical transfer and application verification. The browser
 wizard also passed explicit configuration restoration with durable readback and
@@ -12,7 +12,7 @@ macOS/Linux operation remain unqualified. The official updater remains an
 exercised fallback.
 
 The [desktop app](desktop.md) embeds this wizard and calls the same Rust updater
-library directly. It also supplies native serial access for Companion. Its
+library directly. It also supplies native serial access for Client. Its
 packaged interface needs no local web server, separate helper download or
 session-token setup. The loopback helper remains an optional local route. Direct
 browser installation uses WebHID with the same Rust validator/session compiled
@@ -69,19 +69,18 @@ The app server must already be running; the executable is not yet a self-contain
 public installer. For a different port, start `serve --open --origin` with the
 actual loopback app origin. A `file://` page is unsupported.
 
-The app normally opens **Companion → Board**. Choose the first header tab,
+The app normally opens **Client → Board**. Choose the first header tab,
 **Update**, or the **install the firmware on your device** link beneath the
-disconnected wireframe. Update is outside the Companion sidebar. Its canonical
+disconnected wireframe. Update is outside the Client sidebar. Its canonical
 route is `#update`; older `#client/update` links remain supported.
 
-## Four steps
+## Three steps
 
 | Step | Action and limits |
 | --- | --- |
-| Detect | Explicitly connect a running THY666 application to read its build and board UID, or detect the compatible update-mode HID interface. Bootloader descriptors do not identify the installed firmware version. |
 | Backup | Download applied THY666 configuration while that application is available. If already in the update mode or running unsupported firmware, explicitly continue with backup unavailable/skipped. |
 | Update | Choose Latest THY666, Original v5 or Custom; inspect the package and review the target before Apply. Release the application connection and enter the update mode before transfer. |
-| Verification | For THY666, explicitly reconnect the application, match its full build and target UID, then run the read-only status, I/O, settings and display checks. Only all passing checks produce green **Update successful** and a route to Companion. |
+| Verification | For THY666, explicitly reconnect the application, match its full build and target UID, then run the read-only status, I/O, settings and display checks. Only all passing checks produce white **Firmware verified** and a route to Client. |
 
 To enter **update mode**:
 
@@ -127,7 +126,7 @@ After a supported Original v5 transfer, the neutral **Update finished** result
 means the transfer CRC checks completed. Original firmware has no THY666 telemetry
 verification here; this result does not establish its running build or health.
 SIMULATION remains visibly labeled and never produces physical verification or
-a green physical-success result. Test actual playing and persistence separately.
+a physical-success result. Test actual playing and persistence separately.
 
 The helper owns an advisory per-user update lease while using HID. Other THY666
 helper/CLI instances honor it; third-party updaters do not. Close them yourself.
@@ -244,7 +243,7 @@ Never terminate an active helper as a substitute for a cancellation protocol.
 
 ## Local helper interface
 
-The helper binds only `127.0.0.1` (default port 3331), accepts one exact Companion
+The helper binds only `127.0.0.1` (default port 3331), accepts one exact Client
 origin and generates a new random session token on every launch. All API actions
 are POST with Bearer authentication; CORS preflight is limited to that origin.
 Host/Origin checks, duplicate-header rejection, request limits and an absolute
@@ -270,3 +269,35 @@ the bootloader, guarantee power-loss recovery or implement automatic rollback.
 Restore coverage is limited to the captured configuration described above;
 interrupted-update recovery remains unqualified. Keep the official updater and
 a known working package.
+
+## Development preview
+
+Choose **Development preview** in the Update heading while disconnected and idle.
+The shared browser/desktop layout offers Backup, Update, Transfer, Verify,
+Restore, Complete and Failure scenarios. Use the scenario menu to jump directly
+or the buttons to advance. Backup, Apply firmware and Restore play synthetic
+progress animations before their completed state. Changing scenarios or exiting
+cancels the preview animation. A completed backup advances directly to Update.
+In the Update preview, choose firmware, detect the synthetic boards, select one
+and apply; no hardware discovery or package transfer takes place. All content is synthetic: preview controls do not call
+USB, read or save backups, select packages, install firmware or verify hardware.
+**Exit preview** returns to the untouched real wizard. Preview is unavailable
+while connected, busy or retaining a real update operation.
+
+The three steps share one workspace in browser and desktop. Only browser
+connection guidance differs; small screens and expanded advanced details may
+still scroll to keep every action accessible.
+
+Completion visuals distinguish the outcomes: Original firmware ends after transfer
+with a white logo and no THY666 verification. Successful THY666 checks show
+**Firmware verified** with a soft white glow. Only a successful, readback-verified
+configuration restoration shows **Settings Restored**, a green logo and HUD
+ripples (static when reduced motion is enabled). The development preview includes
+these separate outcomes.
+
+The Backup restore toggle carries into the installation. When enabled for a
+THY666 update, Restore uses the exact checked backup retained in this session;
+there is no second file chooser. It checks the board UID before writing and
+requires explicit confirmation after firmware verification. Unchecking the toggle
+or skipping backup omits restoration. Reloading the app loses this in-memory
+selection; retain the downloaded backup for a later manual recovery.

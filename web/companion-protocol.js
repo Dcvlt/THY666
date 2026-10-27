@@ -7,10 +7,10 @@ const string=(bytes,offset,length)=>{
 const mask=(bytes,offset,count)=>Array.from({length:count},(_,n)=>Boolean(bytes[offset+(n>>>3)]&(1<<(n&7))));
 export function decodeCompanionSnapshot(bytes,identity=null){
   if(!(bytes instanceof Uint8Array)||bytes.length!==COMPANION_SNAPSHOT_BYTES)
-    throw new Error('Unsupported companion snapshot size.');
+    throw new Error('Unsupported client snapshot size.');
   const data=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
   if(string(bytes,0,8)!=='THYCMP1'||data.getUint16(8,true)!==1||data.getUint16(10,true)!==bytes.length)
-    throw new Error('Unsupported companion snapshot format.');
+    throw new Error('Unsupported client snapshot format.');
   const result={sequence:data.getUint32(12,true),now:data.getUint32(16,true),frameMs:data.getUint32(20,true),
     instrumentRevision:data.getUint32(24,true),stateRevision:data.getUint32(28,true),
     build:string(bytes,32,16),uid:string(bytes,48,24),schema:string(bytes,72,64),

@@ -145,3 +145,18 @@ test('a separate SVG paints the surface behind content; maximize fills the viewp
   const clean=fixture(),second=initializeDesktopChrome({runtime:clean.runtime,document:clean.doc});await flush();second.destroy();
   assert.equal(clean.doc.documentElement.style.getPropertyValue('--desktop-frame-clip'),'');
 });
+
+test('macOS uses left-hand close/minimize/maximize controls and right-hand identity only on that host',async()=>{
+  for(const platform of ['macos','windows','linux']){
+    const f=fixture();f.runtime.platform=platform;
+    const chrome=initializeDesktopChrome({runtime:f.runtime,document:f.doc});await flush();
+    const titlebar=f.doc.body.querySelector('#desktop-titlebar');
+    const controls=f.doc.body.querySelector('.desktop-window-controls');
+    assert.deepEqual(controls.children.map(button=>button.dataset.windowAction),platform==='macos'?['close','minimize','maximize']:['minimize','maximize','close']);
+    assert.equal(titlebar.children[platform==='macos'?0:2],controls);
+    assert.equal(titlebar.children[platform==='macos'?2:0].className,'desktop-window-identity');
+    f.calls.length=0;f.fire(f.button('close'),'pointerdown');assert.deepEqual(f.calls,[]);
+    f.fire(f.button('close'),'click');await flush();assert.deepEqual(f.calls,[['close']]);
+    chrome.destroy();
+  }
+});

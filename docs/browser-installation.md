@@ -5,7 +5,7 @@ Direct installation from the project website is implemented alongside the
 physical WebHID transfer, application identity/health checks and integrated
 configuration restoration with durable readback and complete payload comparison.
 Synthetic transport and actual-WASM tests cover additional behavior separately.
-The desktop app remains valuable for its integrated Companion, native device
+The desktop app remains valuable for its integrated Client, native device
 access and offline workflow. Publishing a website does not qualify a new USB
 transport or authorize a device write.
 
@@ -15,7 +15,7 @@ transport or authorize a device write.
 | --- | --- | --- | --- |
 | Firmware validation | Shared Rust validation of supported `.333` packages, application bounds, full build identity and integrity | Same Rust parser and pull-driven protocol session compiled to WASM; no second JS parser or protocol | Same-build THY666 installations passed through Windows native and direct browser routes |
 | Update-mode transport | Native Rust HID, called by desktop, CLI or explicit local helper | Implemented WebHID adapter with an explicit chooser, strict descriptors, bounded I/O and an exclusive origin Web Lock | Windows browser transfer passed: captured application payload matched the selected package and both loader CRC replies |
-| Application connection | Native CDC in desktop; Web Serial in the browser Companion | Reuse the explicit browser connection and capability/identity checks | Windows browser update-to-application handoff passed full build/board matching and basic telemetry checks |
+| Application connection | Native CDC in desktop; Web Serial in the browser Client | Reuse the explicit browser connection and capability/identity checks | Windows browser update-to-application handoff passed full build/board matching and basic telemetry checks |
 | Configuration export | `.thyb` applied-state export with checksums and board/format binding | Download and retain a validated copy before entering update mode | The captured Windows configuration exported successfully |
 | Configuration restore | Explicit staged restore, durable readback and host payload comparison | Shared wizard retains the backup, records the preservation choice and requires a separate restore review after firmware verification | Integrated Windows browser restoration passed durable saved readback and complete payload comparison; its cold-boot check is pending. Earlier native restoration survived cold reboot. Nonempty material and calibrated overrides remain unqualified |
 | Recovery | Existing held-pad loader and known working packages | Retain native/official fallback; show uncertain outcomes without automatic retry | Interrupted-update recovery, automatic rollback, Original v5 through Rust and macOS/Linux USB remain unqualified |
@@ -73,7 +73,7 @@ catalog opens no USB device. There is no browser-only transfer policy.
 | Desktop Chrome / Edge | Detect WebHID support, request access from an explicit user action and use a secure HTTPS origin. Browser support does not establish THY666 device qualification. |
 | Linux | Device access may require a narrowly scoped `hidraw` udev rule. Browser packaging or sandbox policy can still deny access; document and test actual distributions/packages. |
 | Safari / Firefox or unavailable API | Explain that this installation route is unavailable and offer the desktop/native route. Do not silently fall back to a different USB interface. |
-| Application reconnect | Browser Companion additionally needs Web Serial and its own explicit permission. Release application/update handles in sequence; do not compete with other clients. |
+| Application reconnect | Browser Client additionally needs Web Serial and its own explicit permission. Release application/update handles in sequence; do not compete with other clients. |
 
 Use feature detection rather than only a browser-name test. Permission denial,
 unplugging, tab suspension, a busy interface and an unavailable application must
@@ -101,7 +101,7 @@ core plus SHA256/source manifest under `web/generated/` and an ignored copy
 under `build/browser-updater/`. The site packager checks both artifact and source
 identity before staging. It includes neither native USB handles nor firmware.
 
-Open `/install.html`. The existing local browser Companion also selects direct
+Open `/install.html`. The existing local browser Client also selects direct
 WebHID on a supported secure browser; explicit desktop and helper launches keep
 their original backends. The native transfer sequence, including preparation,
 has not been replaced by the alternative upstream sequence.

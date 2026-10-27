@@ -27,9 +27,10 @@ export function desktopFrameGeometry(){
 
 export function initializeDesktopChrome({runtime,document:doc=globalThis.document}={}){
   if(runtime?.kind!=='desktop')return null;
+  const macOS=runtime.platform==='macos';
   const native=runtime.window,root=doc?.documentElement,body=doc?.body,shell=doc?.querySelector?.('.app-shell');
   if(!root||!body||!shell||!native||['minimize','toggleMaximize','isMaximized','beginDrag','beginResize','close'].some(name=>typeof native[name]!=='function'))
-    throw new TypeError('The desktop window frame requires the native window interface and mounted Companion.');
+    throw new TypeError('The desktop window frame requires the native window interface and mounted Client.');
   if(body.querySelector('.desktop-window-chrome'))throw new Error('The desktop window frame is already mounted.');
   let disposed=false,maximized=false,unsubscribe=()=>{},stateRevision=0;
   const listeners=[],oldParent=shell.parentNode,oldSibling=shell.nextSibling;
@@ -42,7 +43,7 @@ export function initializeDesktopChrome({runtime,document:doc=globalThis.documen
   // canvas in HTML, where clipping BODY does not contain that background.
   const background=svgNode('svg',{id:'desktop-window-background',class:'desktop-window-background',viewBox:shape.viewBox,preserveAspectRatio:'none','aria-hidden':'true',focusable:'false'});
   const backgroundPath=svgNode('path',{class:'desktop-background-shape',d:shape.outline});background.append(backgroundPath);
-  const chrome=make('div','desktop-window-chrome');chrome.id='desktop-window-chrome';
+  const chrome=make('div',`desktop-window-chrome${macOS?' desktop-window-macos':''}`);chrome.id='desktop-window-chrome';
   const frame=svgNode('svg',{id:'desktop-frame',class:'desktop-window-frame',viewBox:shape.viewBox,preserveAspectRatio:'none','aria-hidden':'true',focusable:'false'});
   frame.append(svgNode('path',{class:'desktop-frame-outer',d:shape.outer}),
     svgNode('path',{class:'desktop-frame-side',d:shape.sides}),
@@ -56,13 +57,21 @@ export function initializeDesktopChrome({runtime,document:doc=globalThis.documen
   const status=make('span','desktop-window-status');status.setAttribute('role','status');status.setAttribute('aria-live','polite');
   const controls=make('div','desktop-window-controls');controls.setAttribute('role','group');controls.setAttribute('aria-label','Window controls');
   const icons={minimize:'M5 16h14',maximize:'M6 6h12v12H6Z',restore:'M8 6V4h12v12h-2M4 8h12v12H4Z',close:'M6 6l12 12M18 6 6 18'};
+  if(macOS){
+    icons.minimize='M5 12h14';
+    icons.maximize='M5 10V5h5M5 5l5 5M14 19h5v-5M19 19l-5-5';
+    icons.restore='M5 10h5V5M10 10 5 5M19 14h-5v5M14 14l5 5';
+  }
   const buttons=new Map();
-  for(const[action,label]of[['minimize','Minimize window'],['maximize','Maximize window'],['close','Close THY666']]){
+  const actions=macOS?['close','minimize','maximize']:['minimize','maximize','close'];
+  const labels={close:'Close THY666',minimize:'Minimize window',maximize:'Maximize window'};
+  for(const action of actions){
+    const label=labels[action];
     const button=make('button',`desktop-window-button desktop-window-${action}`);button.type='button';button.dataset.windowAction=action;
     button.setAttribute('aria-label',label);button.title=label;
     const icon=svgNode('svg',{viewBox:'0 0 24 24','aria-hidden':'true',focusable:'false'}),path=svgNode('path',{d:icons[action]});icon.append(path);button.append(icon);buttons.set(action,{button,path});controls.append(button);
   }
-  titlebar.append(identity,status,controls);chrome.append(titlebar);
+  titlebar.append(...(macOS?[controls,status,identity]:[identity,status,controls]));chrome.append(titlebar);
   const handles=[],resizeHandles=make('div','desktop-resize-handles');resizeHandles.id='desktop-resize-handles';chrome.append(resizeHandles);
   for(const direction of DIRECTIONS){
     const handle=make('div',`desktop-resize-handle desktop-resize-${direction}`);handle.dataset.desktopResize=direction;handle.setAttribute('aria-hidden','true');handles.push(handle);resizeHandles.append(handle);

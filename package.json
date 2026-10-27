@@ -6,18 +6,18 @@
   "type": "module",
   "description": "Open source TheoryBoard THY333 firmware and tools",
   "scripts": {
-    "setup": "python tools/setup_core_tools.py",
-    "build": "python tools/build_core.py --test",
-    "build:core": "python tools/build_core.py --test --core-only",
-    "dev": "python tools/serve_workbench.py",
+    "setup": "node tools/run_python.mjs tools/setup_core_tools.py",
+    "build": "node tools/run_python.mjs tools/build_core.py --test",
+    "build:core": "node tools/run_python.mjs tools/build_core.py --test --core-only",
+    "dev": "node tools/run_python.mjs tools/serve_workbench.py",
     "test": "node --test tests/web/*.test.mjs",
-    "build:diagnostic": "python tools/build_diagnostic.py --test",
-    "build:updater": "python tools/build_updater.py --test",
-    "test:updater": "python tools/build_updater.py --test-only --offline",
-    "build:desktop": "python tools/build_desktop.py --test",
-    "test:desktop": "python tools/build_desktop.py --test-only --offline",
-    "build:site": "python tools/build_site.py",
-    "build:browser-updater": "python tools/build_browser_updater.py"
+    "build:diagnostic": "node tools/run_python.mjs tools/build_diagnostic.py --test",
+    "build:updater": "node tools/run_python.mjs tools/build_updater.py --test",
+    "test:updater": "node tools/run_python.mjs tools/build_updater.py --test-only --offline",
+    "build:desktop": "node tools/run_python.mjs tools/build_desktop.py --test",
+    "test:desktop": "node tools/run_python.mjs tools/build_desktop.py --test-only --offline",
+    "build:site": "node tools/run_python.mjs tools/build_site.py",
+    "build:browser-updater": "node tools/run_python.mjs tools/build_browser_updater.py"
   },
   "engines": { "node": ">=20" }
 }

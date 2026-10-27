@@ -514,3 +514,7 @@ body.companion-app:is(.device-connected,.cockpit-preview) { --signal-live: .9; }
   .companion-app .updater-body .backup-actions > button { max-width:100%;white-space:normal; }
 }
 
+
+/* Match the public presentation typography while retaining light-mode contrast. */
+.companion-app :is(h2,h3,h4){font-family:var(--font-accent);color:var(--ui-ink);font-weight:500}
+.companion-app .companion-main-nav button{color:var(--ui-ink);text-transform:none}

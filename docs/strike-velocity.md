@@ -65,7 +65,7 @@ activation is flagged and retains that pad's saved response. The
 [calibration guide](sensitivity-calibration.md) explains the controls and limits.
 
 C/WebAssembly development utilities and regression tests exercise timed synthetic
-ADC samples, curves and scoped profiles. The connected Companion edits supported
+ADC samples, curves and scoped profiles. The connected Client edits supported
 device settings and shows telemetry; playing and calibration happen on the
 controller. Pointer clicks do not measure a device strike, and browser scheduling
 is separate from hardware timing.

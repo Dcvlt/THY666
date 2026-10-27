@@ -66,7 +66,7 @@ test('desktop updater uses direct IPC, preserves exact bytes and never retries f
 });
 
 test('only a definite native updater rejection takes the preflight rejection path',async()=>{
-  const helper=createDesktopUpdater({invoke:async command=>{if(command==='updater_status')return{protocol:PROTOCOL};throw{kind:'rejected',message:'Companion owns USB'};}});
+  const helper=createDesktopUpdater({invoke:async command=>{if(command==='updater_status')return{protocol:PROTOCOL};throw{kind:'rejected',message:'Client owns USB'};}});
   await helper.connect();await assert.rejects(()=>helper.install({}),error=>error.helperRejected===true&&/owns USB/.test(error.message));
   assert.equal(helper.busy,false);
 });

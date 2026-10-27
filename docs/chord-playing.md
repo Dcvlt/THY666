@@ -180,6 +180,6 @@ No heap is introduced. Review fresh build output against the
 
 Named song/profile collections, arbitrary custom pad assignment engines and
 external-NOR allocation remain separate future work. Full applied-state backup
-is described in [Companion](companion-and-backup.md). The current custom library
+is described in [Client](companion-and-backup.md). The current custom library
 is bounded and saved with settings; it does not depend on named collections to
 survive reboot.

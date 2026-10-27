@@ -1,4 +1,5 @@
 import { createCore } from './core.js';
+import { SCALE_CATALOG } from './generated/menu-schema.js';
 import { OLEDPreview } from './oled.js';
 import { ROOT_KEYS, MODE_KEYS } from './controller.js';
 import { initializeFirmwareStudio } from './firmware.js';
@@ -1143,8 +1144,68 @@ function initializeApprovedStudio() {
     onActivate: () => {} });
 }
 
+// The connected client needs public menu metadata, never the archival pad corpus.
+// The separately packaged local workbench retains its embedded-data startup.
+async function initializeConnectedCompanion() {
+  const loaded = await Promise.all([createCore(), desktopBindingsPromise]);
+  engine = loaded[0];
+  const bindings = loaded[1];
+  engine.state.navigationAnimations(false);
+  engine.state.boot.skip();
+  for (let index = 0; index < 96; index++) {
+    const pad = document.createElement('button');
+    pad.type = 'button'; pad.className = 'pad'; pad.dataset.pad = index;
+    pad.dataset.testid = `pad-${index}`;
+    pad.setAttribute('aria-label', `${index < 48 ? 'Left' : 'Right'} pad ${index % 48 + 1}`);
+    pad.setAttribute('aria-description', 'Inspect this pad on the connected board.');
+    pad.style.gridColumn = String(Math.floor((index % 48) / 4) + 1);
+    pad.style.gridRow = String(index % 4 + 1);
+    $(index < 48 ? '#chord-pads' : '#melody-pads').append(pad);
+  }
+  const context = () => ({ selectedPad: 0, scaleName: '', voices: [], held: 0 });
+  firmwareStudio = initializeFirmwareStudio({ engine, getContext: context });
+  engineStudio = initializeEngineStudio({ engine, groups: SCALE_CATALOG, getContext: context,
+    onChange: () => {}, onActivate: () => {} });
+  rhythmLab = initializeRhythmLab({ engine });
+  arpLab = initializeArpLab({ engine });
+  sequencerLab = initializeSequencerLab({ engine });
+  mpeLab = initializeMpeLab({ engine });
+  libraryLab = initializeLibraryLab($('#library-lab'), engine);
+  companionShell = initializeCompanionShell({ engine, studio: engineStudio, groups: SCALE_CATALOG,
+    ...(bindings || {}),
+    applyPayload: async payload => {
+      if (!engine.settings.apply(payload)) throw new Error('The device configuration could not be decoded.');
+      engine.state.boot.skip();
+      engineStudio.refresh(); libraryLab.refresh(); sequencerLab.refresh();
+    } });
+  if (bindings) {
+    document.title = 'THY666';
+    const runtime = bindings.runtime;
+    const activity = active => { document.documentElement.dataset.hostActive = String(active); companionShell.setHostActive(active); };
+    activity(runtime.active);
+    const unsubscribe = await runtime.subscribeActivity(activity);
+    const notice = document.createElement('p'); notice.className = 'desktop-simulation-banner';
+    notice.hidden = true; notice.setAttribute('role', 'alert');
+    document.querySelector('.companion-topbar').after(notice);
+    const unsubscribeNotices = await runtime.subscribeNotices(message => { notice.textContent = message; notice.hidden = false; });
+    if (runtime.simulation) {
+      const badge = document.createElement('p'); badge.className = 'desktop-simulation-banner';
+      badge.textContent = 'SIMULATION · No physical USB access. Physical device health is not verified.';
+      notice.before(badge);
+    }
+    window.addEventListener('pagehide', () => { unsubscribe(); unsubscribeNotices(); companionShell.destroy(); }, { once: true });
+  }
+  window.thyWorkbench = Object.freeze({ engine, menuDesign: engineStudio, companion: companionShell, desktop: bindings?.runtime || null });
+  document.documentElement.dataset.ready = 'true';
+  startup.ready();
+}
+
 async function initialize() {
   try {
+    if (!document.getElementById('thy-runtime-data')) {
+      await initializeConnectedCompanion();
+      return;
+    }
     const loaded = await Promise.all([
       createCore(),
       loadRuntimeData(),

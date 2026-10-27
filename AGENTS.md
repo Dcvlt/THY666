@@ -1,6 +1,6 @@
 # Working on THY666
 
-THY666 is an independent open source firmware and Companion for the TheoryBoard THY333.
+THY666 is an independent open source firmware and Client for the TheoryBoard THY333.
 This project is developed through human and AI cooperation. Read `README.md`,
 `CONTRIBUTING.md` and the relevant maintained guide before making changes.
 
@@ -17,7 +17,7 @@ This project is developed through human and AI cooperation. Read `README.md`,
 - `desktop/`: Tauri host using the same updater library and scoped native CDC
   access. Keep OS handles, USB ownership and update lifetime in Rust; the shared
   client retains protocol parsing, checksums and serialized transactions.
-- `web/`: connected Companion and read-only documentation. Project C/device
+- `web/`: connected Client and read-only documentation. Project C/device
   state; do not introduce a second musical engine or competing scheduler in JS.
 - `site/`: public overview, read-only guide and explicit browser installer.
   `tools/build_site.py` stages allowlisted assets, the same `web/help*` source and
@@ -27,7 +27,7 @@ This project is developed through human and AI cooperation. Read `README.md`,
 - `tools/`: verified builds, imports, packaging, capture and inspection.
 - `tests/`: C, Python, PowerShell and browser regressions. Keep fixtures synthetic.
 
-The Companion requires explicit connection. Its disconnected surface is an
+The Client requires explicit connection. Its disconnected surface is an
 inactive wireframe; it must not audition notes or silently open a device.
 Connected large-pad clicks inspect only. Small controls and parameter actions
 can control the board. Documentation examples never control hardware.
@@ -61,8 +61,9 @@ python tools/build_instrument.py --output-dir build/instrument-local-01 --test
 python tools/build_updater.py --test
 ```
 
-Use a fresh target build directory. Full Companion data and instrument builds
-require an authorized local lossless chord archive; core-only tests do not.
+Use a fresh target build directory. The connected Client builds from public source and core assets. Instrument
+builds and optional archival workbench packaging require an authorized local
+lossless chord archive; core-only tests and desktop builds do not.
 See `docs/development.md`. Preserve musical notes, octaves, layout holes, colors
 and source integrity rather than silently correcting archival data.
 
@@ -109,7 +110,7 @@ Full-state restore qualification, interrupted-update recovery and automatic
 rollback remain distinct unfinished work. Do not claim a raw full-device backup
 from a settings export or firmware package.
 
-Read `docs/updater.md` for the Rust CLI/helper and Companion Update workflow.
+Read `docs/updater.md` for the Rust CLI/helper and Client Update workflow.
 Inspection, simulation and a helper startup do not authorize installation.
 Keep discovery, target selection and installation explicit; respect application
 and updater USB ownership. Bootloader preparation can alter external contents
@@ -120,7 +121,7 @@ an installation automatically or promise configuration preservation.
 ## Documentation and presentation
 
 Maintain `README.md` with material feature, status, workflow and setup changes.
-Update relevant `docs/` and Companion help at the same time. Clearly distinguish
+Update relevant `docs/` and Client help at the same time. Clearly distinguish
 implemented, host-tested, device-tested and planned functionality. Avoid stale
 per-build IDs and test totals in the README.
 

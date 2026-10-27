@@ -136,8 +136,8 @@ def quickstart(platform: str, version: str, releases: bool) -> bytes:
     text = f"""THY666 updater {version} - {platform}
 
 1. Extract this entire ZIP into one folder. Keep the files together.
-2. Keep the local Companion server running at http://127.0.0.1:3330/.
-3. Open {executable}. It starts the local helper and opens the Companion's
+2. Keep the local Client server running at http://127.0.0.1:3330/.
+3. Open {executable}. It starts the local helper and opens the Client's
    Update tab. Opening it does not detect, open or update a board automatically.
 4. Follow the Update tab: detect the board, save configuration while the
    application can connect, choose firmware, then confirm installation.

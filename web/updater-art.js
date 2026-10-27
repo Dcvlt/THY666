@@ -128,7 +128,7 @@ const iconPaths = {
   file: ['M6 2h8l5 5v15H6Z', 'M14 2v6h5M9 12h7M9 16h7M9 19h4'],
   check: ['M4 12l5 5L20 6'],
   shield: ['M12 2l8 3v6c0 5-3 8-8 11-5-3-8-6-8-11V5Z', 'M12 7v6m0 4v.1'],
-  warning: ['M12 3 2 21h20Z', 'M12 9v5m0 3v.1'],
+  warning: ['M11 3h2l9 16-1 2H3l-1-2Z', 'M11 9h2l-.3 5h-1.4ZM11.3 17h1.4v1.4h-1.4Z'],
   arrow: ['M4 12h15m-6-6 6 6-6 6'],
   download: ['M4 16v5h16v-5', 'M12 3v12m-5-5 5 5 5-5'],
   close: ['m6 6 12 12M18 6 6 18'],

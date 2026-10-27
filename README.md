@@ -5,19 +5,19 @@
 # THY666
 
 Independent open-source firmware for the **Irijule TheoryBoard THY333**, with a
-shared C musical engine, STM32 hardware drivers and a Companion for browser and desktop.
+shared C musical engine, STM32 hardware drivers and a Client for browser and desktop.
 The aim is a responsive, expressive instrument with clear controls and code
 that the community can understand and maintain.
 
 **Status: hardware alpha.** Core playing, MIDI output, lighting, menus, settings,
-Arps, sequencing and Companion synchronization have been exercised on a device.
+Arps, sequencing and Client synchronization have been exercised on a device.
 Host tests cover additional behavior; implementation and device qualification
 are tracked separately.
 
 ## AI disclosure
 
 **THY666 is a human–AI collaboration.** Much of the firmware implementation,
-protocol analysis, test infrastructure, Companion and documentation has been
+protocol analysis, test infrastructure, Client and documentation has been
 developed with **OpenAI Codex** working directly in the repository. The human
 maintainer defines the musical goals and controls, makes product decisions,
 tests on the physical board and supplies the feedback that drives revisions.
@@ -42,21 +42,21 @@ explanation or a passing host test is separate from a verified hardware result.
 | MIDI | DIN OUT and USB MIDI, Whole Board / Split Sides / Six Zones routing, channels and destinations with explicit note ownership and clean releases. |
 | Display and lights | Shared 128 × 64 C renderer, configurable play views, chord/note names, note colors, held feedback, center-control lighting and grouped menus. |
 | Storage | Versioned settings, calibration overrides, musical library and current song with idle autosave; storage usage and current-state backup/restore tools. |
-| Companion | Explicit device connection, live Web/OLED screens, pad inspection, navigation and parameters, telemetry, backups, light/dark color themes and illustrated searchable documentation. |
-| Desktop | Tauri shell with native USB serial for Companion and the integrated Rust HID updater. Windows connection, screen/control synchronization, live pad feedback, DIN coexistence, backup export and restoration of the tested configuration have passed device checks. |
-| Updater | Rust executable and four-step wizard: Detect, Backup, Update and Verification. Same-build THY666 installations passed through native Windows and direct browser WebHID, including application verification. The browser wizard also passed explicit configuration restoration with durable readback and complete payload comparison. The earlier native restoration survived cold reboot. Original v5 through Rust and macOS/Linux operation remain unqualified. |
+| Client | Explicit device connection, live Web/OLED screens, pad inspection, navigation and parameters, telemetry, backups, light/dark color themes and illustrated searchable documentation. |
+| Desktop | Tauri shell with native USB serial for Client and the integrated Rust HID updater. Windows connection, screen/control synchronization, live pad feedback, DIN coexistence, backup export and restoration of the tested configuration have passed device checks. |
+| Updater | Rust executable and three-step wizard: Backup, Update and Verification. Same-build THY666 installations passed through native Windows and direct browser WebHID, including application verification. The browser wizard also passed explicit configuration restoration with durable readback and complete payload comparison. The earlier native restoration survived cold reboot. Original v5 through Rust and macOS/Linux operation remain unqualified. |
 
-The app opens **Companion → Board** by default. Its header tabs are **Update**,
-**Companion** and **Documentation**, in that order. Board shows an **inactive
+The app opens **Client → Board** by default. Its header tabs are **Update**,
+**Client** and **Documentation**, in that order. Board shows an **inactive
 wireframe until a board connects**, with an **install the firmware on your device**
 link to Update beneath it. Connected large-pad clicks inspect; physical playing
 stays on the instrument. The Web and OLED views follow the same device content.
 Documentation includes examples from the actual C renderer, board-action diagrams
 and option tables.
 
-The project also includes a **GitHub Pages site** with an overview, installation
-guidance and the same searchable illustrated guide as the Companion. Build it
-with `npm run build:site`; it needs no board, firmware or private musical archive.
+The project also includes a **GitHub Pages site** with an overview, installation, browser Client
+and the same searchable illustrated guide. Its tabs are Install, Client and User guide.
+Build the public core and browser updater first, then run `npm run build:site`; it needs no board, firmware or private musical archive.
 The site and publishing workflow are prepared locally; public hosting and release
 downloads are not live yet. See [Project site](docs/project-site.md). A direct
 WebHID installer has [passed a Windows device test](docs/browser-installation.md),
@@ -64,7 +64,7 @@ using the same Rust package checks and protocol as desktop. It supports explicit
 configuration backup, application verification and separately confirmed restoration.
 The tested browser flow passed transfer, application checks and integrated
 restoration of the captured configuration. Broader material and platform coverage
-remain unqualified; the desktop app retains its native updater and live Companion.
+remain unqualified; the desktop app retains its native updater and live Client.
 
 ## Current limits
 
@@ -101,7 +101,8 @@ remain unqualified; the desktop app retains its native updater and live Companio
 ## Build and run
 
 Use **Python 3.10+** and **Node.js 20+**. Commands run from the repository root.
-No npm dependency installation is required.
+No npm dependency installation is required. npm scripts use `python3` on macOS/Linux
+and `python` on Windows.
 
 ### Portable core
 
@@ -115,16 +116,23 @@ regressions. It requires no device, proprietary firmware or musical archive.
 
 ### Desktop app
 
-The desktop app bundles Companion, Update and Documentation in one window. It
+The desktop app bundles Client, Update and Documentation in one window. It
 uses native USB access and needs no separately started Python server or updater
 helper. Opening it does not connect to or update a board automatically.
 
-After preparing the full Companion inputs below, build with **Python 3.11+**,
+Build from a fresh clone with **Python 3.11+**,
 Rust and the platform C++/WebView prerequisites:
 
 ```sh
-python tools/build_desktop.py --test
+python3 tools/setup_core_tools.py
+python3 tools/build_core.py --test --core-only
+python3 tools/build_desktop.py --test
 ```
+
+On macOS, open `build/desktop-target/release/THY666.app` after building.
+Its macOS titlebar uses compact circular controls on the left and the project
+identity on the right. This is an unsigned local development app; USB testing and distribution
+qualification remain pending.
 
 The Windows executable is under `build/desktop-target/release/`; the portable
 ZIP is under `build/releases/`. Keep its optional `resources/` folder and license
@@ -132,10 +140,12 @@ notices together. Windows requires WebView2 and any C runtime imports recorded
 by the build. The initial package is unsigned. See [Desktop](docs/desktop.md)
 for build, simulation, runtime requirements and portability status.
 
-### Browser Companion and shared data
+### Browser Client and shared data
 
-The full Companion data and STM32 build need an **authorized local lossless chord
-archive**, supplied separately. The musical corpus and vendor firmware are not
+The connected Client needs no private chord archive: it uses public menu metadata
+and reads musical content from the board. Build it with `npm run build:core`, then
+`npm run dev`. The optional archival workbench and STM32 build need an
+**authorized local lossless chord archive**, supplied separately. The musical corpus and vendor firmware are not
 redistributed with this source. Import a raw musical dump, or configure an
 existing lossless archive in `.env`:
 
@@ -154,7 +164,7 @@ connection. Supported secure browsers use direct WebHID with the compiled Rust
 policy; an explicit local-helper launch keeps its optional helper route.
 The desktop app calls the same updater library in process. Its canonical route
 is `#update`; older `#client/update` links still open it. Opening the app without
-a route continues to show Companion Board.
+a route continues to show Client Board.
 
 Building the STM32 target is a separate offline command; it does not flash:
 
@@ -179,12 +189,16 @@ without arguments to start the helper and open Update. The temporary connection
 token is consumed from the URL fragment and removed. Manual connection remains
 available in advanced details; this is not yet a self-contained public installer.
 
-The wizard guides **Detect → Backup → Update → Verification**. A connected THY666
+The wizard guides **Backup → Update → Verification**. Its shared web/desktop
+layout includes a disconnected **Development preview** for synthetic flow and
+layout review without hardware. A connected THY666
 application can supply its build and configuration backup; the update-mode HID
 interface alone identifies compatible hardware, not the installed firmware.
 Backup covers settings, calibration, library and current song, not raw flash.
 THY666 requires explicit application reconnection and passing read-only checks
-before **Update successful**. Original v5 reports **Update finished** after the
+before **Firmware verified** (white logo with a soft glow). A successful,
+readback-verified settings restoration shows **Settings Restored** with a green
+logo and HUD ripples. Original v5 reports **Update finished** after the
 checked transfer without claiming application health.
 
 Prepare the optional local firmware choices from authorized packages:
@@ -217,7 +231,7 @@ See [Updater](docs/updater.md) for setup, simulation and qualification limits.
 
 Copy [`.env.example`](.env.example) to **`.env`** for first-time setup, then fill
 only the values needed for your workflow. Preserve any existing `.env`; it is
-private and ignored by Git. No API key is required by the core or Companion.
+private and ignored by Git. No API key is required by the core or Client.
 
 Priority is **explicit CLI argument → nonempty process environment → `.env` →
 tool default**. Relative paths start at the repository root. Quoted values are
@@ -226,7 +240,7 @@ is performed.
 
 | Key | Purpose / when required |
 | --- | --- |
-| `THY666_CHORD_ARCHIVE` | Lossless musical JSON; defaults to `.tools/inputs/chords.lossless.json`. Needed for the full Companion data and instrument build. |
+| `THY666_CHORD_ARCHIVE` | Lossless musical JSON; defaults to `.tools/inputs/chords.lossless.json`. Needed only for the archival workbench and instrument build. |
 | `THY666_CHORD_DUMP` | Optional raw musical input for `chord_dump.py import` when no input argument is supplied. |
 | `THY666_ZIG_EXECUTABLE` | Optional existing Zig executable. Set together with `THY666_ZIG_SHA256`; otherwise setup's local toolchain manifest is used. |
 | `THY666_ZIG_SHA256` | SHA-256 of that executable, verified before compiler use. |
@@ -257,7 +271,7 @@ python -m unittest discover -s tests -p test_public_privacy.py -v
 
 ## Documentation
 
-The Companion's **Documentation** tab is the illustrated user guide. Maintained
+The Client's **Documentation** tab is the illustrated user guide. Maintained
 source guides cover the implementation and workflows:
 
 | Topic | Guide |
@@ -268,7 +282,7 @@ source guides cover the implementation and workflows:
 | Expression | [Strike velocity](docs/strike-velocity.md), [Sensitivity/calibration](docs/sensitivity-calibration.md), [MPE/Aftertouch](docs/mpe-expression.md) |
 | Rhythm | [Arps](docs/arp-engine.md), [Clock/ownership](docs/rhythm-foundation.md), [Sequencer](docs/sequencer-interface.md) |
 | Display | [Views](docs/modes-and-views.md), [Display scheduling](docs/display.md) |
-| Companion and storage | [Companion/backups](docs/companion-and-backup.md), [Settings](docs/settings-persistence.md) |
+| Client and storage | [Client/backups](docs/companion-and-backup.md), [Settings](docs/settings-persistence.md) |
 | Device builds and updates | [Installation](docs/installation.md), [Updater](docs/updater.md), [Resource budget](docs/firmware-budget.md) |
 | Branding | [Banner, icon and source assets](docs/assets/README.md) |
 
@@ -280,7 +294,7 @@ in the same change. Refresh the generated documentation examples when screens
 change. Keep implemented, host-tested, device-tested and planned work distinct.
 
 `core/` contains the portable engine/state/renderer, `firmware/` the STM32
-adapters, `updater/` the shared Rust updater policy and native host, `web/` the Companion and guide,
+adapters, `updater/` the shared Rust updater policy and native host, `web/` the Client and guide,
 `tools/` the build/import/debugging utilities, and `tests/` the regressions.
 Generated output, vendor packages,
 private data and working/research archives are excluded from Git.
@@ -291,3 +305,24 @@ Original project code is licensed under GPL-3.0-or-later. Third-party dependenci
 supplied data/assets retain their own terms; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). THY666 is independent of Irijule
 and is not an official manufacturer release.
+
+### Client interface and updater preview
+
+The browser and desktop share **Update / Client / Documentation**. Desktop
+startup uses the saved light/dark appearance. The UI uses flat fills, angular
+frames and beveled controls; motion respects reduced-motion preferences.
+
+A saved and checked backup advances directly to Update. Choose firmware, detect
+and select the board, then confirm the power/USB warning before applying once.
+The custom-file control uses a styled Browse button with the selected filename.
+Original firmware ends after transfer without offering THY666 verification.
+
+While disconnected and idle, **Development preview** offers the complete visual
+flow: backup animation, firmware choice, synthetic board detection/selection,
+Apply confirmation, transfer, verification and restoration outcomes. File preview
+uses the filename only and never reads firmware bytes or opens hardware. These
+UI checks do not extend physical-device qualification.
+
+The presentation page includes a keyboard-accessible carousel of shared C-rendered
+view examples, a disconnected Client screenshot and a qualification roadmap.
+Future roadmap versions are proposed targets, not release commitments.

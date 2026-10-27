@@ -5,6 +5,7 @@ on:
     branches: [main, master]
     paths:
       - "site/**"
+      - "web/**"
       - "core/**"
       - "host/wasm_bridge.c"
       - "web/help*"
@@ -33,6 +34,7 @@ on:
   pull_request:
     paths:
       - "site/**"
+      - "web/**"
       - "core/**"
       - "host/wasm_bridge.c"
       - "web/help*"
@@ -81,14 +83,14 @@ jobs:
         run: rustup toolchain install 1.98.1 --profile minimal --target wasm32-unknown-unknown
       - name: Build the shared browser updater policy without native USB
         run: python3 tools/build_browser_updater.py
-      - name: Verify the bounded public site
-        run: python3 -m unittest discover -s tests -p test_site.py -v
       - name: Prepare the pinned compiler for documentation verification
         run: python3 tools/setup_core_tools.py
       - name: Build only the portable renderer, without private musical data
         run: python3 tools/build_core.py --wasm-only --core-only
+      - name: Verify the bounded public site
+        run: python3 -m unittest discover -s tests -p test_site.py -v
       - name: Verify shared guide, screenshots and site figures
-        run: node --test tests/web/help.test.mjs tests/web/site.test.mjs tests/web/browser-*.test.mjs tests/web/updater-*.test.mjs
+        run: node --test tests/web/help.test.mjs tests/web/site.test.mjs tests/web/site-carousel.test.mjs tests/web/browser-*.test.mjs tests/web/updater-*.test.mjs
       - name: Build the project site and shared guide
         run: python3 tools/build_site.py
       - name: Upload only the public site

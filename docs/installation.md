@@ -2,7 +2,7 @@
 
 The Rust updater uses the existing held-pad bootloader with supported THY666
 `.333` packages and one exact supported Original v5 package profile. Its local
-**Update** wizard has four steps: **Detect → Backup → Update → Verification**.
+**Update** wizard has three steps: **Backup → Update → Verification**.
 Same-build THY666 installations through native Windows and direct browser WebHID
 have passed physical transfer and application verification. The browser wizard
 also passed explicit configuration restoration with durable readback and complete
@@ -14,7 +14,7 @@ exercised installation route. Building or inspecting a package never installs it
 ## Before an update
 
 1. If THY666 is running, save a configuration backup in the wizard's **Backup**
-   step or Companion → Backups. Save any separate song export you need.
+   step or Client → Backups. Save any separate song export you need.
    Keep the downloaded files outside generated build output.
 2. Keep a known working firmware package and the official updater available.
 3. Close the official updater before recording USB traffic. Use a fresh capture directory
@@ -47,12 +47,12 @@ the application's CDC connection.
 ## Rust updater and the Update tab
 
 See [Updater](updater.md) for building the executable, CLI commands and supported
-package restrictions. **Update** is the first header tab, before Companion and
+package restrictions. **Update** is the first header tab, before Client and
 Documentation, and remains available without a running application connection.
-The app still opens Companion Board by default. Its disconnected wireframe
+The app still opens Client Board by default. Its disconnected wireframe
 includes an **install the firmware on your device** link to Update. The canonical
 Update route is `#update`; older `#client/update` links remain supported. Update
-is outside the Companion sidebar.
+is outside the Client sidebar.
 
 The project site's [browser installer](browser-installation.md) uses direct
 WebHID without a helper download. For the optional local-helper route, start
@@ -64,10 +64,9 @@ connection is available in advanced details.
 
 | Step | What to do |
 | --- | --- |
-| Detect | Explicitly connect a running THY666 application to read its build and UID, or detect the compatible update-mode HID interface. Bootloader descriptors alone cannot identify the installed firmware version. |
 | Backup | Save applied THY666 settings, calibration, library and current song. If unavailable, acknowledge that choice explicitly; it creates no recovery copy. |
 | Update | Select local Latest THY666, exact supported Original v5 or a validated custom package. Custom accepts supported plaintext THY666 with a bound full build, or that exact approved Original v5 file; arbitrary encrypted vendor files are rejected. Inspect it, close other updaters, enter the update mode and review the target before Apply. Install once and keep USB/helper connected. |
-| Verification | For THY666, explicitly reconnect, match full build and target UID, then pass read-only status, I/O, settings and display checks. If configuration restoration was requested, separately confirm it and pass durable readback and complete payload comparison, or explicitly keep current settings. Only then show green **Update successful** and continue to Companion. Original v5 shows neutral **Update finished** after CRC-checked transfer, without application-health verification. |
+| Verification | For THY666, explicitly reconnect, match full build and target UID, then pass read-only status, I/O, settings and display checks. If configuration restoration was requested, separately confirm it and pass durable readback and complete payload comparison, or explicitly keep current settings. Firmware checks show white **Firmware verified**. A verified restoration shows green **Settings Restored**; keeping current settings retains the white firmware result. Continue to Client when the requested restoration is resolved. Original v5 shows neutral **Update finished** after CRC-checked transfer, without application-health verification. |
 
 A running THY666 application can be detected and backed up before entering the
 update mode to apply firmware. A board already in the update mode can proceed with the

@@ -66,7 +66,7 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
   function accept(line){
     line=line.trim();if(!line||!pending)return;
     if(line.startsWith('ERR ')||line.startsWith('COMPANION/1 ERR ')){rejectPending(new Error(line==='ERR unknown-command'?
-      'This firmware does not support the companion. Install the prepared build to connect.':line));return;}
+      'This firmware does not support the client. Install the prepared build to connect.':line));return;}
     if(!pending.pattern.test(line))return;
     const request=pending;pending=null;clearTimeout(request.timer);request.resolve(line);
   }
@@ -88,7 +88,7 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
       if(pending!==request)return;
       if(!Array.isArray(lines)||lines.length!==commands.length||lines.some(line=>typeof line!=='string'||line.length>4096||/[\r\n]/.test(line)))throw new Error('Invalid native device response.');
       for(const line of lines){
-        if(line.startsWith('ERR ')||line.startsWith('COMPANION/1 ERR ')){rejectPending(new Error(line==='ERR unknown-command'?'This firmware does not support the companion. Install the prepared build to connect.':line));return;}
+        if(line.startsWith('ERR ')||line.startsWith('COMPANION/1 ERR ')){rejectPending(new Error(line==='ERR unknown-command'?'This firmware does not support the client. Install the prepared build to connect.':line));return;}
         if(!pattern.test(line))throw new Error('Unexpected native device response.');
       }
       pending=null;clearTimeout(request.timer);request.resolve(lines);
@@ -188,12 +188,12 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
         if(!port.exchange){reader=port.readable.getReader();writer=port.writable.getWriter();pump=readLoop();}
         caps=deviceFields(await exchange('companion caps',/^COMPANION\/1 CAPS /),'COMPANION/1 CAPS');
         if(!/^[0-9a-f]{24}$/i.test(caps.uid||'')||!/^[0-9a-f]{16}$/i.test(caps.build||'')||!/^[0-9a-f]{64}$/i.test(caps.schema||''))
-          throw new Error('The selected device did not return a valid companion identity.');
+          throw new Error('The selected device did not return a valid client identity.');
         if(caps.role!=='instrument'||caps.backup!=='1'||caps.song!=='1'||caps.companion!=='1')
-          throw new Error('The selected firmware does not expose the required companion services.');
+          throw new Error('The selected firmware does not expose the required client services.');
         backupCaps=deviceFields(await exchange('backup caps',/^BACKUP version=/),'BACKUP');
         if(backupCaps.version!=='1'||backupCaps.uid?.toLowerCase()!==caps.uid.toLowerCase()||backupCaps.build!==caps.build||backupCaps.schema!==caps.schema)
-          throw new Error('The backup and companion identities disagree.');
+          throw new Error('The backup and client identities disagree.');
         // writable describes temporary staging ownership (for example a journal
         // save), while schema compatibility survives that work completing.
         state.connected=true;state.identity={...caps};state.compatible=!expectedSchema||caps.schema===expectedSchema;

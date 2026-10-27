@@ -25,14 +25,14 @@ Update `README.md` alongside every material feature, workflow, setup or
 qualification change. Keep implemented, host-tested, device-tested and planned
 work distinct. Do not describe a planned menu entry as a working engine.
 
-Update the relevant `docs/` guide and Companion help in the same change. When a
+Update the relevant `docs/` guide and Client help in the same change. When a
 screen changes, regenerate its synthetic example with
 `node tools/render_help_examples.mjs`, then run it with `--check` and the related
 help tests. Keep screenshots tied to the shared C renderer and label illustrative
 board diagrams clearly. Avoid volatile test totals and latest-build IDs in the
 README. Agents should start with [AGENTS.md](AGENTS.md).
 
-The [public site](docs/project-site.md) reuses Companion guidance; do not maintain
+The [public site](docs/project-site.md) reuses Client guidance; do not maintain
 a second manual there. Keep musical examples, expected results and current
 limits beside the relevant diagrams. Publishing and browser installation have
 separate implementation and qualification requirements.

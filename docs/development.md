@@ -33,7 +33,18 @@ Clang/WASM installation can substitute for Zig:
 python tools/build_core.py --cc clang --test --core-only
 ```
 
-## Companion musical data
+## Connected Client and optional archival data
+
+The normal browser and desktop Client start using the shared C core and public
+scale-name/menu metadata. They do not fetch or package `chords.runtime.json`.
+Run the portable core build above, then `npm run dev`, or build the desktop app.
+Pad notes, lights and screens come from the connected instrument. The private
+archive remains necessary only for instrument builds and the optional standalone
+archival workbench below. No replacement musical corpus is generated.
+
+On macOS, native regressions use the pinned Zig compiler with an explicit macOS 13
+deployment target; WebAssembly remains freestanding. This avoids unresolved libc
+symbols when Zig 0.14.1 detects a newer host OS.
 
 The public source omits the original musical corpus. Supply an authorized
 `THYMEMBK.bin` input explicitly and import it losslessly:
@@ -51,7 +62,7 @@ color IDs with a lossy pitch-class-only projection. See
 [Chord format](chord-data-format.md).
 
 The server binds to **http://127.0.0.1:3330/**, serves `web/`, and does not itself
-open a controller. Web Serial connection is explicit in the companion. Board stays an inactive
+open a controller. Web Serial connection is explicit in the client. Board stays an inactive
 wireframe until a device connects; Documentation and Update remain available
 without the application connection. Supported secure browsers can update through
 WebHID using the shared Rust policy; explicit local-helper launches remain available.
@@ -60,11 +71,11 @@ browser bundle when its generated inputs are present.
 
 The [desktop app](desktop.md) bundles this interface in Tauri and uses native CDC
 and HID access through Rust. It does not need the local server/helper at runtime.
-Desktop build tooling requires Python **3.11+** for TOML parsing. After preparing
-the full generated Companion inputs, run `python tools/build_desktop.py --test`.
+Desktop build tooling requires Python **3.11+** for TOML parsing. After building
+the portable core, run `python tools/build_desktop.py --test`.
 `--test-only` and `--check` use a labelled compile-only frontend fixture and
 cannot produce a usable release package. Their source-check CI matrix does not
-require the private musical corpus or publish a substitute release.
+require generated core assets or publish a substitute release.
 
 `npm test` runs browser/WASM tests. Some require full generated musical data;
 the native/core-only path remains usable without private inputs. Tests requiring
@@ -99,7 +110,7 @@ device installation use separate tools described in
 
 ## Rust updater
 
-The standalone updater and Companion helper live in `updater/`. Use **Rust
+The standalone updater and Client helper live in `updater/`. Use **Rust
 1.89+** and the platform C build tools required by its HID backend. Windows host
 validation currently uses Rust 1.98.1; the declared minimum and macOS/Linux
 runtime workflows have not been qualified.
@@ -117,9 +128,9 @@ without producing a release build.
 
 Run the executable's `inspect` and `simulate` commands for package review and
 synthetic transfer testing without USB. `serve` starts the loopback helper only
-when explicitly invoked; its allowed Companion origin must match the browser's
+when explicitly invoked; its allowed Client origin must match the browser's
 exact origin, including port. Enter its printed address and private session token
-in **Update**. Starting either the Companion or helper never starts an installation.
+in **Update**. Starting either the Client or helper never starts an installation.
 See [Updater](updater.md) for CLI examples, native prerequisites and API boundaries.
 
 In the desktop app, the updater library is called through scoped in-process

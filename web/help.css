@@ -1,4 +1,4 @@
-/* Readable documentation panels with angular Companion rules.
+/* Readable documentation panels with angular Client rules.
  * Decorative frames never clip article text or its font fallbacks. */
 .thy-help,.thy-help-overlay {
   --help-paper:var(--ui-paper,#000); --help-edge:var(--theme-edge,rgb(var(--theme-rgb,255 65 79) / .34));
@@ -208,3 +208,5 @@
     scroll-behavior:auto!important; transition:none!important; animation:none!important;
   }
 }
+
+.thy-help :is(h2,h3){font-family:var(--font-accent,Orbitron),system-ui,sans-serif;color:var(--help-ink)}

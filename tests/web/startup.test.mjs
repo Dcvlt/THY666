@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {runInNewContext} from 'node:vm';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {initializeStartup,STARTUP_DURATION_MS,STARTUP_REDUCED_MS} from '../../web/startup.js';
@@ -12,7 +13,7 @@ function fixture({reduced=false,elapsed=0,failed=false}={}){
   return {startup,root,shell,panel,status,retry,view,timers,cancelled,run(index){if(!cancelled.has(index))timers[index].run();}};
 }
 
-test('the parsed page has an early black guard and a bounded fallback before app.js',()=>{
+test('the parsed page has an early appearance guard and a bounded fallback before app.js',()=>{
   const html=readFileSync(new URL('../../web/index.html',import.meta.url),'utf8');
   assert.match(html,/<html[^>]+data-startup="pending"/);
   assert.ok(html.indexOf('startup-critical')<html.indexOf('./styles.css'));
@@ -53,4 +54,16 @@ test('failure is terminal, accessible and never reveals the legacy page',()=>{
 
 test('a timed-out entry cannot be hidden by late successful initialization',()=>{
   const f=fixture({failed:true});f.startup.ready();assert.equal(f.startup.phase,'failed');assert.equal(f.timers.length,0);assert.equal(f.shell.inert,true);
+});
+
+test('saved appearance is applied before splash styles and tolerates unavailable storage',()=>{
+  const html=readFileSync(new URL('../../web/index.html',import.meta.url),'utf8');
+  const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  for(const saved of ['light','dark',null,'invalid']){
+    const document={documentElement:{dataset:{}}};
+    runInNewContext(script,{document,localStorage:{getItem:()=>saved}});
+    assert.equal(document.documentElement.dataset.appearance,saved==='light'?'light':'dark');
+  }
+  assert.doesNotThrow(()=>runInNewContext(script,{document:{documentElement:{dataset:{}}},localStorage:{getItem(){throw Error('Unavailable');}}}));
+  assert.ok(html.indexOf('localStorage.getItem')<html.indexOf('startup-critical'));
 });

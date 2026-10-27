@@ -1,6 +1,6 @@
 # THY666 desktop
 
-The desktop app packages the existing Companion, documentation and Update wizard
+The desktop app packages the existing Client, documentation and Update wizard
 in a Tauri shell. Rust owns both USB paths: CDC serial for the running THY666
 application and HID for the existing update-mode bootloader. The updater is the
 same Rust library used by the CLI; the interface does not contain another
@@ -19,13 +19,19 @@ qualified. Windows also requires the Microsoft Edge WebView2 runtime. If the
 release import report lists Visual C++ runtime DLLs, Microsoft's matching
 redistributable is a runtime prerequisite.
 
-Prepare the ordinary full Companion build first, following [Development](development.md).
-It still requires an authorized local lossless musical archive. The desktop
-wrapper does not replace or silently manufacture that input. Then run:
+The connected client builds from public source without the private chord archive.
+Its scale names and menu schema are public metadata; pad notes, lights and screen
+content come from the explicitly connected board. From a fresh clone, run:
 
 ```sh
-python tools/build_desktop.py --test
+python3 tools/setup_core_tools.py
+python3 tools/build_core.py --test --core-only
+python3 tools/build_desktop.py --test
 ```
+
+Use `python` in place of `python3` on Windows if that is the installed command.
+Rust/Cargo must be on PATH; after installing rustup on macOS, run
+`source "$HOME/.cargo/env"` in the build shell.
 
 The first build downloads the locked Cargo dependencies. Add **`--offline`**
 after they are cached. The wrapper uses `.tools/cargo`, workspace temporary
@@ -43,7 +49,7 @@ The build never launches the application or opens USB.
 
 Extract the entire ZIP before opening `thy666-desktop.exe`. The packaged app
 needs no Python server, browser helper process, session token or manually
-started localhost service. Update and Companion stay in the same window.
+started localhost service. Update and Client stay in the same window.
 This portable Windows build is unsigned; installer/signing work remains a
 distribution milestone.
 
@@ -69,7 +75,7 @@ python tools/build_desktop.py --check --offline
 ```
 
 `--test-only` and `--check` stage a clearly labelled minimal frontend fixture
-instead of requiring the private musical corpus. They never produce a usable
+instead of requiring the generated core assets. They never produce a usable
 release ZIP. Run a normal full build afterward to restore the actual interface.
 The source-check CI matrix follows this route and does not upload pretend
 releases made from that fixture.
@@ -121,13 +127,19 @@ worker continues while the window is hidden or minimized.
 
 The desktop window uses the application's own themed frame and scrollbars.
 Its solid background and border share one notched outline, with transparency
-outside the frame and no gaps through its interior.
+outside the frame and no gaps through its interior. Windows and macOS both
+enable native window/WebView transparency so the existing SVG silhouette clips
+the backdrop as well as the border.
+On macOS, compact circular Close, Minimize and Maximize/Restore controls sit
+on the left, with the THY666 identity on the right. Other platforms retain the
+original titlebar order. All controls use the same native actions and update guard.
+
 Drag its title strip to move it, or the marked edge or corner grips to resize it. The window
 buttons minimize, maximize/restore and close through native window commands.
 The custom Close button follows the same active-update guard as an ordinary
 window-close request; changing the frame does not bypass USB ownership rules.
 
-Only one operation owns USB at a time. Companion must release its serial session
+Only one operation owns USB at a time. Client must release its serial session
 before the updater opens HID. An update worker belongs to the native backend and
 continues across interface navigation. The app prevents ordinary window closure
 while an update is active or unresolved. An OS crash or forced termination can
@@ -148,9 +160,16 @@ Linux device permissions must permit the selected CDC and HID interfaces without
 running the whole app as root. Platform-specific packaging, macOS signing and
 notarization, and real USB behavior still need qualification on their respective
 systems. A source compile or CI pass does not establish these runtime results.
+For local macOS development, open
+`build/desktop-target/release/THY666.app` after the full build. This unsigned
+development bundle is intended for local testing; signing/notarization and
+distribution qualification remain pending. The standalone executable also works
+and uses its sibling `resources/` directory when no application bundle exists. The pinned Zig native tests target macOS 13 or later.
+The archive is still required for building instrument firmware and the optional
+archival workbench, neither of which is bundled into the connected client.
 The wrapper creates portable distribution ZIPs only for Windows at this stage;
-macOS/Linux full builds record a checked native binary, without presenting it as
-a qualified application bundle or installer.
+macOS full builds also create the local development app described above; Linux
+full builds record a checked native binary. Neither is a qualified release installer.
 
 See [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for current
 platform packages, and [Updater](updater.md) for firmware validation and recovery
@@ -166,3 +185,7 @@ hash-bound originals are retained under `docs/licenses/desktop/`, with recorded
 source revisions in its manifest. Fonts keep their bundled OFL notices. Vendor
 firmware, musical material and OS-provided runtimes are separate from the project
 GPL-3.0-or-later license.
+
+The startup splash applies the saved light/dark appearance before rendering.
+The public app area is named **Client**; existing preference keys and internal
+`companion` module paths remain compatible with prior builds.

@@ -61,10 +61,10 @@ position and running playback. Reboot restores configuration and content quietly
 
 ## Export and restoration
 
-The companion's `.thyb` backup covers the whole current applied settings payload,
+The client's `.thyb` backup covers the whole current applied settings payload,
 including unsaved applied changes, rather than only one flash slot. Restore
 validates compatibility, applies atomically when quiet, waits for durable saving
-and verifies a fresh payload readback. See [Companion/backups](companion-and-backup.md).
+and verifies a fresh payload readback. See [Client/backups](companion-and-backup.md).
 
 Normal boot persistence does not prove preservation across every updater or
 recovery after power loss during an update. Export before installation; see

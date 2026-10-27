@@ -86,7 +86,7 @@ impl DesktopState {
     fn application_available(&self) -> Reply<()> {
         if self.updating() {
             Err(DesktopError::rejected(
-                "The updater owns USB; wait for its terminal status before connecting Companion",
+                "The updater owns USB; wait for its terminal status before connecting Client",
             ))
         } else {
             Ok(())
@@ -226,7 +226,7 @@ fn desktop_info(window: tauri::WebviewWindow, state: tauri::State<'_, Arc<Deskto
         window.is_minimized().unwrap_or(true)
     ));
     info["window"] =
-        json!({"decorations":false,"transparent":cfg!(target_os="windows"),"resizable":true});
+        json!({"decorations":false,"transparent":cfg!(any(target_os="windows",target_os="macos")),"resizable":true});
     Ok(info)
 }
 #[tauri::command]
@@ -521,13 +521,22 @@ pub fn run(simulation: bool, diagnostics: bool) -> Result<(), String> {
     let app=tauri::Builder::default()
         .setup(move|app|{
             if diagnostics{eprintln!("desktop setup");}
-            let catalog=app.path().resource_dir()?.join("resources/releases.json");
+            // A local macOS Cargo build is an unbundled executable. Tauri cannot
+            // resolve bundle resources there; use only its sibling resources.
+            let resource_root=match app.path().resource_dir(){
+                Ok(root)=>root,
+                Err(_)=>std::env::current_exe()?.parent()
+                    .ok_or("Desktop executable has no parent directory")?.to_path_buf(),
+            };
+            let catalog=resource_root.join("resources/releases.json");
             let state=Arc::new(DesktopState::new(simulation,catalog.is_file().then_some(catalog))?);
             state.diagnostics.store(diagnostics,Ordering::Release);
             app.manage(state);
             let builder=tauri::WebviewWindowBuilder::from_config(app,&app.config().app.windows[0])?;
+            #[cfg(any(target_os="windows",target_os="macos"))]
+            let builder=builder.transparent(true).background_color(tauri::window::Color(0,0,0,0));
             #[cfg(target_os="windows")]
-            let builder=builder.transparent(true).background_color(tauri::window::Color(0,0,0,0)).no_redirection_bitmap(true);
+            let builder=builder.no_redirection_bitmap(true);
             let window=builder
                 .on_navigation(move|url|{
                     let allowed=trusted_url(url)||bootstrap_url(url);

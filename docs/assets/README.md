@@ -1,7 +1,7 @@
 # THY666 artwork
 
 Red on pure black, with angular circuit lines and outlined lettering. These are
-ready-to-use repository assets; no artwork tools are needed to run the companion
+ready-to-use repository assets; no artwork tools are needed to run the client
 or build the firmware.
 
 | Asset | Size | Use |

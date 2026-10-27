@@ -104,6 +104,7 @@ def package():
     core = assets["core.js"].decode("utf-8").replace("export async function createCore", "async function createCore", 1)
     oled = re.sub(r"^export\s+", "", assets["oled.js"].decode("utf-8"), flags=re.M)
     app = assets["app.js"].decode("utf-8")
+    app = app.replace("import { SCALE_CATALOG } from './generated/menu-schema.js';", "", 1)
     startup_import = "import { initializeStartup } from './startup.js';"
     if app.count(startup_import) != 1:
         raise ValueError("Unexpected startup presentation import")
@@ -214,7 +215,7 @@ def package():
     factory = "createBrowserUpdaterClient({"
     browser_guard = "&&globalThis.isSecureContext===true;"
     if companion.count(factory) != 1 or companion.count(browser_guard) != 1:
-        raise ValueError("Unexpected direct-browser Companion integration")
+        raise ValueError("Unexpected direct-browser Client integration")
     companion = companion.replace(factory, "createBundledBrowserUpdaterClient({", 1)
     # Chromium treats some local files as secure contexts, but they have no
     # same-origin WebHID installation route. Keep the explicit helper there.
@@ -261,7 +262,7 @@ def package():
                 "browser_updater": {"wasm_sha256": hashlib.sha256(browser_assets["browser-updater.wasm"]).hexdigest(),
                     "embedded": True, "firmware_included": False, "file_url_backend": "explicit-local-helper",
                     "notices": {"file": updater_notice.name, "sha256": hashlib.sha256(updater_notice.read_bytes()).hexdigest()}},
-                "scope": "Self-contained Companion and Documentation; explicit WebSerial control and backup/restore. Served secure pages can use the embedded shared Rust/WebHID updater; file URLs retain the explicit local Rust helper. No automatic device connection, installation or restore."}
+                "scope": "Self-contained Client and Documentation; explicit WebSerial control and backup/restore. Served secure pages can use the embedded shared Rust/WebHID updater; file URLs retain the explicit local Rust helper. No automatic device connection, installation or restore."}
     (output.parent / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"Standalone workbench: {output} ({output.stat().st_size:,} bytes)")
     return output
