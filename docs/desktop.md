@@ -167,9 +167,11 @@ distribution qualification remain pending. The standalone executable also works
 and uses its sibling `resources/` directory when no application bundle exists. The pinned Zig native tests target macOS 13 or later.
 The archive is still required for building instrument firmware and the optional
 archival workbench, neither of which is bundled into the connected client.
-The wrapper creates portable distribution ZIPs only for Windows at this stage;
-macOS full builds also create the local development app described above; Linux
-full builds record a checked native binary. Neither is a qualified release installer.
+The build wrapper creates a Windows portable ZIP or a local macOS app. The
+release packaging step adds an unsigned Windows EXE installer or macOS ARM64
+DMG after a full tested build. Linux builds record a checked native binary.
+See [Release procedure](releases.md) for CI, checksums and matching source.
+Packaging does not qualify device access or provide signing/notarization.
 
 See [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for current
 platform packages, and [Updater](updater.md) for firmware validation and recovery

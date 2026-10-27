@@ -87,17 +87,23 @@ npm run build:site
 
 ## Release links and direct browser installation
 
-The Install page links to release downloads and source build instructions. No
-public release package has been published as part of site preparation. Change
-that notice once reviewed release assets actually exist; do not offer a guessed
-firmware file or bundle vendor firmware without redistribution permission.
+The Install page links to [GitHub Releases](https://github.com/Dcvlt/THY666/releases)
+and source build instructions. The historical v0.1.0 release provides source;
+v0.2.0 is staged as a Musical Expansion prerelease with standalone firmware,
+matching source/input and unsigned Client installers. Only assets visible in a
+published release are available to visitors; draft assets are not public.
+See [Release procedure](releases.md) for packaging and qualification boundaries.
 
-Direct browser installation is implemented with the shared Rust protocol and
-WebHID adapter, with its first device test pending. The
-[browser installation guide](browser-installation.md) separates that route from
-the earlier qualified Windows native update, and explains backup/restore and
-recovery boundaries. The default catalog remains empty; no firmware is bundled
-or fetched from another project. Reviewed release choices can be added later.
+Direct browser installation uses the shared Rust protocol and WebHID adapter.
+A Windows device test passed transfer, application checks and explicit settings
+restoration with durable readback and full payload comparison. This does not
+qualify every configuration or other operating systems. The
+[browser installation guide](browser-installation.md) records the scope.
+
+The default installer catalog remains empty. Download the selected prerelease
+firmware asset from Releases and choose **Custom file** explicitly; the site does
+not silently promote a testing build to the default firmware choice. No firmware
+or musical input is included in the Pages bundle.
 
 ## Presentation assets and roadmap
 
