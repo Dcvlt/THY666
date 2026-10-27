@@ -106,8 +106,10 @@ typedef struct thy_engine {
     uint32_t capture_pressure_ms;
 } thy_engine;
 
+/* history is an exclusive caller-owned 512-event undo arena; keep it alive
+ * until the engine is discarded. It may reside in a different memory bank. */
 void thy_engine_init(thy_engine *engine, thy_instrument *instrument,
-    uint16_t scale, uint16_t scale_count);
+    uint16_t scale, uint16_t scale_count, thy_seq_event history[THY_SEQ_EVENTS]);
 void thy_engine_bind_controls(thy_engine *engine);
 void thy_engine_bind_music(thy_engine *engine);
 void thy_engine_bind_expression(thy_engine *, thy_mpe *);
@@ -250,4 +252,5 @@ int thy_engine_calibration_set_sensitivity(thy_engine *,int percent);
 int thy_engine_calibration_lights(const thy_engine *,uint32_t now_ms,uint32_t logical_colors[96]);
 int thy_engine_calibration_value(const thy_engine *,uint8_t logical,uint16_t raw,
     uint16_t rise_rate,int candidate,int velocity);
+int thy_engine_guidance_open(thy_engine *engine);
 #endif

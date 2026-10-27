@@ -40,7 +40,8 @@ static int erase_memory(void *context,unsigned sector) {
 static thy_settings_io io(void) {return (thy_settings_io){flash,read_memory,program_memory,erase_memory};}
 static void defaults(void) {
     thy_core_init(&core); thy_instrument_init(&instrument,&core);
-    thy_engine_init(&engine,&instrument,21u,70u);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&engine,&instrument,21u,70u, undo_workspace_1);
     CHECK(thy_instrument_set_detector_profile(&instrument,THY_DETECTOR_FACTORY_LINEAR)==THY_OK);
     CHECK(thy_instrument_set_route(&instrument,0u,0u,5u,0)==THY_OK);
     CHECK(thy_instrument_set_route(&instrument,1u,1u,5u,0)==THY_OK);
@@ -1011,9 +1012,9 @@ static void cluster_defaults_roundtrip_and_mapping_safe_inheritance(void) {
     instrument.sensitivity_guard[0]=600u;instrument.sensitivity_guard[4]=800u;
     instrument.sensitivity_guard[48]=4094u;instrument.sensitivity_guard[95]=2001u;
     size_t bytes=encode(payload);
-    CHECK(THY_SETTINGS_VERSION==13u && THY_SETTINGS_V9_PARAMETER_BYTES==3740u && THY_SETTINGS_RECORD_BYTES==13860u);
+    CHECK(THY_SETTINGS_VERSION==15u && THY_SETTINGS_V9_PARAMETER_BYTES==3740u && THY_SETTINGS_RECORD_BYTES==13860u);
     CHECK(bytes==THY_SETTINGS_V12_PARAMETER_BYTES+thy_sequencer_song_size(&engine.sequencer));
-    CHECK(thy_settings_payload_version(payload,bytes)==13u);
+    CHECK(thy_settings_payload_version(payload,bytes)==15u);
     /* Runtime providers and their contexts never enter the explicit codec. */
     preview_probe_calls=0u;
     thy_instrument_set_sampling_provider(&instrument,transient_sampling_probe,&preview_probe_calls);
@@ -1088,7 +1089,7 @@ static void v8_migration_preserves_raw_values_in_both_cluster_defaults(void) {
     CHECK(instrument.sensors[95].response_overridden && instrument.sensors[95].response.attack_raw==1700u);
     CHECK(!instrument.pad_release_policy[95].linked && instrument.pad_release_policy[95].gap==50u);
     for(unsigned n=0;n<THY_PAD_COUNT;++n)CHECK(!instrument.sensitivity_guard[n]);
-    size_t upgraded=encode(payload);CHECK(thy_settings_payload_version(payload,upgraded)==13u);
+    size_t upgraded=encode(payload);CHECK(thy_settings_payload_version(payload,upgraded)==15u);
     CHECK(upgraded==bytes+1505u && thy_settings_validate(payload,upgraded,70u));
     old_record(8u);programs=erases=0u;thy_settings_io backend=io();
     CHECK(thy_settings_journal_init(&journal,&backend,70u));
@@ -1096,7 +1097,7 @@ static void v8_migration_preserves_raw_values_in_both_cluster_defaults(void) {
 }
 static void mpe_preferences_roundtrip_and_atomic_validation(void) {
     ++scenarios;defaults();thy_engine_bind_expression(&engine,&expression);
-    CHECK(THY_SETTINGS_VERSION==13u && THY_SETTINGS_V9_PARAMETER_BYTES==3740u && THY_SETTINGS_V10_PARAMETER_BYTES==3748u && THY_SETTINGS_V11_PARAMETER_BYTES==4263u);
+    CHECK(THY_SETTINGS_VERSION==15u && THY_SETTINGS_V9_PARAMETER_BYTES==3740u && THY_SETTINGS_V10_PARAMETER_BYTES==3748u && THY_SETTINGS_V11_PARAMETER_BYTES==4263u);
     CHECK(!engine.expression_config.enabled && !engine.expression_config.glide);
     CHECK(engine.expression_config.members==15u && engine.expression_config.bend_range==48u);
     thy_mpe_config config=engine.expression_config;
@@ -1107,7 +1108,7 @@ static void mpe_preferences_roundtrip_and_atomic_validation(void) {
     CHECK(thy_sequencer_add(&engine.sequencer,0u,&note,1u)==THY_OK);
     size_t bytes=encode(payload);
     CHECK(bytes==THY_SETTINGS_V12_PARAMETER_BYTES+thy_sequencer_song_size(&engine.sequencer));
-    CHECK(thy_settings_payload_version(payload,bytes)==13u);
+    CHECK(thy_settings_payload_version(payload,bytes)==15u);
     const uint8_t expected[8]={1u,1u,7u,24u,12u,1u,3u,7u};
     CHECK(!memcmp(payload+THY_SETTINGS_V9_PARAMETER_BYTES,expected,sizeof expected));
     defaults();const thy_instrument no_workspace_i=instrument;const thy_engine no_workspace_e=engine;
@@ -1160,7 +1161,7 @@ static void v9_migration_keeps_cluster_bytes_and_disables_new_expression(void) {
 }
 static void ordinary_expression_roundtrip_and_atomic_validation(void) {
     ++scenarios;defaults();
-    CHECK(THY_SETTINGS_VERSION==13u && THY_SETTINGS_V11_PARAMETER_BYTES==4263u);
+    CHECK(THY_SETTINGS_VERSION==15u && THY_SETTINGS_V11_PARAMETER_BYTES==4263u);
     CHECK(THY_SETTINGS_PAYLOAD_MAX==13828u && THY_SETTINGS_RECORD_BYTES==13860u);
     thy_engine_channel_config expected[THY_INSTRUMENT_ROUTE_TARGETS];
     for(unsigned n=0;n<THY_INSTRUMENT_ROUTE_TARGETS;++n){
@@ -1180,7 +1181,7 @@ static void ordinary_expression_roundtrip_and_atomic_validation(void) {
     thy_seq_event note={0u,240u,0u,0u,2u,THY_SEQ_NOTE,65u,93u};
     CHECK(thy_sequencer_add(&engine.sequencer,2u,&note,1u)==THY_OK);
     size_t bytes=encode(payload);CHECK(bytes==THY_SETTINGS_V12_PARAMETER_BYTES+thy_sequencer_song_size(&engine.sequencer));
-    CHECK(thy_settings_payload_version(payload,bytes)==13u && thy_settings_validate(payload,bytes,70u));
+    CHECK(thy_settings_payload_version(payload,bytes)==15u && thy_settings_validate(payload,bytes,70u));
     for(unsigned n=0;n<THY_INSTRUMENT_ROUTE_TARGETS;++n){
         size_t offset=THY_SETTINGS_V10_PARAMETER_BYTES+3u*n;
         CHECK(payload[offset]==expected[n].aftertouch && payload[offset+1u]==expected[n].bend && payload[offset+2u]==expected[n].range);
@@ -1251,7 +1252,7 @@ static void v10_migration_preserves_mpe_song_and_legacy_pressure(void) {
     CHECK(thy_engine_channel_aftertouch(&engine,1u)==0u);
     CHECK(thy_engine_channel_aftertouch(&engine,2u)==1u);
     CHECK(!core.queue_count && !core.sounding_count && !core.generated_count);
-    size_t upgraded=encode(payload);CHECK(upgraded==bytes+1265u && thy_settings_payload_version(payload,upgraded)==13u);
+    size_t upgraded=encode(payload);CHECK(upgraded==bytes+1265u && thy_settings_payload_version(payload,upgraded)==15u);
     CHECK(!memcmp(payload+7u,roundtrip+7u,THY_SETTINGS_V10_PARAMETER_BYTES-7u));
     CHECK(!memcmp(payload+THY_SETTINGS_V12_PARAMETER_BYTES,roundtrip+THY_SETTINGS_V10_PARAMETER_BYTES,bytes-THY_SETTINGS_V10_PARAMETER_BYTES));
 }
@@ -1331,7 +1332,7 @@ static void chord_library_roundtrip_and_transient_state(void) {
     const uint8_t policy[10]={0u,1u,0u,1u,4u,6u,2u,1u,5u,8u};
     size_t bytes=encode(payload);
     CHECK(bytes==THY_SETTINGS_V12_PARAMETER_BYTES+thy_sequencer_song_size(&engine.sequencer));
-    CHECK(thy_settings_payload_version(payload,bytes)==13u);
+    CHECK(thy_settings_payload_version(payload,bytes)==15u);
     CHECK(!memcmp(payload+THY_SETTINGS_V11_PARAMETER_BYTES,policy,sizeof policy));
     CHECK(!memcmp(payload+THY_SETTINGS_V12_LIBRARY_OFFSET,&expected_library,sizeof expected_library));
     instrument.live_degree_count=3u;instrument.live_anchor=62;
@@ -1362,7 +1363,7 @@ static void chord_library_invalid_fields_reject_before_mutation(void) {
     instrument.scale_shortcuts[0]=71u;instrument.scale_shortcuts[11]=78u;
     size_t bytes=encode(payload);
     before_library_instrument=instrument;before_library_engine=engine;
-    const uint8_t invalid[10]={2u,2u,2u,2u,6u,7u,3u,2u,8u,9u};
+    const uint8_t invalid[10]={2u,2u,2u,2u,6u,7u,3u,5u,8u,9u};
     for(unsigned n=0;n<10u;++n){size_t at=THY_SETTINGS_V11_PARAMETER_BYTES+n;uint8_t saved=payload[at];
         payload[at]=invalid[n];library_restore_rejected(bytes);payload[at]=saved;}
     const size_t library=THY_SETTINGS_V12_LIBRARY_OFFSET;
@@ -1409,7 +1410,7 @@ static void legacy_migration_clears_chord_library_and_new_policies(void) {
         for(unsigned n=0;n<sizeof instrument.library;++n)CHECK(!empty[n]);
         CHECK(!instrument.library_editor.open && !instrument.live_degree_count && !instrument.live_anchor);
         CHECK(instrument.transpose[0]==-3 && instrument.transpose[1]==5);
-        size_t upgraded=encode(payload);CHECK(thy_settings_payload_version(payload,upgraded)==13u);
+        size_t upgraded=encode(payload);CHECK(thy_settings_payload_version(payload,upgraded)==15u);
         if(version==11u){
             CHECK(upgraded==bytes+750u);
             CHECK(!memcmp(payload+7u,roundtrip+7u,THY_SETTINGS_V11_PARAMETER_BYTES-7u));
@@ -1446,7 +1447,7 @@ static void library_journal_restore_and_crc_coverage(void) {
     CHECK(thy_instrument_apply_scale(&instrument)==THY_OK);expected_library=instrument.library;
     memset(flash,255u,sizeof flash);thy_settings_io backend=io();
     CHECK(thy_settings_journal_init(&journal,&backend,70u));begin_save(0u);finish_save(1600u);
-    CHECK(journal.loaded_version==13u && journal.generation==1u);
+    CHECK(journal.loaded_version==15u && journal.generation==1u);
     instrument.library.chords[0].notes[0]=1u;
     begin_save(10000u);finish_save(11600u);CHECK(journal.generation==2u);
     /* Keep the musical record structurally valid while changing a stored
@@ -1456,7 +1457,7 @@ static void library_journal_restore_and_crc_coverage(void) {
     CHECK(flash[at]==1u);flash[at]^=2u;
     const thy_library current=instrument.library;
     CHECK(thy_settings_journal_init(&rebooted,&backend,70u));
-    CHECK(rebooted.loaded && rebooted.loaded_version==13u && rebooted.generation==1u && rebooted.recovered && rebooted.rejected);
+    CHECK(rebooted.loaded && rebooted.loaded_version==15u && rebooted.generation==1u && rebooted.recovered && rebooted.rejected);
     CHECK(!memcmp(&instrument.library,&current,sizeof current));
     defaults();CHECK(thy_settings_apply(&engine,rebooted.record+32u,rebooted.payload_bytes));
     CHECK(!memcmp(&instrument.library,&expected_library,sizeof expected_library));
@@ -1465,7 +1466,7 @@ static void library_journal_restore_and_crc_coverage(void) {
 }
 static void v12_migration_preserves_preferences_library_and_song_without_new_defaults(void) {
     ++scenarios;defaults();seed_library();
-    CHECK(THY_SETTINGS_VERSION==13u && THY_SETTINGS_V13_PARAMETER_BYTES==THY_SETTINGS_V12_PARAMETER_BYTES);
+    CHECK(THY_SETTINGS_VERSION==15u && THY_SETTINGS_V13_PARAMETER_BYTES==THY_SETTINGS_V12_PARAMETER_BYTES);
     CHECK(THY_VIEW_INFO_MUSICAL_NAMES==12u && THY_VIEW_INFO_COUNT==13u);
     CHECK(instrument.display_view==THY_VIEW_SIMPLE && instrument.play_nav[3]==THY_PLAY_CHORDS);
     for(unsigned n=0;n<THY_VIEW_COUNT;++n) {
@@ -1497,7 +1498,7 @@ static void v12_migration_preserves_preferences_library_and_song_without_new_def
     CHECK(engine.sequencer.events[0].duration==360u && engine.sequencer.events[0].track==2u);
     CHECK(!engine.state.cursors[performance] && !engine.state.cursors[chords] && engine.state.cursors[arps]==2u);
     CHECK(!core.queue_count && !core.sounding_count && !core.generated_count);
-    CHECK(encode(payload)==bytes && payload[6]==13u && roundtrip[6]==12u);
+    CHECK(encode(payload)==bytes && payload[6]==15u && roundtrip[6]==12u);
     CHECK(!memcmp(payload,roundtrip,6u) && !memcmp(payload+7u,roundtrip+7u,bytes-7u));
 }
 static void legacy_view_info_ranges_reject_new_identity_atomically(void) {
@@ -1520,7 +1521,32 @@ static void legacy_view_info_ranges_reject_new_identity_atomically(void) {
         CHECK(thy_settings_validate(roundtrip,bytes,70u));
     }
 }
+static void automatic_voicing_codec(void) {
+    ++scenarios;defaults();instrument.voicing_mode=2u;
+    instrument.voicing_previous_mask=7u;instrument.voicing_previous[0]=60;
+    size_t bytes=encode(payload);
+    defaults();CHECK(thy_settings_apply(&engine,payload,bytes));
+    CHECK(instrument.voicing_mode==2u && !instrument.voicing_previous_mask);
+    payload[6]=13u;
+    CHECK(!thy_settings_validate(payload,bytes,70u));
+    defaults();bytes=encode(payload);payload[6]=13u;
+    CHECK(thy_settings_apply(&engine,payload,bytes));
+    CHECK(!instrument.voicing_mode && !instrument.voicing_previous_mask);
+}
+static void register_voicing_codec(void) {
+    ++scenarios;
+    for(unsigned mode=0;mode<=4u;++mode) {
+        defaults();instrument.voicing_mode=(uint8_t)mode;
+        size_t bytes=encode(payload);CHECK(payload[6]==15u);
+        defaults();CHECK(thy_settings_apply(&engine,payload,bytes));
+        CHECK(instrument.voicing_mode==mode && !instrument.voicing_previous_mask);
+        payload[6]=14u;
+        CHECK(!!thy_settings_validate(payload,bytes,70u)==(mode<=2u));
+        if(mode<=2u){defaults();CHECK(thy_settings_apply(&engine,payload,bytes));CHECK(instrument.voicing_mode==mode);}
+    }
+}
 int main(void) {
+    register_voicing_codec();automatic_voicing_codec();
     codec(); engine_views_and_scale_shortcuts_roundtrip(); view_fields_validation_and_legacy_migration();
     frozen_v4_migration_preserves_layout_and_views();
     lower_codec_and_legacy_import(); debounce_and_boot(); every_power_cut(); rotation_and_corruption(); erased_inactive_power_loss();
@@ -1541,6 +1567,6 @@ int main(void) {
     library_journal_restore_and_crc_coverage();
     v12_migration_preserves_preferences_library_and_song_without_new_defaults();
     legacy_view_info_ranges_reject_new_identity_atomically();
-    printf("settings: %u scenarios, %u assertions; v1-v12 migration to v13, chord policies/named musical library, MPE, ordinary expression and dual-stage profiles, independent clusters/linked release/pressure/velocity/overrides/song/preferences and fresh runtime/hooks, idle/debounce, every-byte empty-record and legacy-upgrade power loss, maximum-song word/boundary cuts, rotation and corrupt/future records passed\n",scenarios,checks);
+    printf("settings: %u scenarios, %u assertions; v1-v14 migration to v15, chord policies/named musical library, MPE, ordinary expression and dual-stage profiles, independent clusters/linked release/pressure/velocity/overrides/song/preferences and fresh runtime/hooks, idle/debounce, every-byte empty-record and legacy-upgrade power loss, maximum-song word/boundary cuts, rotation and corrupt/future records passed\n",scenarios,checks);
     return 0;
 }

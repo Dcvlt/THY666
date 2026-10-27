@@ -84,6 +84,16 @@ Primary API references: [Chrome WebHID guide](https://developer.chrome.com/docs/
 [WebHID availability and secure contexts](https://developer.mozilla.org/en-US/docs/Web/API/HID)
 and [device chooser requirements](https://developer.mozilla.org/en-US/docs/Web/API/HID/requestDevice).
 
+## Qualification boundaries
+
+The exact bootloader erase range and the cause of the observed configuration
+reset remain unproved. An application size limit does not establish erase
+boundaries. Keep external-memory preparation and settings preservation under
+separate investigation before changing a qualified update path.
+
+A configuration backup is not a full-device image. Any future external-memory
+export needs its own implementation, resource review and physical qualification.
+
 ## Build and preview
 
 Install the official Rust target, then run from the repository root:

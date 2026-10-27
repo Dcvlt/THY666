@@ -787,7 +787,11 @@ function renderPhysicalControls() {
     const match = /^(?:voicing|inversion|spread)-(\d)$/.exec(action);
     if (match) {
       const current=engine.firmware.state(),voice=Number(match[1])-1;
-      if(!action.startsWith('spread') && current.voicingMode){
+      if(!action.startsWith('spread') && current.voicingMode>=2){
+        button.disabled=true;
+        button.setAttribute('aria-pressed','false');
+        button.setAttribute('aria-label','Automatic voicing mode · manual inversion unavailable');
+      } else if(!action.startsWith('spread') && current.voicingMode===1){
         button.disabled=!(current.dropAvailable&(1<<voice));
         button.setAttribute('aria-pressed',String(!button.disabled&&!!(current.dropMask&(1<<voice))));
         button.setAttribute('aria-label',`Lower voice ${voice+2}${button.disabled?' · unavailable in selected chord':''}`);

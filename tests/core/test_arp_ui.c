@@ -19,7 +19,8 @@ static void initialize(void)
     for (unsigned n=0u;n<THY_PAD_COUNT;++n)
         pads[n]=(thy_instrument_pad){.notes={60,64,67},.valid_mask=7u,.color=1u};
     (void)thy_instrument_set_layout(&instrument,pads,60,degrees,7u);
-    thy_engine_init(&engine,&instrument,21u,70u);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&engine,&instrument,21u,70u, undo_workspace_1);
     thy_engine_bind_controls(&engine);
     (void)thy_state_set_design_mode(&engine.state,0u);
     (void)thy_engine_advance(&engine,0u);

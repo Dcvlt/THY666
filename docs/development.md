@@ -40,7 +40,7 @@ scale-name/menu metadata. They do not fetch or package `chords.runtime.json`.
 Run the portable core build above, then `npm run dev`, or build the desktop app.
 Pad notes, lights and screens come from the connected instrument. The private
 archive remains necessary only for instrument builds and the optional standalone
-archival workbench below. No replacement musical corpus is generated.
+archival workbench below. The merged advisory interval vocabulary is included in the shared core; it does not replace the playable archival layouts. See [combined harmonic model](chord-data-format.md#combined-harmonic-model).
 
 On macOS, native regressions use the pinned Zig compiler with an explicit macOS 13
 deployment target; WebAssembly remains freestanding. This avoids unresolved libc

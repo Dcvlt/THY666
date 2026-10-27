@@ -165,3 +165,41 @@
 .desktop-port-label select { width:100%;padding:12px;background:var(--ui-paper,#000);color:var(--ui-ink,#fff);border:1px solid var(--signal-line,#f32b49); }
 .desktop-simulation-banner { position:relative;z-index:20;margin:0;padding:9px 24px;border-block:1px solid var(--signal-line,#f32b49);background:var(--ui-paper,#000);color:var(--theme-bright,#f32b49);font-size:11px;text-align:center; }
 html[data-host="desktop"][data-host-active="false"] .companion-app *,html[data-host="desktop"][data-host-active="false"] .companion-app *::before,html[data-host="desktop"][data-host-active="false"] .companion-app *::after { animation-play-state:paused!important;transition:none!important; }
+
+/* Local harmonic guidance shares the flat angular Client vocabulary. */
+.harmony-guide {display:grid;gap:20px;}
+.harmony-guide .companion-page-head {margin-bottom:0;}
+.harmony-intro,.harmony-caption {color:var(--muted);line-height:1.6;}
+.harmony-card {position:relative;padding:24px;border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--bg);clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px);}
+.harmony-card h2 {font-family:Orbitron,sans-serif;font-size:1.25rem;color:var(--text);margin:0 0 16px;}
+.harmony-card h3 {font-size:1rem;color:var(--text);}
+.harmony-card p {line-height:1.6;}
+.harmony-controls,.harmony-columns,.harmony-comparison {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;}
+.harmony-field {display:grid;gap:8px;color:var(--muted);}
+.harmony-field select {width:100%;padding:12px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:0;}
+.harmony-pitches {display:flex;flex-wrap:wrap;gap:8px;}
+.harmony-guide .button {border-radius:0;min-height:44px;transition:background-color .15s,color .15s;}
+.harmony-guide .button:hover,.harmony-pitches [aria-pressed=true] {background:var(--accent);color:var(--bg);}
+.harmony-guide :focus-visible {outline:2px solid var(--accent);outline-offset:3px;}
+.harmony-results {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.harmony-result {display:flex;flex-direction:column;gap:8px;align-items:start;text-align:left;white-space:normal;padding:14px;min-width:0;}
+.harmony-result span,.harmony-result small {font-size:.85rem;line-height:1.5;}
+.harmony-notes {color:var(--text);letter-spacing:.04em;}
+.harmony-comparison {grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:20px;}
+.harmony-comparison>p {grid-column:1/-1;margin:0;}
+@media(max-width:1000px){.harmony-columns{grid-template-columns:1fr;}}
+@media(max-width:540px){.harmony-controls,.harmony-results,.harmony-comparison{grid-template-columns:1fr;}.harmony-card{padding:18px;}}
+@media(prefers-reduced-motion:reduce){.harmony-guide .button{transition:none;}}
+.harmony-input-grid {display:grid;grid-template-columns:minmax(240px,1fr) minmax(320px,1.4fr);gap:20px;}
+.harmony-tabs {display:flex;gap:12px;flex-wrap:wrap;}
+.companion-app .harmony-guide .harmony-pitches .button[aria-pressed="true"],
+.companion-app .harmony-guide .harmony-tabs .button[aria-pressed="true"] {background:var(--theme-bright);color:var(--ui-paper);border-color:var(--theme-bright);}
+.companion-app .harmony-guide .button:hover:not(:disabled) {background:var(--theme-edge);color:var(--ui-ink);}
+.harmony-panels .harmony-results {grid-template-columns:repeat(3,minmax(0,1fr));}
+@media(max-width:1000px){.harmony-input-grid{grid-template-columns:1fr;}}
+@media(max-width:700px){.harmony-panels .harmony-results{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:460px){.harmony-panels .harmony-results{grid-template-columns:1fr;}}
+/* Override the global selected-button rule so selected pitch classes remain
+ * visibly distinct from the unselected black/paper surface in both themes. */
+.companion-app .harmony-guide .harmony-pitches .button[aria-pressed="true"],
+.companion-app .harmony-guide .harmony-tabs .button[aria-pressed="true"] {background-color:var(--theme-bright) !important;color:var(--ui-paper) !important;}

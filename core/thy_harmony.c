@@ -272,3 +272,152 @@ int thy_harmony_format(const thy_harmony *source,char *output,size_t capacity)
     }
     *at=0;return THY_HARMONY_OK;
 }
+
+/* Shared merged interval vocabulary; playable archive layouts remain lossless. */
+#include "thy_harmony_catalog.h"
+static uint16_t guidance_rotate(uint16_t mask,unsigned root)
+{return (uint16_t)(((unsigned)mask<<root | (unsigned)mask>>(12u-root))&4095u);}
+static unsigned guidance_count(uint16_t mask)
+{unsigned n=0;for(;mask;mask=(uint16_t)(mask&(mask-1u)))++n;return n;}
+size_t thy_guidance_scale_count(void){return sizeof guidance_scales/sizeof guidance_scales[0];}
+const char *thy_guidance_scale_name(unsigned family)
+{return family<thy_guidance_scale_count()?guidance_scales[family].name:NULL;}
+uint16_t thy_guidance_scale_mask(unsigned family,unsigned root)
+{return family<thy_guidance_scale_count()&&root<12u?guidance_rotate(guidance_scales[family].mask,root):0u;}
+int thy_guidance_chords(uint16_t key,uint8_t tonic,uint16_t current,
+    thy_chord_suggestion *out,size_t capacity,size_t *count)
+{
+    if(!key || key>4095u || tonic>11u || !(key&(1u<<tonic)) || current>4095u ||
+        !out || !count || !capacity || capacity>THY_GUIDANCE_LIMIT)return THY_HARMONY_INVALID;
+    size_t used=0u;
+    for(unsigned root=0;root<12u;++root)
+        for(unsigned quality=0;quality<sizeof guidance_chords/sizeof guidance_chords[0];++quality) {
+            uint16_t mask=guidance_rotate(guidance_chords[quality],root);
+            if((mask&key)!=mask || mask==current)continue;
+            unsigned shared=guidance_count((uint16_t)(mask&current));
+            /* Retain familiar triads/sevenths ahead of dense extensions, so
+             * expanding the vocabulary cannot bury basic harmonic choices. */
+            unsigned score=(quality<11u?128u:0u)+shared*8u+
+                (root==tonic?2u:root==(tonic+7u)%12u?1u:0u);
+            /* A better root/template interpretation replaces a duplicate set. */
+            size_t at=0;for(;at<used && out[at].mask!=mask;++at){}
+            if(at<used) {
+                if(out[at].score>=score)continue;
+                for(size_t n=at+1u;n<used;++n)out[n-1u]=out[n];
+                --used;
+            }
+            at=0;while(at<used && out[at].score>=score)++at;
+            if(at>=capacity)continue;
+            if(used<capacity)++used;
+            for(size_t n=used-1u;n>at;--n)out[n]=out[n-1u];
+            out[at]=(thy_chord_suggestion){mask,(uint8_t)root,(uint8_t)shared,(uint8_t)score};
+        }
+    *count=used;return THY_HARMONY_OK;
+}
+int thy_guidance_scales(uint16_t selected,thy_scale_match *out,size_t capacity,
+    size_t *count,size_t *total)
+{
+    if(!selected || selected>4095u || !out || !count || !total || !capacity || capacity>THY_GUIDANCE_LIMIT)
+        return THY_HARMONY_INVALID;
+    size_t used=0,found=0;
+    for(unsigned family=0;family<thy_guidance_scale_count();++family)
+        for(unsigned root=0;root<12u;++root) {
+            uint16_t mask=thy_guidance_scale_mask(family,root);
+            if((mask&selected)!=selected)continue;
+            ++found;
+            unsigned extra=guidance_count((uint16_t)(mask&~selected));
+            size_t at=0;while(at<used && out[at].extra<=extra)++at;
+            if(at>=capacity)continue;
+            if(used<capacity)++used;
+            for(size_t n=used-1u;n>at;--n)out[n]=out[n-1u];
+            out[at]=(thy_scale_match){mask,(uint8_t)family,(uint8_t)root,(uint8_t)extra};
+        }
+    *count=used;*total=found;return THY_HARMONY_OK;
+}
+int thy_guidance_modulation(uint16_t source,uint16_t target,uint16_t current,
+    thy_modulation *out)
+{
+    if(!source || source>4095u || !target || target>4095u || current>4095u || !out)
+        return THY_HARMONY_INVALID;
+    thy_modulation result={(uint16_t)(source&target),(uint16_t)(target&~source),
+        (uint16_t)(source&~target),0u,THY_HARMONY_NO_ROOT,0u};
+    result.current_fits=(uint8_t)(current && (current&result.common)==current);
+    unsigned best=0;
+    for(unsigned root=0;root<12u;++root)for(unsigned q=0;q<3u;++q) {
+        uint16_t mask=guidance_rotate(guidance_chords[q],root);
+        if((mask&result.common)!=mask)continue;
+        unsigned score=1u+guidance_count((uint16_t)(mask&current));
+        if(score>best){best=score;result.pivot=mask;result.pivot_root=(uint8_t)root;}
+    }
+    *out=result;return THY_HARMONY_OK;
+}
+
+/* Small OLED presentation, using the same advisory engine as the Client. */
+static void guide_copy(char out[32],const char *text)
+{unsigned n=0;while(text&&text[n]&&n<31u){out[n]=text[n];++n;}out[n]=0;}
+static const char *const guide_roots[]={"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
+void thy_guidance_notes_text(uint16_t mask,char out[32])
+{
+    unsigned at=0;out[0]=0;
+    for(unsigned pc=0;pc<12u;++pc)if(mask&(1u<<pc)){
+        const char *name=guide_roots[pc];if(at)out[at++]=' ';
+        out[at++]=name[0];if(name[1])out[at++]=name[1];
+    }
+    out[at]=0;if(!mask)guide_copy(out,"None");
+}
+static void guide_label(uint16_t mask,uint8_t root,char out[32])
+{
+    int16_t notes[12];size_t count=0;thy_harmony name;
+    if(root>11u)root=0;
+    for(unsigned n=0;n<12u;++n)if(mask&(1u<<((root+n)%12u)))notes[count++]=(int16_t)(60u+root+n);
+    if(thy_harmony_from_notes(notes,count,root,&name)==THY_HARMONY_OK &&
+       thy_harmony_format(&name,out,32)==THY_HARMONY_OK)return;
+    guide_copy(out,"No shared triad");
+}
+unsigned thy_guidance_ui_count(const thy_guidance_ui *u)
+{return u->page==0u?6u:u->page==3u?6u:u->count;}
+void thy_guidance_ui_refresh(thy_guidance_ui *u)
+{
+    size_t count=0,total=0;
+    if(u->page==1u)(void)thy_guidance_chords(u->key,u->tonic,u->notes,u->rows.chords,24,&count);
+    if(u->page==2u && u->notes)(void)thy_guidance_scales(u->notes,u->rows.scales,24,&count,&total);
+    u->count=(uint8_t)count;u->total=(uint16_t)total;
+    if(u->page==3u)(void)thy_guidance_modulation(u->key,
+        thy_guidance_scale_mask(u->target_family,u->target_root),u->notes,&u->modulation);
+    if(u->cursor>=thy_guidance_ui_count(u))u->cursor=0;
+}
+void thy_guidance_ui_navigate(thy_guidance_ui *u,uint8_t action)
+{
+    if(!u||!u->open||action>4u)return;
+    /* LEFT=0 UP=1 CENTER=2 DOWN=3 RIGHT=4. CENTER always exits. */
+    if(action==2u){u->open=0;u->editing=0;return;}
+    if(action==0u){if(u->editing)u->editing=0;else if(u->page){u->page=0;u->cursor=0;}else u->open=0;return;}
+    if(action==1u||action==3u){
+        if(u->editing){unsigned max=u->cursor==0u?12u:(unsigned)thy_guidance_scale_count();
+            uint8_t *value=u->cursor==0u?&u->target_root:&u->target_family;
+            *value=(uint8_t)((*value+max+(action==1u?-1:1))%max);thy_guidance_ui_refresh(u);
+        }else {unsigned count=thy_guidance_ui_count(u);if(count)u->cursor=(uint8_t)((u->cursor+count+(action==1u?-1:1))%count);}
+        return;
+    }
+    if(u->page==0u&&u->cursor<3u){u->page=u->cursor+1u;u->cursor=0;thy_guidance_ui_refresh(u);}
+    else if(u->page==2u&&u->cursor<u->count){
+        thy_scale_match m=u->rows.scales[u->cursor];u->target_root=m.root;u->target_family=m.family;
+        u->page=3;u->cursor=0;thy_guidance_ui_refresh(u);
+    }else if(u->page==3u&&u->cursor<2u)u->editing=!u->editing;
+}
+void thy_guidance_ui_line(const thy_guidance_ui *u,unsigned row,char out[32])
+{
+    static const char *const menu[]={"Chord suggestions","Scale discovery","Modulation","Add held notes","Use selected chord","Clear captured notes"};
+    if(u->page==0u){guide_copy(out,row<6u?menu[row]:"");return;}
+    if(u->page==1u){if(row<u->count)guide_label(u->rows.chords[row].mask,u->rows.chords[row].root,out);else guide_copy(out,"No suggestions");return;}
+    if(u->page==2u){
+        if(row>=u->count){guide_copy(out,"Capture notes first");return;}
+        const thy_scale_match *m=&u->rows.scales[row];const char *root=guide_roots[m->root];
+        guide_copy(out,root);unsigned at=root[1]?2u:1u;out[at++]=' ';
+        const char *name=thy_guidance_scale_name(m->family);for(unsigned n=0;name[n]&&at<31u;++n)out[at++]=name[n];out[at]=0;return;
+    }
+    if(row==0u){guide_copy(out,"To root: ");unsigned n=9;const char *root=guide_roots[u->target_root];out[n++]=root[0];if(root[1])out[n++]=root[1];out[n]=0;}
+    else if(row==1u)guide_copy(out,thy_guidance_scale_name(u->target_family));
+    else if(row==5u){if(u->modulation.pivot)guide_label(u->modulation.pivot,u->modulation.pivot_root,out);else guide_copy(out,"No shared triad");}
+    else guide_copy(out,row==2u?"Common notes":row==3u?"Introduced notes":"Removed notes");
+}

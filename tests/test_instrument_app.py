@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import unittest
+from tools.native_compile import native_target_flags
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,7 +35,7 @@ class InstrumentAppTests(unittest.TestCase):
         env["ZIG_GLOBAL_CACHE_DIR"] = str(ROOT / ".tools/zig-cache/global")
         env["ZIG_LOCAL_CACHE_DIR"] = str(output / "zig-cache")
         env["TEMP"] = env["TMP"] = str(ROOT / ".tools/tmp")
-        command = [str(compiler), "cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+        command = [str(compiler), "cc", *native_target_flags(), "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
                    "-I", str(output), "-I", str(ROOT / "core"),
                    "-I", str(ROOT / "firmware/diagnostic"),
                    *map(str, sorted((ROOT / "core").glob("*.c"))),

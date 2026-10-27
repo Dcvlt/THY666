@@ -3,7 +3,7 @@
 #define THY_SETTINGS_H
 #include "thy_engine.h"
 
-#define THY_SETTINGS_VERSION 13u
+#define THY_SETTINGS_VERSION 15u
 /* The v1 codec had no embedded version. Its exact length remains an import
  * contract; v2 has an in-band marker after the three catalog bytes, so a torn
  * v2 export cannot be mistaken for a complete legacy export. */
@@ -23,6 +23,10 @@
 #define THY_SETTINGS_V12_PARAMETER_BYTES (THY_SETTINGS_V12_LIBRARY_OFFSET + THY_LIBRARY_PAYLOAD_BYTES)
 /* V13 extends saved view-info identities only. All byte offsets stay frozen. */
 #define THY_SETTINGS_V13_PARAMETER_BYTES THY_SETTINGS_V12_PARAMETER_BYTES
+/* V14 adds Auto leading to the voicing policy; byte offsets stay frozen. */
+#define THY_SETTINGS_V14_PARAMETER_BYTES THY_SETTINGS_V13_PARAMETER_BYTES
+/* V15 adds octave fold and guitar register; all offsets stay frozen. */
+#define THY_SETTINGS_V15_PARAMETER_BYTES THY_SETTINGS_V14_PARAMETER_BYTES
 /* V6+ embed the independently versioned song codec after their own parameter bytes.
  * Scan remains at legacy 4 KiB boundaries; new records reserve four slots. */
 #define THY_SETTINGS_PAYLOAD_MAX ((THY_SETTINGS_V13_PARAMETER_BYTES + THY_SEQ_SONG_MAX + 3u) & ~3u)
@@ -79,7 +83,7 @@ typedef struct thy_settings_journal {
  * newer record is ignored and reported as recovery. Unknown versions block
  * automatic writes, so older firmware cannot silently erase newer settings.
  * Legacy v1-v12 records load without writes and set migration_pending; the
- * normal debounced idle task commits v13 without erasing that record. Firmware
+ * normal debounced idle task commits the current version without erasing that record. Firmware
  * predating the larger v6 allocation cannot guarantee downgrade preservation. */
 int thy_settings_journal_init(thy_settings_journal *, const thy_settings_io *, uint16_t scale_count);
 /* Capture committed configuration, debounce 1.5s, wait for caller's safe idle

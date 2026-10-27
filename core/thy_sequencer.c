@@ -38,7 +38,7 @@ static int valid_track(const thy_seq_track *t)
 static void remember(thy_sequencer *s)
 {
     if (s->transaction_open && s->transaction_saved) return;
-    seq_copy(s->history, s->events, sizeof(s->history));
+    seq_copy(s->history, s->events, THY_SEQ_EVENTS * sizeof(*s->history));
     seq_copy(s->history_tracks, s->tracks, sizeof(s->history_tracks));
     s->history_count = s->count; s->history_valid = 1u; s->history_is_redo = 0u;
     if (s->transaction_open) s->transaction_saved = 1u;
@@ -90,10 +90,12 @@ static void append_batch(thy_sequencer *s, unsigned track,
     }
     s->next_group = (uint16_t)(s->next_group + groups);
 }
-void thy_sequencer_init(thy_sequencer *s)
+void thy_sequencer_init(thy_sequencer *s, thy_seq_event history[THY_SEQ_EVENTS])
 {
-    if (!s) return;
-    seq_fill(s, 0, sizeof(*s)); s->next_id = s->next_group = 1u;
+    if (!s || !history) return;
+    seq_fill(s, 0, sizeof(*s));
+    s->history = history;
+    seq_fill(history, 0, THY_SEQ_EVENTS * sizeof(*history)); s->next_id = s->next_group = 1u;
     for (unsigned t = 0; t < THY_SEQ_TRACKS; ++t) {
         s->tracks[t] = (thy_seq_track){.content_end=3840u, .loop_end=3840u,
             .channel=(uint8_t)(t % 16u), .destinations=THY_ROUTE_USB0|THY_ROUTE_DIN,
@@ -847,7 +849,7 @@ int thy_sequencer_validate(const uint8_t *p,size_t size)
 int thy_sequencer_decode(thy_sequencer *s,const uint8_t *bytes,size_t length)
 {
     if(!s)return THY_INVALID_ARGUMENT;int r=thy_sequencer_validate(bytes,length);if(r)return r;
-    thy_sequencer_init(s);s->count=get16(bytes+16);s->next_id=get16(bytes+20);s->next_group=get16(bytes+22);s->revision=get32(bytes+24);
+    thy_sequencer_init(s, s->history);s->count=get16(bytes+16);s->next_id=get16(bytes+20);s->next_group=get16(bytes+22);s->revision=get32(bytes+24);
     unsigned version=get16(bytes+4),stride=version==2u?28u:24u;
     for(unsigned t=0;t<THY_SEQ_TRACKS;++t)s->tracks[t]=decode_track(bytes+32u+t*stride,version);
     for(unsigned n=0;n<s->count;++n){s->events[n]=decode_event(bytes+32u+THY_SEQ_TRACKS*stride+n*16u);

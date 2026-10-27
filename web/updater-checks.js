@@ -59,7 +59,8 @@ export function checkUpdateHealth(id, line, operation) {
     return 'All 96 pads have settled; lighting and MIDI drivers report ready.';
   }
   if (id === 'settings') {
-    const v = fields(line, 'SETTINGS '); equals(v, 'version', 13, 'This settings format is not supported by the verifier.');
+    const v = fields(line, 'SETTINGS ');
+    if (![13, 14, 15].includes(number(v, 'version'))) throw new Error('This settings format is not supported by the verifier.');
     if (!['saved', 'defaults'].includes(v.status)) throw new Error(['pending', 'saving'].includes(v.status) ? 'Settings are still saving. Wait, then check again.' : 'Settings storage needs attention. Keep your configuration backup.');
     equals(v, 'errors', 0, 'Settings storage reports an error. Keep your configuration backup.');
     return v.status === 'defaults' ? 'Factory settings loaded normally.' : 'Saved settings loaded normally.';

@@ -91,7 +91,7 @@ test('V13 restores cluster and individual profiles without held axes; V11 and V1
   const source=await fresh(),f=source.firmware;
   okay(f.setExpressionProfile(-1,profile()));okay(f.setExpressionProfile(-2,profile({split:40,pressureCurve:2})));
   okay(f.setExpressionProfile(95,profile({split:55,aftertouchCurve:1})));
-  const payload=source.settings.encode(),cold=await fresh();assert.equal(source.settings.version,13);
+  const payload=source.settings.encode(),cold=await fresh();assert.equal(source.settings.version,15);
   assert.equal(cold.settings.apply(payload),true);
   for(const scope of [-2,-1,0,48,95])assert.deepEqual(cold.firmware.expressionProfile(scope),f.expressionProfile(scope));
   assert.deepEqual(cold.settings.encode(),payload);assert.deepEqual(cold.drain(),[]);assert.equal(cold.expression.stats().active,0);

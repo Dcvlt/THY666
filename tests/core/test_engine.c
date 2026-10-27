@@ -39,7 +39,8 @@ static int initialize(void)
         layout[pad] = (thy_instrument_pad){{60, 64, 67, 0, 0, 0, 0}, 7, 1};
     CHECK(thy_instrument_set_layout(&instrument, layout, 60, degrees, 7) == THY_OK);
     CHECK(thy_instrument_set_detector_profile(&instrument, THY_DETECTOR_FACTORY_LINEAR) == THY_OK);
-    thy_engine_init(&engine, &instrument, 21, 70);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&engine, &instrument, 21, 70, undo_workspace_1);
     thy_engine_bind_expression(&engine, &expression);
     thy_instrument_set_action_handler(&instrument, action, NULL);
     now = 0;
@@ -198,6 +199,11 @@ static int test_all_live_rows_use_real_instrument_values(void)
                 CHECK(!engine.arps[engine.arp_target].held_count);
             } else if (row == THY_ROW_ENGINES_PLAY) {
                 CHECK(instrument.engine_kind == THY_PLAY_ENGINE_PLAY);
+            } else if (row == THY_ROW_CHORDS_GUIDANCE) {
+                CHECK(instrument.guidance.open);
+                CHECK(thy_engine_navigate(&engine, THY_STATE_LEFT) == THY_STATE_OK);
+                CHECK(!instrument.guidance.open);
+                ++cleanup_revisions;
             } else if (row >= THY_ROW_CHORDS_EDITSCALES && row <= THY_ROW_CHORDS_EDITSIX) {
                 const thy_library saved = instrument.library;
                 CHECK(instrument.library_editor.open);
@@ -212,7 +218,7 @@ static int test_all_live_rows_use_real_instrument_values(void)
             } else CHECK(0 && "Uncovered live action");
             ++actions;
         }
-    CHECK(actions == 8u && cleanup_revisions == 3u);
+    CHECK(actions == 9u && cleanup_revisions == 4u);
     CHECK(engine.state.revision == live_count + actions + cleanup_revisions);
     return 1;
 }

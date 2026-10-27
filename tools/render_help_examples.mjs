@@ -70,6 +70,15 @@ const definitions = [
   ['chords', 'Chords · musical layout and voicing', async engine => {
     focus(engine, 'chords.layout');
   }],
+  ...['chord-advice','scale-discovery','modulation-advice'].map((id, page) => [id, ['Chord advice · C major','Scale discovery · C–E–G','Modulation · from C major'][page], async engine => {
+    okay(engine.firmware.pressPad(0));
+    focus(engine, 'chords.guidance'); okay(engine.state.navigate('right'));
+    for(let n=0;n<3;n++) okay(engine.state.navigate('down'));
+    okay(engine.state.navigate('right'));
+    for(let n=0;n<3;n++) okay(engine.state.navigate('up'));
+    for(let n=0;n<page;n++) okay(engine.state.navigate('down'));
+    okay(engine.state.navigate('right'));
+  }]),
   ['library', 'Chord editor · a synthetic C major record', async engine => {
     okay(engine.firmware.library.set(1, 0, { used: true, name: 'C MAJOR', root: 60, notes: [60,64,67,0,0,0,0], mask: 7 }));
     okay(engine.firmware.library.openEditor(1, 0));

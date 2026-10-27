@@ -70,6 +70,8 @@ static int engine_information_row(uint16_t row)
 uint32_t thy_studio_ui_scene_key(const thy_state *state)
 {
     if (state == NULL) return UINT32_MAX;
+    if(state->instrument&&state->instrument->guidance.open)
+        return UINT32_C(0xC0000)|state->instrument->guidance.page;
     if(state->instrument&&state->instrument->library_editor.open)
         return UINT32_C(0xB0000)|((uint32_t)state->instrument->library_editor.kind<<8u)|state->instrument->library_editor.page;
     if(state->engine && state->engine->calibration_open && state->engine->calibration)
@@ -1390,6 +1392,31 @@ static void piano_pattern(uint8_t *out, const play_snapshot *snapshot)
     }
 }
 
+static void guidance_page(uint8_t *out,const thy_instrument *i)
+{
+    const thy_guidance_ui *u=&i->guidance;char line[32];
+    static const char *const titles[]={"HARMONY / SNAPSHOT","CHORD SUGGESTIONS","SCALES / TOP 24","MODULATION / ADVICE"};
+    thy_ui_draw_text(out,2,1,titles[u->page],25,0);thy_ui_draw_rectangle(out,0,9,128,1,1);
+    unsigned count=thy_guidance_ui_count(u),first=u->cursor>1u?u->cursor-1u:0u;
+    if(first+3u>count)first=count>3u?count-3u:0u;
+    for(unsigned n=0;n<3u && (first+n<count||(!count&&!n));++n){
+        thy_guidance_ui_line(u,first+n,line);
+        if(first+n==u->cursor)thy_ui_draw_text(out,1,14+n*11,u->editing?"*":">",1,0);
+        thy_ui_draw_text(out,8,14+n*11,line,24,0);
+    }
+    if(u->page==3u && (u->cursor<2u||u->cursor==5u)){
+        thy_ui_draw_text(out,2,48,u->cursor==5u?"Shared pivot triad":u->modulation.current_fits?"Captured notes fit both":"Compare; no key applied",25,0);
+        thy_ui_draw_text(out,2,58,"<> BACK/EDIT  C:PLAY",25,0);
+    }else {
+        uint16_t mask=u->page==3u?(u->cursor==2u?u->modulation.common:u->cursor==3u?u->modulation.added:u->modulation.removed):
+            u->page==1u&&u->count?u->rows.chords[u->cursor].mask:u->notes;
+        thy_guidance_notes_text(mask,line);unsigned length=0;while(line[length])++length;
+        /* All twelve pitch classes must remain readable, including chromatic. */
+        thy_ui_draw_text(out,2,48,line,23,0);
+        thy_ui_draw_text(out,2,58,length>23u?line+23:"<> BACK/OPEN  C:PLAY",25,0);
+    }
+}
+
 static void library_page(uint8_t *out,const thy_instrument *instrument)
 {
     const thy_library_ui *ui=&instrument->library_editor;char line[32];
@@ -1688,7 +1715,7 @@ void thy_studio_ui_render(thy_studio_ui *ui, const thy_state *state,
     (void)thy_state_get(state, THY_ROW_LIGHTS_ANIMATIONS, &animations);
     int motion_enabled = ui->animations_enabled && animations;
     int navigation_motion_enabled = motion_enabled && ui->navigation_animations_enabled;
-    if (state->instrument&&state->instrument->library_editor.open)thy_studio_ui_boot_skip(ui);
+    if (state->instrument&&(state->instrument->library_editor.open||state->instrument->guidance.open))thy_studio_ui_boot_skip(ui);
     if (state->engine && ((state->engine->calibration_open && state->engine->calibration) ||
         ((state->engine->arp_quick_open || state->engine->sequencer_ui.open) &&
         state->level == THY_STATE_PLAY))) thy_studio_ui_boot_skip(ui);
@@ -1730,7 +1757,8 @@ void thy_studio_ui_render(thy_studio_ui *ui, const thy_state *state,
     }
     ui->last_render_ms = now_ms;
     ui->transition_revision = state->transition_revision;
-    if(state->instrument&&state->instrument->library_editor.open)library_page(out,state->instrument);
+    if(state->instrument&&state->instrument->guidance.open)guidance_page(out,state->instrument);
+    else if(state->instrument&&state->instrument->library_editor.open)library_page(out,state->instrument);
     else if (state->engine && state->engine->calibration_open && state->engine->calibration)
         calibration_page(out,state);
     else if (state->engine && state->engine->sequencer_ui.open && state->level == THY_STATE_PLAY)

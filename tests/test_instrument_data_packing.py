@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from tools.native_compile import native_target_flags
 import zlib
 
 
@@ -314,7 +315,7 @@ int main(void) {
                                ('TEMP', self.output), ('TMP', self.output)):
             directory.mkdir(parents=True, exist_ok=True)
             env[key] = str(directory)
-        built = subprocess.run([str(compiler), 'cc', '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror',
+        built = subprocess.run([str(compiler), 'cc', *native_target_flags(), '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror',
             '-I', str(ROOT / 'core'), '-I', str(ROOT / 'firmware/instrument'),
             str(self.output / 'instrument_data.c'), str(source), '-o', str(executable)],
             cwd=ROOT, env=env, capture_output=True, text=True)

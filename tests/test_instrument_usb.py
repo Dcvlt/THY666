@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import unittest
+from tools.native_compile import native_target_flags
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,7 +86,7 @@ class InstrumentUsbTests(unittest.TestCase):
         env["ZIG_LOCAL_CACHE_DIR"] = str(output / "zig-cache")
         env["TEMP"] = env["TMP"] = str(ROOT / ".tools/tmp")
         compiled = subprocess.run([
-            str(compiler), "cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+            str(compiler), "cc", *native_target_flags(), "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
             "-I", str(output), "-I", str(ROOT / "core"),
             "-I", str(ROOT / "firmware/diagnostic"), str(ROOT / "core/thy_midi.c"),
             str(ROOT / "tests/core/test_instrument_usb.c"), "-o", str(binary),

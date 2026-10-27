@@ -10,6 +10,7 @@ import sys
 from build_diagnostic import ROOT, compiler_environment, sha, source_prefix_flags, anonymize_elf_file
 from build_instrument_data import generate
 from inspect_diagnostic_elf import inspect_elf
+from native_compile import native_target_flags
 from setup_diagnostic_deps import setup, USB_SOURCES, TINYUSB_ROOT, DEPS
 
 
@@ -39,7 +40,7 @@ def main():
     inputs = set([*sources, *board.rglob('*.h'), *app.rglob('*.h'),
         *ROOT.joinpath('core').glob('*.h'), board / 'board.c', board / 'pads.c', app / 'linker.ld',
         Path(__file__), ROOT / 'tools/build_instrument_data.py',
-        ROOT / 'tools/build_diagnostic.py', ROOT / 'tools/local_env.py', ROOT / 'tools/anonymize_elf.py'])
+        ROOT / 'tools/build_diagnostic.py', ROOT / 'tools/native_compile.py', ROOT / 'tools/local_env.py', ROOT / 'tools/anonymize_elf.py'])
     source_hashes = {('generated/instrument_data.c' if p == output / 'instrument_data.c'
         else str(p.relative_to(ROOT)).replace('\\', '/')): sha(p) for p in sorted(inputs)}
     identity = hashlib.sha256(json.dumps(source_hashes, sort_keys=True).encode()).hexdigest()[:16]
@@ -72,12 +73,12 @@ def main():
         'debug_path_anonymization': debug_paths,
         'memory_bytes': inspection['memory_bytes'], 'reserved_stack_bytes': 8192,
         'tests': [], 'flash_ready': False, 'device_validated': False,
-        'scope': 'Offline instrument with compact lossless catalog/ownership storage, shared harmonic display, complementary Piano pad geometry and musical setup in Chords. V13 preserves prior settings, expression, cluster calibration, library and songs. Size-optimized LTO and isolated scratch frames; no device access or update package.',
+        'scope': 'Offline instrument with compact lossless catalog/ownership storage, shared harmonic display, complementary Piano pad geometry and musical setup in Chords. V15 preserves prior settings, expression, cluster calibration, library and songs. Size-optimized LTO and isolated scratch frames; no device access or update package.',
         'limits': ['This source revision has not been flashed or device-validated',
             'strike velocity uses recent ADC rise with millisecond resolution and no added attack window; physical soft/hard presets require target-specific qualification',
             'sensitivity profiles are user-specific configuration',
             'new framebuffer and note-color output are software-tested; physical component RGB naming and new timing remain unmeasured',
-            'V13 keeps the V12 chord/library byte offsets and extends view-info values; new-version device restoration needs qualification; updater may erase settings',
+            'V15 keeps prior byte offsets and adds fold/guitar voicing modes; new-version device restoration needs qualification; updater may erase settings',
             'calibration Saved/Calibrated review is playable after all48 selected-cluster pads; unapplied candidates are RAM-only until Apply',
             'stored melody retains 16 unassigned cells; generated layouts cover 48',
             'MPE first milestone is live pads only: Arps/sequencer and per-note expression recording are excluded while enabled; maximum15member channels and no voice stealing',
@@ -86,6 +87,7 @@ def main():
         # The MCU's tiny stdio shim must never shadow the host C library.
         native_includes = [flag for p in includes[:-1] for flag in ('-I', str(p))]
         native = ['-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', *native_includes]
+        native += native_target_flags()
         # The actual-app harness replaces only the host-visible endpoint
         # declaration; the instrument app/core/transport source stays real.
         host_include = output / 'native-include'

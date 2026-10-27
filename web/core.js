@@ -728,7 +728,36 @@ export async function createCore({ bytes, url = new URL('./generated/core.wasm',
       return voices;
     },
   };
+  const guidanceMask = (mask, empty = false) => integer(mask, empty ? 0 : 1, 4095);
+  const guidance = {
+    families: Array.from({length:c.bridge_guidance_scale_count()},(_,id)=>({id,name:textAt(c.bridge_guidance_scale_name(id))})),
+    scale(family,root) {
+      if(!integer(family,0,c.bridge_guidance_scale_count()-1)||!integer(root,0,11))throw new RangeError('Unknown guidance scale');
+      return c.bridge_guidance_scale_mask(family,root);
+    },
+    label(mask,root=255) {
+      if(!guidanceMask(mask,true)||!(integer(root,0,11)||root===255))throw new RangeError('Invalid chord notes');
+      return textAt(c.bridge_guidance_label(mask,root));
+    },
+    chords(key,root,current=0) {
+      if(!guidanceMask(key)||!integer(root,0,11)||!guidanceMask(current,true))throw new RangeError('Invalid chord context');
+      const count=c.bridge_guidance_chords(key,root,current);
+      if(count<0)throw new RangeError('The tonic must be in the key');
+      return Array.from({length:count},(_,row)=>Object.fromEntries(['mask','root','shared','score'].map((field,n)=>[field,c.bridge_guidance_chord_value(row,n)])));
+    },
+    discover(selected) {
+      if(!guidanceMask(selected))throw new RangeError('Select at least one note');
+      const count=c.bridge_guidance_scales(selected);
+      return {total:c.bridge_guidance_scale_total(),matches:Array.from({length:count},(_,row)=>Object.fromEntries(['mask','family','root','extra'].map((field,n)=>[field,c.bridge_guidance_scale_value(row,n)])))};
+    },
+    modulation(source,target,current=0) {
+      if(!guidanceMask(source)||!guidanceMask(target)||!guidanceMask(current,true))throw new RangeError('Invalid key comparison');
+      if(c.bridge_guidance_modulation(source,target,current)!==0)throw new RangeError('Invalid key comparison');
+      return Object.fromEntries(['common','added','removed','pivot','pivotRoot','currentFits'].map((field,n)=>[field,c.bridge_guidance_modulation_value(n)]));
+    },
+  };
   return {
+    guidance,
     firmware, state, settings, rhythm, arp, display, sequencer, calibration, expression,
     press({ pad, notes, mask, channel, velocity = 96, transpose = 0, shape }) {
       if (!integer(pad, 0, 95) || !route(mask, channel) || !integer(velocity, 1, 127) || !integer(transpose, -32768, 32767) ||

@@ -32,7 +32,8 @@ static void init(void)
     static const int16_t degrees[]={0,2,4,5,7,9,11};
     for(unsigned n=0;n<96u;++n)layout[n]=(thy_instrument_pad){.notes={60,64,67},.valid_mask=7,.color=1};
     (void)thy_instrument_set_layout(&instrument,layout,60,degrees,7);
-    thy_engine_init(&engine,&instrument,21u,70u);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&engine,&instrument,21u,70u, undo_workspace_1);
     memset(&memory,0xa5,sizeof memory);memset(&response,0x5a,sizeof response);
     generation=42u;visual_calls=0;provider_available=1;
     const thy_companion_identity id={"0123456789abcdef","00112233445566778899aabb",&generation};

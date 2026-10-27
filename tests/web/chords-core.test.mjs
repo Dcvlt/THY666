@@ -91,3 +91,39 @@ test('copying a user chord in another key does not apply that key twice',async()
   assert.ok(f.library.set(1,1,copy.record).ok);
   assert.deepEqual(f.previewPad(1).notes,[62,66,69]);
 });
+
+test('Auto leading shares the C policy and keeps manual inversion controls inactive',async()=>{
+  const e=await setup(),s=e.state,f=e.firmware;
+  set(s,'chords.voicingMode',2);
+  assert.deepEqual(f.previewPad(4).notes,[57,62,65]);
+  assert.ok(f.pressPad(0).ok);e.drain();
+  assert.deepEqual(f.previewPad(4).notes,[69,62,65]);
+  for(const control of [0,1,2]){assert.ok(f.control(1,control,true).ok);assert.ok(f.control(1,control,false).ok);}
+  assert.equal(f.state().inversion,0);assert.equal(f.state().dropMask,0);
+  assert.ok(f.pressPad(4).ok);e.drain();
+  assert.ok(e.release(0).ok);
+  assert.deepEqual(e.drain().filter(x=>(x.status&0xf0)===0x80).map(x=>x.data1),[60,64,67]);
+  assert.ok(e.release(4).ok);e.drain();
+  set(s,'chords.voicingMode',0);
+  assert.deepEqual(f.previewPad(4).notes,[57,62,65]);
+});
+
+test('fold and guitar register are persisted optional modes with frozen held releases',async()=>{
+  for(const mode of [3,4]) {
+    const e=await setup(),s=e.state,f=e.firmware;
+    assert.ok(f.pressPad(0).ok);e.drain();
+    set(s,'chords.voicingMode',mode);
+    for(const control of [0,1,2]){assert.ok(f.control(1,control,true).ok);assert.ok(f.control(1,control,false).ok);}
+    assert.equal(f.state().voicingMode,mode);
+    const notes=f.previewPad(0).notes;
+    assert.deepEqual([...new Set(notes.map(n=>n%12))].sort((a,b)=>a-b),[0,4,7]);
+    if(mode===3)assert.ok(Math.max(...notes)-Math.min(...notes)<12);
+    else assert.ok(notes.every(n=>n>=40&&n<=75));
+    assert.ok(e.release(0).ok);
+    assert.deepEqual(e.drain().filter(x=>(x.status&0xf0)===0x80).map(x=>x.data1),[60,64,67]);
+    const saved=e.settings.encode(),cold=await setup();
+    assert.equal(e.settings.version,15);assert.ok(cold.settings.apply(saved));
+    assert.equal(cold.firmware.state().voicingMode,mode);
+    assert.deepEqual(cold.firmware.previewPad(0).notes,notes);
+  }
+});

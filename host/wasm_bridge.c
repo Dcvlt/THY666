@@ -1,5 +1,6 @@
 /* Thin host ABI around the portable engine. No musical behavior lives here. */
 #include "thy_core.h"
+#include "thy_harmony.h"
 #include "thy_midi.h"
 #include "thy_instrument.h"
 #include "thy_lighting.h"
@@ -289,7 +290,8 @@ void bridge_firmware_init(void) {
     (void)thy_instrument_set_detector_profile(&firmware, THY_DETECTOR_FACTORY_LINEAR);
     thy_lighting_init(&firmware_lights);
     thy_ui_init(&firmware_ui);
-    thy_engine_init(&shared_engine, &firmware, 21u, 70u);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&shared_engine, &firmware, 21u, 70u, undo_workspace_1);
     thy_engine_bind_calibration(&shared_engine,&calibration_workspace);
     thy_engine_bind_expression(&shared_engine,&expression_workspace);
     thy_engine_bind_channel_expression(&shared_engine,&channel_expression_workspace);
@@ -1533,4 +1535,64 @@ int bridge_library_open(int kind,int slot)
     if(kind<0||kind>2||slot<0||slot>23)return THY_INVALID_ARGUMENT;
     int r=thy_engine_library_open(&shared_engine,(uint8_t)kind,(uint8_t)slot);
     return r==THY_STATE_OK?THY_OK:r==THY_STATE_BLOCKED?THY_ENGINE_LIBRARY_BUSY:THY_INVALID_ARGUMENT;
+}
+
+/* Advisory scratch belongs to this host adapter, never device/settings state. */
+static thy_chord_suggestion guidance_chord_rows[THY_GUIDANCE_LIMIT];
+static thy_scale_match guidance_scale_rows[THY_GUIDANCE_LIMIT];
+static thy_modulation guidance_modulation;
+static size_t guidance_chord_count,guidance_scale_count,guidance_scale_total;
+static char guidance_label[THY_HARMONY_TEXT_BYTES];
+int bridge_guidance_scale_count(void){return (int)thy_guidance_scale_count();}
+uintptr_t bridge_guidance_scale_name(int family)
+{return (uintptr_t)(family<0?NULL:thy_guidance_scale_name((unsigned)family));}
+int bridge_guidance_scale_mask(int family,int root)
+{return family<0||root<0?0:thy_guidance_scale_mask((unsigned)family,(unsigned)root);}
+int bridge_guidance_chords(int key,int root,int current)
+{
+    guidance_chord_count=0u;
+    if(key<1||key>4095||root<0||root>11||current<0||current>4095)return -1;
+    return thy_guidance_chords((uint16_t)key,(uint8_t)root,(uint16_t)current,
+        guidance_chord_rows,THY_GUIDANCE_LIMIT,&guidance_chord_count)==THY_HARMONY_OK?(int)guidance_chord_count:-1;
+}
+int bridge_guidance_chord_value(int row,int field)
+{
+    if(row<0||(size_t)row>=guidance_chord_count)return -1;
+    const thy_chord_suggestion *r=&guidance_chord_rows[row];
+    return field==0?r->mask:field==1?r->root:field==2?r->shared:field==3?r->score:-1;
+}
+int bridge_guidance_scales(int mask)
+{
+    guidance_scale_count=guidance_scale_total=0u;
+    if(mask<1||mask>4095)return -1;
+    return thy_guidance_scales((uint16_t)mask,guidance_scale_rows,THY_GUIDANCE_LIMIT,
+        &guidance_scale_count,&guidance_scale_total)==THY_HARMONY_OK?(int)guidance_scale_count:-1;
+}
+int bridge_guidance_scale_total(void){return (int)guidance_scale_total;}
+int bridge_guidance_scale_value(int row,int field)
+{
+    if(row<0||(size_t)row>=guidance_scale_count)return -1;
+    const thy_scale_match *r=&guidance_scale_rows[row];
+    return field==0?r->mask:field==1?r->family:field==2?r->root:field==3?r->extra:-1;
+}
+int bridge_guidance_modulation(int source,int target,int current)
+{
+    if(source<1||source>4095||target<1||target>4095||current<0||current>4095)return -1;
+    return thy_guidance_modulation((uint16_t)source,(uint16_t)target,(uint16_t)current,&guidance_modulation);
+}
+int bridge_guidance_modulation_value(int field)
+{
+    const thy_modulation *r=&guidance_modulation;
+    return field==0?r->common:field==1?r->added:field==2?r->removed:field==3?r->pivot:
+        field==4?r->pivot_root:field==5?r->current_fits:-1;
+}
+uintptr_t bridge_guidance_label(int mask,int root)
+{
+    if(mask<0||mask>4095||root<0||(root>11&&root!=255))return 0;
+    int16_t notes[12];size_t count=0;thy_harmony harmony;
+    for(unsigned n=0;n<12u;++n){unsigned pc=(n+(root==255?0u:(unsigned)root))%12u;
+        if(mask&(1u<<pc))notes[count++]=(int16_t)(60u+n+(root==255?0u:(unsigned)root));}
+    if(thy_harmony_from_notes(notes,count,(uint8_t)root,&harmony)!=THY_HARMONY_OK ||
+        thy_harmony_format(&harmony,guidance_label,sizeof guidance_label)!=THY_HARMONY_OK)return 0;
+    return (uintptr_t)guidance_label;
 }

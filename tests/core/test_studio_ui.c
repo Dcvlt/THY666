@@ -34,7 +34,8 @@ static void initialize(void)
 {
     thy_core_init(&musical_core);
     thy_instrument_init(&instrument, &musical_core);
-    thy_engine_init(&engine, &instrument, 0u, 70u);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&engine, &instrument, 0u, 70u, undo_workspace_1);
     thy_studio_ui_init(&ui);
     thy_studio_ui_init(&still);
     still.animations_enabled = 0u;

@@ -5,6 +5,13 @@ branding. It does not relicense reference firmware, recovered musical data,
 extracted fonts or downloaded tools. Those materials are not included in this
 source repository.
 
+## Historical THY666 notice
+
+Earlier public THY666 snapshots were distributed under MIT. The original notice
+is retained in [THY666-MIT-legacy.txt](docs/licenses/THY666-MIT-legacy.txt).
+The cleaned repository history and current releases use GPL-3.0-or-later; this historical notice
+does not offer current changes under MIT.
+
 ## Bundled browser fonts
 
 The browser bundles the following unmodified TrueType fonts under the **SIL
@@ -98,10 +105,26 @@ recovered chord data and generated artifacts. Keeping a local input does not
 grant redistribution rights or change its license.
 
 The [lossless chord format](docs/chord-data-format.md) describes the optional
-musical input. No license for third-party musical data is implied by this
-project's GPL-3.0-or-later license. The shared C renderer and browser OLED profile use
+musical input. The maintainer has authorized the reviewed lossless musical archive
+for the corresponding firmware source release. This explicit release input is
+separate from arbitrary local inputs, vendor firmware and private captures.
+Retain its original metadata; the project license does not relicense unrelated
+third-party material. The shared C renderer and browser OLED profile use
 original THY666 glyphs. Compiled releases must retain notices applicable to
 all dependencies and included data.
 
 TheoryBoard and Irijule names identify compatible hardware. THY666 is an
 independent community project and is not an official manufacturer release.
+
+## Musical vocabulary references
+
+The extended harmonic interval collection was cross-checked against the scale
+and chord tables in [TBOSS](https://github.com/armandhammer/TBOSS), by its
+contributors, at commit `306910af4b171c5c056bd49072781cd519089a8d`. Its source
+license is GPL-3.0-or-later. THY666 uses normalized musical names and interval
+facts in its own catalog model; it does not embed that project's engine,
+scheduler, UI or installer implementation. The original playable archive keeps
+its notes, layout slots, octaves and colors. Research comparisons remain local.
+
+The contribution and conduct guides were informed by that project's concise
+community documentation and written independently for THY666.

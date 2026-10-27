@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import unittest
+from tools.native_compile import native_target_flags
 import uuid
 ROOT = Path(__file__).resolve().parents[1]
 class InstrumentDinTests(unittest.TestCase):
@@ -25,7 +26,7 @@ class InstrumentDinTests(unittest.TestCase):
         env["ZIG_GLOBAL_CACHE_DIR"] = str(ROOT / ".tools/zig-cache/global")
         env["ZIG_LOCAL_CACHE_DIR"] = str(output / "zig-cache")
         env["TEMP"] = env["TMP"] = str(ROOT / ".tools/tmp")
-        compiled = subprocess.run([str(compiler), "cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+        compiled = subprocess.run([str(compiler), "cc", *native_target_flags(), "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
             str(ROOT / "tests/core/test_instrument_din.c"), "-o", str(binary)], cwd=ROOT,
             env=env, check=False, capture_output=True, text=True, timeout=60)
         self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)

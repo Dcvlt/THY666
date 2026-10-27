@@ -67,7 +67,7 @@ def browser_updater_adapter(files):
 def package():
     subprocess.run([sys.executable, str(ROOT / "tools/build_studio_schema.py"), "--check"], cwd=ROOT, check=True)
     web = ROOT / "web"
-    paths = [web / name for name in ("index.html", "styles.css", "companion-shell.css", "help.css", "companion-theme.css", "assets/thy666-web-logo.svg", "core.js", "oled.js", "controller.js", "firmware.js", "studio-menu.js", "studio-model.js", "engine-studio.js", "preview-settings.js", "rhythm-lab.js", "arp-lab.js", "mpe-lab.js", "library-lab.js", "sequencer-midi.js", "device-song.js", "sequencer-lab.js", "device-client.js", "companion-protocol.js", "help-topics.js", "help.js", "app-settings.js", "backup-panel.js", "companion-shell.js", "app.js",
+    paths = [web / name for name in ("index.html", "styles.css", "companion-shell.css", "help.css", "companion-theme.css", "assets/thy666-web-logo.svg", "core.js", "oled.js", "controller.js", "firmware.js", "studio-menu.js", "studio-model.js", "engine-studio.js", "preview-settings.js", "rhythm-lab.js", "arp-lab.js", "mpe-lab.js", "library-lab.js", "harmony-guide.js", "sequencer-midi.js", "device-song.js", "sequencer-lab.js", "device-client.js", "companion-protocol.js", "help-topics.js", "help.js", "app-settings.js", "backup-panel.js", "companion-shell.js", "app.js",
                                     "generated/core.wasm", "generated/chords.runtime.json", "generated/oled-profile.json",
                                     "generated/build-info.json", "generated/menu-schema.js")]
     paths += [web / "cockpit.js", web / "cockpit.css", web / "typography.css",
@@ -210,8 +210,9 @@ def package():
     cockpit = inline_named_module(assets["cockpit.js"], "cockpit.js", ("./companion-protocol.js",))
     companion_display = inline_named_module(assets["companion-display.js"], "companion-display.js")
     startup = inline_named_module(assets["startup.js"], "startup.js")
+    harmony_guide = inline_named_module(assets["harmony-guide.js"], "harmony-guide.js")
     companion = inline_named_module(assets["companion-shell.js"], "companion-shell.js",
-        ("./studio-menu.js", "./device-client.js", "./companion-protocol.js", "./companion-display.js", "./help.js", "./backup-panel.js", "./updater-panel.js", "./browser-updater-client.js", "./app-settings.js", "./cockpit.js"))
+        ("./studio-menu.js", "./device-client.js", "./companion-protocol.js", "./companion-display.js", "./help.js", "./backup-panel.js", "./updater-panel.js", "./browser-updater-client.js", "./app-settings.js", "./cockpit.js", "./harmony-guide.js"))
     factory = "createBrowserUpdaterClient({"
     browser_guard = "&&globalThis.isSecureContext===true;"
     if companion.count(factory) != 1 or companion.count(browser_guard) != 1:
@@ -224,7 +225,7 @@ def package():
     javascript = "\n".join((core, oled, controller, menu, firmware, schema, model, engine_studio, settings,
         rhythm, arp, mpe, library, sequencer_midi, device_song, sequencer, device_client,
         companion_protocol, help_topics, help_ui, app_settings, cockpit, companion_display, backup_panel, updater_client,
-        browser_hid, browser_updater, browser_adapter, desktop_runtime, desktop_chrome, updater_checks, updater_art, updater_layout, updater_panel, companion, startup, app)).replace("</script", "<\\/script")
+        browser_hid, browser_updater, browser_adapter, desktop_runtime, desktop_chrome, updater_checks, updater_art, updater_layout, updater_panel, harmony_guide, companion, startup, app)).replace("</script", "<\\/script")
     embedded = ('<script id="thy-core-bytes" type="application/octet-stream">' +
                 base64.b64encode(assets["generated/core.wasm"]).decode("ascii") + '</script>\n' +
                 '<script id="thy-runtime-data" type="application/json">' + data.replace('<', '\\u003c') + '</script>\n' +

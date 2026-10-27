@@ -67,7 +67,7 @@ test('settings saving, unsupported formats, unavailable storage and errors never
   for (const status of ['pending', 'saving', 'error', 'unsupported', 'unavailable', 'unknown']) {
     assert.throws(() => checkUpdateHealth('settings', replace('settings', 'status', status), operation()), status);
   }
-  for (const version of ['0', '12', '14', '999']) assert.throws(() => checkUpdateHealth('settings', replace('settings', 'version', version), operation()), `version ${version}`);
+  for (const version of ['0', '12', '16', '999']) assert.throws(() => checkUpdateHealth('settings', replace('settings', 'version', version), operation()), `version ${version}`);
   assert.throws(() => checkUpdateHealth('settings', replace('settings', 'errors', '1'), operation()));
 });
 test('display checks require the known report version, an initial completed frame and no transfer or driver faults', () => {
@@ -104,3 +104,12 @@ test('wrong report families, failed commands, oversized output and nonstrings ne
   }
   assert.throws(() => checkUpdateHealth('unknown', reports.io, operation()));
 });
+
+test('settings health accepts v14 while retaining v13 compatibility', () => {
+  assert.match(checkUpdateHealth('settings', reports.settings.replace('version=13', 'version=14'), operation()), /Saved settings/);
+  assert.throws(() => checkUpdateHealth('settings', reports.settings.replace('version=13', 'version=16'), operation()), /not supported/);
+});
+
+ test('settings health accepts current v15 without dropping prior format support',()=>{
+  assert.match(checkUpdateHealth('settings',reports.settings.replace('version=13','version=15'),operation()),/Saved settings/);
+ });

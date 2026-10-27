@@ -117,6 +117,7 @@ void thy_engine_bind_calibration(thy_engine *e,thy_calibration *workspace)
 }
 int thy_engine_calibration_open(thy_engine *e)
 {
+    if(e&&e->instrument&&e->instrument->guidance.open)return THY_STATE_BLOCKED;
     if(!e || !e->calibration)return THY_STATE_UNAVAILABLE;
     if(!quiet(e)){e->state.notice=THY_NOTICE_RELEASE;return THY_STATE_BLOCKED;}
     unsigned side=e->sensitivity_target==97u?1u:

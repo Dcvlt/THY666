@@ -1,5 +1,5 @@
 // Test-only projection for constructing genuine V4–V12 byte fixtures from a
-// current V13 export. Those formats had twelve info IDs, so changing only the
+// current V15 export. Those formats had twelve info IDs, so changing only the
 // version marker would create an invalid old payload when factory Names=12.
 // Unknown/newer values are not silently repaired; only the introduced Names
 // default maps to the corresponding historical line's meaning.

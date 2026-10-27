@@ -126,7 +126,8 @@ static int arp_batch_preflights_cleanup_before_capacity(void)
 static int sequencer_batch_preflights_cleanup_before_capacity(void)
 {
     CHECK(leave_dirty_channel());thy_clock_init(&clock_,0);thy_transport_init(&transport,&clock_);
-    thy_sequencer_init(&sequencer);sequencer.tracks[0].channel=2;sequencer.tracks[0].destinations=4;
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_sequencer_init(&sequencer, undo_workspace_1);sequencer.tracks[0].channel=2;sequencer.tracks[0].destinations=4;
     thy_seq_event notes[3]={
         {.tick=0,.duration=240,.pitch=60,.value=96,.group=1},
         {.tick=0,.duration=240,.pitch=64,.value=96,.group=1},

@@ -16,14 +16,14 @@ a separate input for firmware and optional standalone workbench builds.
 The header tabs are **Update**, **Client** and **Documentation**, in that
 order. The app opens **Client → Board** by default. **Update** is a separate
 application area, outside the Client sidebar. **Client** contains Board,
-Parameters, Songs & library, Backups and Diagnostics. **Documentation** contains
+Parameters, Harmony, Songs & library, Backups and Diagnostics. **Documentation** contains
 searchable guides, related articles and contextual help for controls/settings.
 Opening the app or reading help
 does not connect to the controller. Without a board, its surface is an inactive
 wireframe; mouse, touch and keyboard gestures cannot play it or change a device.
 
 Without a connected board, **Board** provides the red wireframe outline and
-**Documentation** and **Update** remain available. **Parameters**, **Songs & library**,
+**Harmony**, **Documentation** and **Update** remain available. **Parameters**, **Songs & library**,
 **Backups** and **Diagnostics** are disabled until connection. They do not open
 as offline editors, and disconnecting returns any of those pages to Board.
 

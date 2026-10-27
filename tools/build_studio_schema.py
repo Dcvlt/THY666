@@ -133,7 +133,7 @@ def projection():
                 item["text_offset"] = text_count
                 text_count += COUNTS[item["family"]]
             rows.append(item)
-    if len(rows) != 297 or len(groups) != 13:
+    if len(rows) != 298 or len(groups) != 13:
         raise ValueError("Menu cardinality changed; review stable C row IDs and shared-contract tests.")
     if len({row["id"] for row in rows}) != len(rows):
         raise ValueError("Duplicate row IDs")

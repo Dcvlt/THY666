@@ -82,7 +82,7 @@ before it can be selected or assigned.
 
 ## Voicing buttons and lower controls
 
-**Chords → Voicing buttons** selects between the existing I/II/III prefix-up
+**Chords → Voicing** selects between the existing I/II/III prefix-up
 inversions and **Drop voices**. In Drop voices mode these are independent toggles
 that lower the second, third and fourth distinct ascending enabled tones by an
 octave. Duplicate original slots at one pitch move together. Chords with fewer
@@ -109,6 +109,144 @@ Upper stacks apply in Stored notes mode. Octave layers use the independent
 seven-layer mask, avoiding multiplication of both copy systems. One-shot strum
 ordering/delay continues to use the same resolved chord and owned releases.
 Independent repeating/gated/routed strummer engines remain later work.
+
+## Automatic voice leading
+
+Select **Chords → Voicing → Auto leading**. The first successful left chord
+keeps its source register. Subsequent chords choose octave placements near the
+previous successful source voicing. This is optional and defaults to Inversions.
+It is available in the shared core; device timing and musical feel still need
+hardware qualification.
+
+For example, C–E–G at 60–64–67 followed by F–A–C at 65–69–72 becomes
+65–69–60. The common C stays at 60, while the other voices move by one and two
+semitones. Held notes keep their original pitches and release destinations.
+
+The bounded search compares ascending unique voices across cyclic inversions,
+minimizing total movement; ties favor the authored register. Different chord
+sizes match voice ranks proportionally. Duplicate source slots stay duplicates,
+inactive slots stay inactive, and only octave placements change. It does not
+choose a new chord or substitute a harmony.
+
+Auto leading replaces manual Inversions/Drop voices; I/II/III and the context
+inversion action are inactive in this mode. Spread, bass octave, transpose,
+octave copies and strum still apply afterwards. History therefore follows the
+source voicing before these effects, not a reconstruction of the final layered
+MIDI output. Previewing a pad does not advance history; failed attacks, empty
+chords and MPE glide-only gestures do not replace it. Releasing a chord retains
+history. Changing key/scale, chord layout/family/set or voicing mode, restoring
+settings and Panic reset it.
+
+Settings v14 introduced this policy; current v15 also supports the register modes below. The codec saves the policy, never its transient history. Earlier settings
+retain their original inversion/drop behavior. Older firmware cannot import a
+v15 settings export.
+
+## Octave fold and guitar register
+
+**Chords → Voicing → Octave fold** places enabled source pitches into one octave
+starting at the lowest enabled source note, capped at MIDI 116 so the octave
+fits below MIDI 128. It preserves pitch classes, slot order, duplicate slots
+and inactive holes. Octave doublings can become the same pitch. This is an
+optional compact voicing; it does not change the archived chord data.
+
+**Guitar register** assigns each distinct chord pitch class to a separate string
+in standard E2–A2–D3–G3–B3–E4 tuning, using frets 0–11. A bounded search minimizes
+total fret numbers, then register; unused strings are muted. Duplicate pitch
+classes share their selected pitch. A chord with seven distinct pitch classes
+passes through unchanged so no tone is silently discarded. This supplies a
+guitar-like register, not a guarantee of comfortable human fingering. The
+right-pad Guitar layout remains an independent setting.
+
+Like Auto leading, these modes replace manual I/II/III inversions; those buttons
+and the context inversion action are inactive. Spread, bass octave, transpose,
+octave layers and strum still apply afterwards and can move notes outside the
+compact/guitar register. All changes affect future attacks. Held pitches and
+release routes remain unchanged, and Live Update follows the resolved chord.
+Settings v15 stores the selection in the existing policy byte. It accepts older
+v1–v14 data with their original limits; older firmware cannot import v15 exports.
+
+## Harmony guidance in the Client
+
+Open **Client → Harmony** in the browser or desktop app. This page also works
+without a board or the private musical archive. Its input is a local sketch,
+initially C major with C–E–G selected; it does not listen to the board or infer
+its current key. It neither plays notes nor changes device settings. The C core
+performs the analysis; JavaScript renders results and holds the unsaved sketch.
+
+1. Choose a **working key** and select the pitch classes you want to explore.
+2. **Chord suggestions** lists supported in-key chords, excluding
+   the exact selected set. Familiar triads/sevenths rank before extended shapes;
+   within each tier shared-tone count ranks first, and tonic and fifth-root
+   options break ties. Click a chord to replace the sketch notes and explore
+   another move. This is common-tone guidance, not a functional-harmony model
+   or a claim that the highest-ranked chord is musically best.
+3. **Scale discovery** finds collections containing every selected note. It
+   searches 99 merged families in all twelve roots, showing up to 24 matches
+   ranked by fewest extra notes and reporting the total. The families include
+   the seven major modes, harmonic and ascending melodic minor, major/minor
+   pentatonic, blues, whole tone, both diminished collections and chromatic.
+   The merged interval vocabulary combines the original collection with the
+   extended scale/chord collection; exact duplicate interval sets share one
+   family and aliases remain in the local model. The board's existing 70-family
+   playable catalog and its saved IDs/layouts remain unchanged. Modes with identical notes remain separate possibilities; sparse
+   input cannot establish an intended tonal center. Silence produces no match.
+4. Select a match to compare it in **Modulation**, or choose a destination
+   directly. The comparison identifies common, introduced and removed notes,
+   whether the sketch fits both collections, and a possible shared major,
+   minor or diminished triad. No pivot is invented when none fits. The pivot
+   is a common-tone option, not a guarantee of a convincing modulation.
+5. **Use destination as working key** changes this local sketch only. Change
+   the board through Parameters separately when desired. Sketches are not
+   saved or included in backups.
+
+For C major → G major, the comparison retains C–D–E–G–A–B, introduces F♯,
+and leaves F behind. C major is one possible shared chord. C major → A natural
+minor keeps the same notes but changes the tonal center, so the guidance calls
+out that distinction. Pitches use sharp spellings for compact presentation;
+octave/register information is deliberately absent from this pitch-class tool.
+
+These tools have native C and browser regressions. The Client sketch remains
+independent of the board's Harmony menu; neither automatically transforms music.
+
+## Harmony guidance on the board
+
+Open **Chords → Harmony guidance**. The source key is a snapshot of the
+configured root and effective scale (including a custom scale), taken on entry.
+Reopen the menu after changing the key. Live Update's temporary right-hand pool
+does not replace this source key. Captured notes start empty on every entry.
+
+| Control or action | Behavior |
+| --- | --- |
+| UP / DOWN | Move through tools or results; in destination editing, change the value. No hold-repeat. |
+| RIGHT | Open a tool, capture notes, or enter/finish destination editing. Selecting a discovered scale opens its modulation comparison. |
+| LEFT | Leave destination editing, return to the tool list, then return to Settings. |
+| CENTER | Immediately return to Play from every guidance screen. |
+| Add held notes | Add the pitch classes of currently held physical owners and held Arp inputs. Repeat across chords to discover scales for a progression. |
+| Use selected chord | Replace the captured set with the last selected left pad's current resolved preview, including voicing/transpose. This also works with direct chords muted; it is a preview, not a capture of a previous sounding attack. |
+| Clear captured notes | Empty the analysis input without affecting sounding notes. |
+
+Physical pads and performance controls keep their ordinary roles. No pad is
+repurposed to audition or select a suggestion. Held notes keep their original
+release routes; generated Arp/sequencer output and released sustain tails are
+excluded from **Add held notes**. Capturing includes the complete admitted
+physical chord even while a strum is still delivering its notes. MPE silent or
+glide-only gestures without a physical note owner are not independent evidence.
+
+Chord suggestions show their pitch classes below the selected result. Scale
+search shows the top 24 matches, preserving separate modal identities. Modulation
+lets you edit the destination root and family, inspect common/introduced/removed
+notes, and inspect a shared pivot triad. Browsing or selecting advice does not
+apply a root, scale, chord mapping, voice-leading history, library record or MIDI
+message. Apply musical changes separately through the existing controls/settings.
+The 16 advisory families are not interchangeable with archival catalog IDs.
+
+Calibration, library editing and sequencer editor entry cannot overlap this
+browser. An open Arp quick page closes when guidance opens, but Arps keep playing.
+Settings restore closes guidance and clears its transient snapshot. Nothing from
+this browser is saved or included in backups. Native control/navigation and
+ownership regressions pass locally; board timing and hardware qualification
+remain pending.
+
 
 ## Editing the custom library
 

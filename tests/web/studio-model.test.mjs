@@ -348,7 +348,7 @@ test('Performance response drafts cancel cleanly and commit to the route capture
   assert.deepEqual(engine.drain(), []);
 });
 
-test('Performance response aliases restore through the existing V13 route codec without extra storage', async () => {
+test('Performance response aliases restore through the existing V15 route codec without extra storage', async () => {
   const source = await harness();
   for (const [target, pressure, bend, range] of [
     ['left', 'poly', 'up', 4], ['right', 'channel', 'down', 17],
@@ -359,7 +359,7 @@ test('Performance response aliases restore through the existing V13 route codec 
     assert.ok(source.model.set('performance.bendRange', range).ok);
   }
   const payload = source.engine.settings.encode();
-  assert.equal(source.engine.settings.payloadVersion(payload), 13);
+  assert.equal(source.engine.settings.payloadVersion(payload), 15);
   assert.equal(payload.length, 5633);
   const cold = await harness();
   assert.equal(cold.engine.settings.apply(payload), true);

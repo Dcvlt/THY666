@@ -23,7 +23,8 @@ static void initialize(void)
     layout[4] = (thy_instrument_pad){.notes = {65,69,72}, .valid_mask = 7u, .color = 4u};
     layout[48].notes[0] = 62;
     (void)thy_instrument_set_layout(&instrument, layout, 60, degrees, 7u);
-    thy_engine_init(&engine, &instrument, 21u, 70u);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&engine, &instrument, 21u, 70u, undo_workspace_1);
     (void)thy_engine_advance(&engine, 0u);
 }
 static unsigned drain(void)

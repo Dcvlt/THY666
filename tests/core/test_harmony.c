@@ -240,9 +240,67 @@ static int all_pitch_class_sets_have_consistent_exact_context_and_format_bounds(
     return 1;
 }
 
+static int guidance_is_bounded_and_advisory(void)
+{
+    CHECK(thy_guidance_scale_count()==99u);
+    const uint16_t major=thy_guidance_scale_mask(0u,0u);
+    CHECK(major==0xab5u && thy_guidance_scale_mask(5u,9u)==major);
+    CHECK(!thy_guidance_scale_mask((unsigned)thy_guidance_scale_count(),0u) && !thy_guidance_scale_mask(0u,12u));
+    thy_chord_suggestion chords[24];size_t count=0;
+    CHECK(thy_guidance_chords(major,0u,0x091u,chords,24u,&count)==THY_HARMONY_OK);
+    CHECK(count>0u && count<=24u);
+    int dominant=0;
+    for(size_t n=0;n<count;++n){
+        CHECK((chords[n].mask&major)==chords[n].mask && chords[n].mask!=0x091u);
+        CHECK(chords[n].mask&(1u<<chords[n].root));
+        if(n)CHECK(chords[n-1u].score>=chords[n].score);
+        for(size_t j=0;j<n;++j)CHECK(chords[n].mask!=chords[j].mask);
+        if(chords[n].root==7u && chords[n].mask==0x8a4u)dominant=1;
+    }
+    CHECK(dominant);
+    thy_chord_suggestion before[24];memcpy(before,chords,sizeof chords);size_t old=count;
+    CHECK(thy_guidance_chords(major,1u,0,chords,24u,&count)==THY_HARMONY_INVALID);
+    CHECK(count==old && !memcmp(before,chords,sizeof chords));
+    CHECK(thy_guidance_chords(major,0u,0,chords,25u,&count)==THY_HARMONY_INVALID);
+    thy_modulation m;
+    CHECK(thy_guidance_modulation(major,thy_guidance_scale_mask(0u,7u),0x091u,&m)==THY_HARMONY_OK);
+    CHECK(m.added==(1u<<6) && m.removed==(1u<<5) && m.current_fits);
+    CHECK(m.pivot==0x091u && m.pivot_root==0u);
+    CHECK(thy_guidance_modulation(major,thy_guidance_scale_mask(0u,6u),0x091u,&m)==THY_HARMONY_OK);
+    CHECK(!m.pivot && !m.current_fits && m.pivot_root==255u);
+    CHECK(thy_guidance_modulation(major,major,0,&m)==THY_HARMONY_OK);
+    CHECK(!m.added && !m.removed && !m.current_fits);
+    thy_modulation saved=m;
+    CHECK(thy_guidance_modulation(0,major,0,&m)==THY_HARMONY_INVALID);
+    CHECK(!memcmp(&m,&saved,sizeof m));
+    return 1;
+}
+static int scale_discovery_all_pitch_sets(void)
+{
+    for(unsigned mask=1;mask<4096u;++mask){
+        struct {thy_scale_match rows[24];uint32_t guard;} storage={.guard=0xabcdefu};
+        size_t count=0,total=0,oracle=0;
+        CHECK(thy_guidance_scales((uint16_t)mask,storage.rows,24u,&count,&total)==THY_HARMONY_OK);
+        for(unsigned family=0;family<thy_guidance_scale_count();++family)for(unsigned root=0;root<12u;++root){
+            uint16_t scale=thy_guidance_scale_mask(family,root);
+            CHECK(scale&(1u<<root));if((scale&mask)==mask)++oracle;
+        }
+        CHECK(oracle==total && count==(total<24u?total:24u) && storage.guard==0xabcdefu);
+        for(size_t n=0;n<count;++n){
+            CHECK((storage.rows[n].mask&mask)==mask);
+            CHECK(storage.rows[n].mask==thy_guidance_scale_mask(storage.rows[n].family,storage.rows[n].root));
+            if(n)CHECK(storage.rows[n-1u].extra<=storage.rows[n].extra);
+        }
+    }
+    thy_scale_match row={123u,1u,2u,3u},before=row;size_t count=99,total=88;
+    CHECK(thy_guidance_scales(0,&row,1u,&count,&total)==THY_HARMONY_INVALID);
+    CHECK(!memcmp(&row,&before,sizeof row) && count==99u && total==88u);
+    return 1;
+}
+
 int main(void)
 {
-    int (*tests[])(void)={
+    int (*tests[])(void)={guidance_is_bounded_and_advisory,scale_discovery_all_pitch_sets,
         basic_chords_notes_and_octaves_are_distinct,
         source_root_and_actual_bass_survive_inversion_drop_and_layers,
         ambiguity_is_deterministic_and_context_is_explicit,

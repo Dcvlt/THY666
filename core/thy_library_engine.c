@@ -117,7 +117,7 @@ int thy_engine_library_import(thy_engine *e,const uint8_t *file,size_t count)
 }
 int thy_engine_library_open(thy_engine *e,uint8_t kind,uint8_t slot)
 {
-    if(!valid(e)||e->calibration_open||e->sequencer_ui.open)return THY_STATE_BLOCKED;
+    if(!valid(e)||e->calibration_open||e->sequencer_ui.open||e->instrument->guidance.open)return THY_STATE_BLOCKED;
     if(thy_library_ui_open(&e->instrument->library_editor,&e->instrument->library,kind,slot)!=THY_LIBRARY_OK)return THY_STATE_INVALID;
     if(e->state.editing)(void)thy_state_cancel(&e->state);
     e->arp_quick_open=0u;thy_engine_repeat_cancel(e);++e->state.transition_revision;return THY_STATE_OK;

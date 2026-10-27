@@ -70,7 +70,7 @@ typedef struct thy_seq_capture {
 } thy_seq_capture;
 typedef struct thy_sequencer {
     thy_seq_event events[THY_SEQ_EVENTS];
-    thy_seq_event history[THY_SEQ_EVENTS];
+    thy_seq_event *history; /* Caller-owned THY_SEQ_EVENTS arena; lifetime matches seq. */
     thy_seq_event take[THY_SEQ_TAKE_EVENTS];
     thy_seq_track tracks[THY_SEQ_TRACKS], history_tracks[THY_SEQ_TRACKS];
     thy_seq_run runs[THY_SEQ_TRACKS];
@@ -84,7 +84,8 @@ typedef struct thy_sequencer {
     uint8_t transaction_open, transaction_saved;
 } thy_sequencer;
 
-void thy_sequencer_init(thy_sequencer *seq);
+/* history is required, exclusive to this sequencer, and fully initialized here. */
+void thy_sequencer_init(thy_sequencer *seq, thy_seq_event history[THY_SEQ_EVENTS]);
 int thy_sequencer_select(thy_sequencer *seq, uint8_t track);
 int thy_sequencer_track_exists(const thy_sequencer *seq, uint8_t track);
 int thy_sequencer_create(thy_sequencer *seq, uint8_t track);

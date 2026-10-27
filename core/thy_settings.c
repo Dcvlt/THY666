@@ -23,6 +23,8 @@
  * dual-stage expression profiles and96literal per-pad profiles/override flags.
  * V12 appends ten chord policies and a streamed 740-byte named musical library.
  * V13 extends the view-info enum with Musical names without adding bytes.
+ * V14 extends the voicing policy with automatic leading, without adding bytes.
+ * V15 adds octave fold and guitar register without adding bytes.
  * Every prior field/song offset is frozen for its original version. */
 _Static_assert(THY_SETTINGS_RECORD_BYTES<=THY_SETTINGS_WRITE_SLOT_SPAN*THY_SETTINGS_SLOT_BYTES,
     "settings record must fit its reserved journal region");
@@ -30,7 +32,7 @@ _Static_assert(THY_SETTINGS_RECORD_BYTES<=THY_SETTINGS_WRITE_SLOT_SPAN*THY_SETTI
 #define CHORD_BYTES(X) \
     X(keep_transpose,1) X(live_update,1) X(live_lock_scale,1) X(live_mute_chord,1) \
     X(chord_layout,THY_CHORD_LAYOUT_USER) X(chord_quality,THY_CHORD_QUALITY_COUNT-1u) \
-    X(six_bank,THY_LIBRARY_SIX_SETS-1u) X(voicing_mode,1) X(drop_mask,7) X(user_scale,THY_LIBRARY_SCALES)
+    X(six_bank,THY_LIBRARY_SIX_SETS-1u) X(voicing_mode,4) X(drop_mask,7) X(user_scale,THY_LIBRARY_SCALES)
 #define CONFIG_BYTES(X) \
     X(fixed_velocity,127) X(pressure_enabled,1) X(lights_enabled,1) \
     X(light_idle,8) X(light_held,8) X(light_chord_mode,2) \
@@ -273,6 +275,8 @@ static int valid_config(const config *c, uint16_t scales, unsigned version) {
     CONFIG_BYTES(FIELD)
     CHORD_BYTES(FIELD)
 #undef FIELD
+    if(version<14u && c->voicing_mode>1u)return 0;
+    if(version<15u && c->voicing_mode>2u)return 0;
     if(version>=4u) {
         /* The old v4 workspace byte accepted Scales=0 and Chromatic=1. Both
          * migrate to Play only after their original range is validated. */
@@ -381,6 +385,10 @@ int thy_settings_payload_version(const uint8_t *in,size_t count) {
         in[3]==0xf2u && in[4]==0x54u && in[5]==0x48u && in[6]==12u) return 12u;
     if(count>=THY_SETTINGS_V13_PARAMETER_BYTES+32u && count<=THY_SETTINGS_PAYLOAD_MAX &&
         in[3]==0xf2u && in[4]==0x54u && in[5]==0x48u && in[6]==13u) return 13u;
+    if(count>=THY_SETTINGS_V14_PARAMETER_BYTES+32u && count<=THY_SETTINGS_PAYLOAD_MAX &&
+        in[3]==0xf2u && in[4]==0x54u && in[5]==0x48u && in[6]==14u) return 14u;
+    if(count>=THY_SETTINGS_V15_PARAMETER_BYTES+32u && count<=THY_SETTINGS_PAYLOAD_MAX &&
+        in[3]==0xf2u && in[4]==0x54u && in[5]==0x48u && in[6]==15u) return 15u;
     return 0u;
 }
 /* Read the validated byte projection directly. No 740-byte automatic library
@@ -575,9 +583,11 @@ THY_SETTINGS_NOINLINE int thy_settings_apply(thy_engine *e,const uint8_t *in,siz
 #define FIELD(name,max) i->name=c.name;
     CHORD_BYTES(FIELD)
 #undef FIELD
+    i->voicing_previous_mask=0u;
     i->live_anchor=0; i->live_degree_count=0u;
     for(unsigned n=0;n<12u;++n)i->live_degrees[n]=0;
     i->library_editor=(thy_library_ui){0};
+    i->guidance=(thy_guidance_ui){0};
     (void)thy_instrument_apply_scale(i);
     for(unsigned n=0;n<THY_INSTRUMENT_ROUTE_TARGETS;++n)e->channel_routes[n]=c.channel_routes[n];
     for(unsigned n=0;n<2u;++n)i->expression_profiles[n]=c.expression_profiles[n];

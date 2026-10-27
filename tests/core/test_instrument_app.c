@@ -356,7 +356,8 @@ static void same_catalog_refresh_preserves_lower_preferences(void)
 {
     thy_core_init(&core);
     thy_instrument_init(&instrument,&core);
-    thy_engine_init(&high_level,&instrument,21u,70u);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&high_level,&instrument,21u,70u, undo_workspace_1);
     thy_engine_bind_controls(&high_level);
     thy_instrument_set_action_handler(&instrument,action,NULL);
     group_index=21u; scale_index=256u; last_layout_revision=0u;
@@ -416,7 +417,8 @@ static void calibration_callback_mapping_tests(void)
      * callback, rather than a replacement that happens to draw pad zero. */
     assert(mock_color_override==calibration_colors && mock_color_context==&high_level);
     thy_core_init(&core);thy_instrument_init(&instrument,&core);
-    thy_engine_init(&high_level,&instrument,21u,70u);
+    static thy_seq_event undo_workspace_2[THY_SEQ_EVENTS];
+    thy_engine_init(&high_level,&instrument,21u,70u, undo_workspace_2);
     thy_engine_bind_calibration(&high_level,&calibration);
     uint8_t mapping[96];
     for(unsigned p=0;p<96u;++p)mapping[p]=(uint8_t)((p*37u+11u)%96u);
@@ -452,7 +454,8 @@ static void backup_and_companion_integration(void)
     static uint8_t candidate[THY_BACKUP_FILE_MAX],encoded[THY_SETTINGS_PAYLOAD_MAX];
     char reply[384],command[128];
     thy_core_init(&core);thy_instrument_init(&instrument,&core);
-    thy_engine_init(&high_level,&instrument,21u,70u);thy_engine_bind_expression(&high_level,&expression);
+    static thy_seq_event undo_workspace_3[THY_SEQ_EVENTS];
+    thy_engine_init(&high_level,&instrument,21u,70u, undo_workspace_3);thy_engine_bind_expression(&high_level,&expression);
     thy_engine_bind_channel_expression(&high_level,&channel_expression);
     (void)thy_instrument_set_detector_profile(&instrument,THY_DETECTOR_FACTORY_LINEAR);
     memset(mock_settings_flash,255u,sizeof mock_settings_flash);

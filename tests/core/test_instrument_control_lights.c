@@ -50,7 +50,8 @@ static void setup(void)
     memset(decoded, 0, sizeof decoded);
     thy_core_init(&core);
     thy_instrument_init(&instrument, &core);
-    thy_engine_init(&engine, &instrument, 21u, 70u);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&engine, &instrument, 21u, 70u, undo_workspace_1);
     board_center_init();
     board_controls_init();
     thy_instrument_control_lights_init();

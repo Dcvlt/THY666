@@ -12,9 +12,10 @@ import { initializeBackupPanel } from './backup-panel.js';
 import { initializeUpdaterPanel } from './updater-panel.js';
 import { createBrowserUpdaterClient } from './browser-updater-client.js';
 import { initializeAppSettings } from './app-settings.js';
+import { initializeHarmonyGuide } from './harmony-guide.js';
 import { initializeCockpit } from './cockpit.js';
 
-const icons={board:'▦',parameters:'◈',library:'♫',backups:'⇅',diagnostics:'⌁'};
+const icons={board:'▦',harmony:'◇',parameters:'◈',library:'♫',backups:'⇅',diagnostics:'⌁'};
 const devicePages=new Set(['parameters','library','backups','diagnostics']);
 const el=(tag,className='',text)=>{
   const node=document.createElement(tag);node.className=className;if(text!==undefined)node.textContent=String(text);return node;
@@ -91,11 +92,12 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   const railToggle=button('','button rail-toggle',()=>setRailCollapsed(!workspace.classList.contains('rail-collapsed')));
   railToggle.append(el('span','rail-icon','«'),el('span','rail-toggle-text','Collapse'));railToggle.setAttribute('aria-controls','companion-client-navigation');
   clientNav.id='companion-client-navigation';rail.append(railToggle,clientNav);
-  for(const [id,label] of [['board','Board'],['parameters','Parameters'],['library','Songs & library'],['backups','Backups'],['diagnostics','Diagnostics']]){
+  for(const [id,label] of [['board','Board'],['parameters','Parameters'],['harmony','Harmony'],['library','Songs & library'],['backups','Backups'],['diagnostics','Diagnostics']]){
     const nav=button('',id==='board'?'is-selected':'',()=>showPage(id));nav.dataset.page=id;
     nav.setAttribute('aria-label',label);nav.dataset.label=label;nav.title=label;nav.append(el('span','rail-icon',icons[id]),el('span','rail-text',label));clientNav.append(nav);subButtons.set(id,nav);
     const pane=el('section','companion-page');pane.id=`companion-${id}`;pane.hidden=id!=='board';panes.set(id,pane);content.append(pane);
   }
+  initializeHarmonyGuide(panes.get('harmony'),engine.guidance);
   workspace.append(rail,content);
   const updatePane=el('section','companion-page companion-update-area');updatePane.id='companion-update';updatePane.hidden=true;
   panes.set('update',updatePane);
@@ -294,7 +296,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     // Keep existing links/API callers working while Update is a separate area.
     if(next==='update'){showArea('update');return;}
     if(updater?.usbBusy){tell('The updater owns USB. Wait for it to finish before opening Client.');return;}
-    if(devicePages.has(next)&&!client.connected){tell('Connect your board to open this page. Board, Update and Documentation remain available offline.');next='board';}
+    if(devicePages.has(next)&&!client.connected){tell('Connect your board to open this page. Board, Harmony, Update and Documentation remain available offline.');next='board';}
     if(!panes.has(next))next='board';if(page==='board'&&next!=='board'&&!client.connected)onPreviewStart?.();page=next;selectArea('client');
     for(const [id,pane] of panes)pane.hidden=id!==next;
     for(const [id,nav] of subButtons){nav.classList.toggle('is-selected',id===next);nav.setAttribute('aria-current',id===next?'page':'false');}

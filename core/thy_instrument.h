@@ -10,6 +10,7 @@
 #include "thy_voicing.h"
 #include "thy_library.h"
 #include "thy_library_ui.h"
+#include "thy_harmony.h"
 #define THY_CHORD_LAYOUT_USER 5u /* Direct library records; caller-owned layout. */
 
 #define THY_INSTRUMENT_CONTROLS 43u
@@ -353,10 +354,13 @@ typedef struct thy_instrument {
     uint8_t selected_chord;   /* Last left pad; melody presses cannot retarget slot edits. */
     uint8_t keep_transpose, live_update, live_lock_scale, live_mute_chord;
     uint8_t chord_layout, chord_quality, six_bank;
-    uint8_t voicing_mode, drop_mask; /* 0 prefix-up inversions;1 independent drops. */
+    uint8_t voicing_mode, drop_mask; /* 0 inversions;1 drops;2 leading;3 fold;4 guitar register. */
+    uint8_t voicing_previous_mask; /* Transient, never persisted. */
+    int16_t voicing_previous[7];
     uint8_t user_scale; /* 0 builtin;1..8 named custom scale. */
     thy_library library;
     thy_library_ui library_editor;
+    thy_guidance_ui guidance; /* Advisory UI only; never serialized. */
     int16_t catalog_degrees[12];
     uint8_t catalog_degree_count;
     uint8_t live_degree_count; /* Transient successful chord selection, never saved. */

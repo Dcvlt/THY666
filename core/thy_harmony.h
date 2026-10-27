@@ -75,4 +75,47 @@ const char *thy_harmony_quality_name(uint8_t quality);
 size_t thy_harmony_pattern_count(void);
 size_t thy_harmony_table_bytes(void);
 
+
+/* Advisory tools: absolute 12-bit pitch-class masks, never device mutation.
+ * Scale family IDs are presentation-only and must not be persisted as catalog
+ * IDs. Results are bounded by caller capacity (1..24), ranked deterministically.
+ * Discovery matches contain ALL selected notes; no notes means no evidence.
+ * On invalid input outputs/counts remain untouched. */
+#define THY_GUIDANCE_LIMIT 24u
+typedef struct thy_chord_suggestion {
+    uint16_t mask;
+    uint8_t root, shared, score;
+} thy_chord_suggestion;
+typedef struct thy_scale_match {
+    uint16_t mask;
+    uint8_t family, root, extra;
+} thy_scale_match;
+typedef struct thy_modulation {
+    uint16_t common, added, removed, pivot;
+    uint8_t pivot_root, current_fits;
+} thy_modulation;
+size_t thy_guidance_scale_count(void);
+const char *thy_guidance_scale_name(unsigned family);
+uint16_t thy_guidance_scale_mask(unsigned family,unsigned root);
+int thy_guidance_chords(uint16_t key,uint8_t tonic,uint16_t current,
+    thy_chord_suggestion *out,size_t capacity,size_t *count);
+int thy_guidance_scales(uint16_t selected,thy_scale_match *out,size_t capacity,
+    size_t *count,size_t *total);
+int thy_guidance_modulation(uint16_t source,uint16_t target,uint16_t current,
+    thy_modulation *out);
+
+/* Transient board browser. Cached results are recomputed only on navigation,
+ * never in the render/audio path. No settings, library slots or notes change. */
+typedef struct thy_guidance_ui {
+    union { thy_chord_suggestion chords[24]; thy_scale_match scales[24]; } rows;
+    thy_modulation modulation;
+    uint16_t key, notes, total;
+    uint8_t open, page, cursor, count, tonic, target_root, target_family, editing;
+} thy_guidance_ui;
+void thy_guidance_ui_refresh(thy_guidance_ui *ui);
+unsigned thy_guidance_ui_count(const thy_guidance_ui *ui);
+void thy_guidance_ui_navigate(thy_guidance_ui *ui, uint8_t action);
+void thy_guidance_ui_line(const thy_guidance_ui *ui, unsigned row, char out[32]);
+void thy_guidance_notes_text(uint16_t mask, char out[32]);
+
 #endif

@@ -80,3 +80,37 @@ binary, reparses it and verifies archive fields against that interpretation.
 Altered pitches, octaves, positions, color IDs, padding or unknown bytes are
 rejected. The runtime/embedded projections are generated from this validated
 archive; archival data is not rewritten by layout, palette or display choices.
+
+
+## Combined harmonic model
+
+`tools/merge_harmony_catalog.py` reads the validated archive and the public
+`core/harmony-intervals.json` collection. It validates literal interval data;
+no external checkout or executable source is needed. Source credits are in
+[third-party notices](../THIRD_PARTY_NOTICES.md). The complete merged JSON stays
+under ignored `build/`; original records, names, seven-slot voicings, colors
+and all 840 layout references are retained. The archive itself is never changed.
+
+```sh
+python3 tools/merge_harmony_catalog.py --archive .tools/inputs/chords.lossless.json
+python3 tools/merge_harmony_catalog.py --archive .tools/inputs/chords.lossless.json --check
+```
+
+The checked-in `core/thy_harmony_catalog.h` is the compact interval projection
+used by board and Client guidance. Regular builds require neither upstream
+checkout nor archive to compile this header. It contains 99 distinct root-relative
+scale sets and 62 chord sets. The extended collection adds 32 scale families and six chord
+sets beyond the original archive plus the initial advisory vocabulary. The first 16 advisory family IDs stay stable;
+additional original families precede new extended families. Equivalent scales
+share an entry, with alternative names retained in the full JSON. Different
+voicings collapse only in this pitch-class advisory projection, never in the
+playable catalog or full model. Rootless archive records stay in the full model
+but do not invent a chord root for suggestions. MIDI notes override misleading
+archival quality suffixes when determining interval sets.
+
+This expands suggestions, discovery and modulation on board and Client. It does
+not renumber the 70 existing playable scale families or automatically substitute
+new pad layouts for them. Results remain bounded to 24, with discovery reporting
+the total match count. The new interval families are advisory choices, not newly
+assigned playable presets. Adding playable presets is a separate catalog/settings
+change so existing songs, shortcuts and settings keep their meaning.

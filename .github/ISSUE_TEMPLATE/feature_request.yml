@@ -1,0 +1,22 @@
+name: Feature request
+description: Propose a musical or workflow improvement
+title: "[Feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Musical or workflow need
+      description: What are you trying to play or do?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior and controls
+      description: Include board controls, Client behavior and interaction with existing settings where relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and examples

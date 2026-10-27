@@ -94,9 +94,13 @@ the instructions below; numbered firmware/desktop downloads are not published ye
 This roadmap does not change package version metadata or hardware qualification.
 
 - **v0.2 — musical integration:** the browser/desktop Client, shared updater,
-  expression settings and live-pad MPE are available. Suggested next chords,
-  harmonic following, modulation guidance, optional automatic voice leading,
-  scale discovery and richer voicing tools are planned additions within v0.2.
+  expression settings and live-pad MPE are available. **Client → Harmony** now
+  offers advisory chord suggestions, scale discovery and modulation comparisons
+  through shared C, including offline use. The board now exposes the same tools in
+  **Chords → Harmony guidance**, with explicit note capture and OLED navigation
+  (host-tested; hardware qualification pending). Live Update supplies harmonic following;
+  optional automatic voice leading has host regressions, with device qualification
+  pending. Optional Octave fold and Guitar register modes complete the v0.2 voicing additions (host-tested). See [Chord playing](docs/chord-playing.md) and the [v0.2 board test checklist](docs/v0.2-board-checklist.md).
 - **v0.3 — sequencer expansion:** chord-aware tracks and progression entry,
   explicit root/scale following alongside absolute-note recordings, and integrated
   chord/voicing/Arp workflows. Planned step effects include gate, ties, probability,
@@ -155,12 +159,24 @@ for build, simulation, runtime requirements and portability status.
 
 ### Browser Client and shared data
 
+Board and Client harmonic guidance share a merged vocabulary of 99 scale families
+and 62 chord pitch-class sets. The existing 840 playable layouts keep their exact
+notes, voicings, holes and saved identities. The sequencer's full 512-event undo
+arena now lives in SRAM, freeing about 8 KiB of CCM without reducing capacities.
+These additions are locally software-tested; device qualification is pending.
+See [chord data](docs/chord-data-format.md) and [firmware budget](docs/firmware-budget.md).
+
 The connected Client needs no private chord archive: it uses public menu metadata
 and reads musical content from the board. Build it with `npm run build:core`, then
 `npm run dev`. The optional archival workbench and STM32 build need an
 **authorized local lossless chord archive**, supplied separately. The musical corpus and vendor firmware are not
-redistributed with this source. Import a raw musical dump, or configure an
-existing lossless archive in `.env`:
+included in the default Git checkout. Reviewed musical data needed to reproduce a
+firmware release is supplied in its matching source archive, with retained input
+metadata and notices. Vendor firmware remains excluded. A fresh clone builds
+the Client and portable core,
+but needs this separate input for the complete instrument firmware. See
+[local-input redistribution notes](THIRD_PARTY_NOTICES.md#local-inputs-and-redistribution).
+Import a raw musical dump, or configure an existing lossless archive in `.env`:
 
 ```sh
 python tools/chord_dump.py import /path/to/THYMEMBK.bin
@@ -299,9 +315,12 @@ source guides cover the implementation and workflows:
 | Device builds and updates | [Installation](docs/installation.md), [Updater](docs/updater.md), [Resource budget](docs/firmware-budget.md) |
 | Branding | [Banner, icon and source assets](docs/assets/README.md) |
 
+Release tags use **vX.X.X**. See [Release procedure](docs/releases.md) for CI,
+standalone firmware, Client installers and corresponding source.
+
 ## Contributing and maintenance
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md). When a feature, workflow, setup command
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and our [Code of Conduct](CODE_OF_CONDUCT.md). When a feature, workflow, setup command
 or qualification status changes, update this README and the relevant guide/help
 in the same change. Refresh the generated documentation examples when screens
 change. Keep implemented, host-tested, device-tested and planned work distinct.
@@ -314,7 +333,13 @@ private data and working/research archives are excluded from Git.
 
 ## License
 
-Original project code is licensed under GPL-3.0-or-later. Third-party dependencies and separately
+Original project code and documentation are licensed under the **GNU General Public
+License, version 3 or (at your option) any later version** (`GPL-3.0-or-later`).
+Copyright © 2026 THY666 contributors. See [LICENSE](LICENSE).
+The retained repository history uses this license, including the cleaned v0.1.0
+snapshot. Copies distributed earlier under MIT retain their original permissions;
+the original notice is preserved in
+[THY666-MIT-legacy.txt](docs/licenses/THY666-MIT-legacy.txt). Third-party dependencies and separately
 supplied data/assets retain their own terms; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). THY666 is independent of Irijule
 and is not an official manufacturer release.

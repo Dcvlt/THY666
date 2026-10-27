@@ -15,7 +15,8 @@ static unsigned assertions;
 #define CHECK(x) do { ++assertions; if(!(x)){fprintf(stderr,"%s:%d: %s\n",__FILE__,__LINE__,#x);return 0;} }while(0)
 static void init(void)
 {
-    thy_core_init(&core);thy_clock_init(&clock_,0u);thy_transport_init(&transport,&clock_);thy_sequencer_init(&seq);
+    thy_core_init(&core);thy_clock_init(&clock_,0u);thy_transport_init(&transport,&clock_);static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_sequencer_init(&seq, undo_workspace_1);
     for(unsigned t=0;t<THY_SEQ_TRACKS;++t)seq.tracks[t].destinations=THY_ROUTE_USB0;
     for(unsigned a=0;a<2u;++a){thy_arp_default_config(&presets[a]);presets[a].enabled=1u;}
 }
@@ -392,9 +393,33 @@ static int step_bucket_replace_and_grid_retime_are_undoable(void)
     size_t bytes=0;CHECK(thy_sequencer_encode(&seq,song,sizeof song,&bytes)==THY_OK);
     return 1;
 }
+static int external_history_capacity_and_reset(void)
+{
+    static struct {uint32_t before;thy_seq_event events[THY_SEQ_EVENTS];uint32_t after;} arena;
+    static thy_sequencer other;
+    static thy_seq_event input[THY_SEQ_EVENTS];
+    init();arena.before=0x12345678u;arena.after=0xabcdef01u;
+    memset(arena.events,0xff,sizeof arena.events);
+    thy_sequencer_init(&other,arena.events);
+    CHECK(other.history==arena.events && !other.history[511].id);
+    for(unsigned n=0;n<THY_SEQ_EVENTS;++n)input[n]=note(n,1,(uint8_t)(n%128u),1);
+    CHECK(thy_sequencer_add(&other,0,input,THY_SEQ_EVENTS)==THY_OK);
+    CHECK(thy_sequencer_clear(&other,0)==THY_OK && !other.count);
+    CHECK(thy_sequencer_history(&other,&core,&transport,0)==THY_OK);
+    CHECK(other.count==THY_SEQ_EVENTS && other.events[511].pitch==127u);
+    CHECK(thy_sequencer_history(&other,&core,&transport,1)==THY_OK && !other.count);
+    CHECK(seq.count==0 && seq.history!=other.history);
+    size_t written=0;
+    CHECK(thy_sequencer_encode(&other,song,sizeof song,&written)==THY_OK);
+    CHECK(thy_sequencer_decode(&other,song,written)==THY_OK);
+    CHECK(other.history==arena.events && !other.history_valid && !other.history[511].id);
+    CHECK(arena.before==0x12345678u && arena.after==0xabcdef01u);
+    return 1;
+}
+
 int main(void)
 {
-    int (*tests[])(void)={sparse_edits_and_ids,overlap_ownership_and_captured_route,duration_edit_and_delete_cleanup,
+    int (*tests[])(void)={external_history_capacity_and_reset,sparse_edits_and_ids,overlap_ownership_and_captured_route,duration_edit_and_delete_cleanup,
         loop_clip_late_and_stop,group_admission_is_atomic,capture_arm_snapshot_and_one_pass,replace_edges_and_undo,
         growing_finish_and_locked_target,take_overflow_preserves_original,assignment_grouped_history_and_content,
         codec_roundtrip_and_atomic_rejection,compact_track_arp_and_isolated_cleanup,

@@ -1,4 +1,7 @@
 import test from 'node:test';
+import {readFile} from 'node:fs/promises';
+import {createCore} from '../../web/core.js';
+const guidanceCore=await createCore({bytes:await readFile(new URL('../../web/generated/core.wasm',import.meta.url))});
 import assert from 'node:assert/strict';
 import { initializeCompanionShell, renderCompanionScreen } from '../../web/companion-shell.js';
 import { STUDIO_MENU, MENU_ROWS } from '../../web/studio-menu.js';
@@ -161,7 +164,7 @@ function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, h
     'views.slot1':9,'views.slot2':9,'sensitivity.amount':98,'sensitivity.reset':98,
     'sensitivity.velocityMode':3,
   };
-  const engine = { state: { schemaHash: () => SCHEMA, instanceCount: row => counts[MENU_ROWS[row]?.id]??1 }, settings: { encode: () => previewBytes.slice() } };
+  const engine = { guidance:guidanceCore.guidance, state: { schemaHash: () => SCHEMA, instanceCount: row => counts[MENU_ROWS[row]?.id]??1 }, settings: { encode: () => previewBytes.slice() } };
   const selected={groupId:'performance',selectedId:'performance.pressureMode'};
   const studio = { model: { groups: STUDIO_MENU.groups, decode: (row, value) => row.type === 'toggle' ? Boolean(value) : row.type === 'select' && !row.dynamic ? row.options[value]?.value : value },
     snapshot: () => ({...selected}), refresh() {}, setDeviceBridge(value) { bridge = value; } };
@@ -627,11 +630,11 @@ test('compact sidebar retains accessible page names, disabled reasons and browse
   assert.equal(toggle.attributes['aria-controls'], f.document.querySelector('.companion-client-nav').id);
   f.fire(toggle, 'click'); assert.equal(toggle.attributes['aria-expanded'], 'false');
   assert.equal(workspace.classList.contains('rail-collapsed'), true); assert.equal(storage.get(key), 'collapsed');
-  assert.equal(f.document.querySelector('.companion-client-nav').querySelectorAll('button').length, 5);
-  for (const [id, label] of [['board', 'Board'], ['parameters', 'Parameters'], ['library', 'Songs & library'], ['backups', 'Backups'], ['diagnostics', 'Diagnostics']]) {
+  assert.equal(f.document.querySelector('.companion-client-nav').querySelectorAll('button').length, 6);
+  for (const [id, label] of [['board', 'Board'], ['parameters', 'Parameters'], ['harmony', 'Harmony'], ['library', 'Songs & library'], ['backups', 'Backups'], ['diagnostics', 'Diagnostics']]) {
     const nav = f.document.querySelector(`[data-page="${id}"]`);
     assert.equal(nav.attributes['aria-label'], label); assert.equal(nav.querySelector('.rail-text').textContent, label);
-    assert.ok(nav.title.startsWith(label)); assert.equal(nav.disabled, id!=='board');
+    assert.ok(nav.title.startsWith(label)); assert.equal(nav.disabled, !['board','harmony'].includes(id));
     if (nav.disabled) assert.match(nav.title, /Connect your board/);
   }
   assert.equal(toggle.attributes['aria-label'], 'Expand sidebar'); assert.equal(toggle.title, 'Expand sidebar');

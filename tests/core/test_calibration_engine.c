@@ -23,7 +23,8 @@ static int setup(void)
     CHECK(thy_instrument_set_detector_profile(&instrument,THY_DETECTOR_FACTORY_LINEAR)==THY_OK);
     for(unsigned k=0;k<8u;++k)for(unsigned p=0;p<96u;++p)
         CHECK(thy_instrument_sample(&instrument,(uint8_t)p,20u,++now)==THY_OK);
-    thy_engine_init(&engine,&instrument,21u,70u);thy_engine_bind_calibration(&engine,&workspace);thy_engine_bind_controls(&engine);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&engine,&instrument,21u,70u, undo_workspace_1);thy_engine_bind_calibration(&engine,&workspace);thy_engine_bind_controls(&engine);
     CHECK(thy_engine_advance(&engine,now)==THY_OK);return 1;
 }
 static int sample_after(unsigned p,unsigned raw,unsigned elapsed)

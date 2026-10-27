@@ -17,7 +17,8 @@ static void init(void){
     pads[52].notes[0]=62;
     const int16_t degrees[]={0,2,4,5,7,9,11};
     (void)thy_instrument_set_layout(&i,pads,60,degrees,7);
-    thy_engine_init(&e,&i,21,70);thy_engine_bind_expression(&e,&mpe);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&e,&i,21,70, undo_workspace_1);thy_engine_bind_expression(&e,&mpe);
     (void)thy_engine_advance(&e,0);
 }
 static int pitch(unsigned pad,int expected){int16_t notes[64];size_t count;
@@ -151,7 +152,72 @@ static int chord_shortcut_resolves_the_active_voicing_policy(void){
     CHECK(thy_engine_navigate(&e,THY_STATE_LEFT)==THY_STATE_OK);
     CHECK(thy_state_current_row(&e.state)==THY_ROW_PERFORMANCE_ROOT);return 1;
 }
-int main(void){int(*tests[])(void)={follows_key_or_chord_and_retains_release,muted_chord_feeds_arp_without_direct_sound,
+static int automatic_leading_preserves_held_owners(void){
+    init();
+    CHECK(thy_state_set(&e.state,THY_ROW_CHORDS_VOICINGMODE,2)==THY_STATE_OK);
+    pads[4]=(thy_instrument_pad){.notes={65,69,72},.valid_mask=7u};
+    int16_t notes[64];size_t count;
+    CHECK(thy_instrument_preview_source(&i,4,notes,&count)==THY_OK);
+    CHECK(notes[2]==72 && !i.voicing_previous_mask);
+    CHECK(thy_instrument_press_pad(&i,0)==THY_OK);drain();
+    CHECK(i.voicing_previous_mask==7u);
+    CHECK(thy_instrument_preview_source(&i,4,notes,&count)==THY_OK);
+    CHECK(count==3u && notes[0]==65 && notes[1]==69 && notes[2]==60);
+    CHECK(i.voicing_previous[0]==60 && i.voicing_previous[1]==64);
+    CHECK(thy_instrument_press_pad(&i,4)==THY_OK);drain();
+    CHECK((thy_core_owner_key(&core,0,1)&127u)==64u);
+    CHECK((thy_core_owner_key(&core,4,2)&127u)==60u);
+    CHECK(thy_instrument_release_pad(&i,0)==THY_OK);drain();
+    CHECK(core.sounding_count>0u);
+    CHECK(thy_instrument_release_pad(&i,4)==THY_OK);drain();
+    CHECK(!core.sounding_count);
+    CHECK(thy_state_set(&e.state,THY_ROW_CHORDS_VOICINGMODE,0)==THY_STATE_OK);
+    CHECK(!i.voicing_previous_mask);
+    CHECK(thy_instrument_preview_source(&i,4,notes,&count)==THY_OK && notes[2]==72);
+    return 1;
+}
+static int leading_history_only_successful_attacks(void){
+    for(unsigned standalone=0;standalone<2u;++standalone) {
+        init();i.voicing_mode=2u;
+        if(standalone)thy_instrument_set_musical_handler(&i,NULL,NULL,NULL,NULL);
+        CHECK(thy_instrument_set_live_update(&i,1u,0u,1u)==THY_OK);
+        CHECK(thy_instrument_press_pad(&i,0)==THY_OK);drain();
+        CHECK(i.voicing_previous_mask==7u && i.voicing_previous[1]==64);
+        pads[4]=(thy_instrument_pad){.notes={65,69,72},.valid_mask=7u};
+        CHECK(thy_instrument_press_pad(&i,4)==THY_OK);drain();
+        CHECK(i.voicing_previous_mask==7u && i.voicing_previous[2]==60);
+        CHECK(thy_instrument_release_pad(&i,0)==THY_OK);
+        CHECK(thy_instrument_release_pad(&i,4)==THY_OK);drain();
+        CHECK(thy_instrument_set_live_update(&i,0u,0u,0u)==THY_OK);
+        int16_t saved[7];for(unsigned n=0;n<7u;++n)saved[n]=i.voicing_previous[n];
+        core.queue_count=THY_QUEUE_CAPACITY;
+        CHECK(thy_instrument_press_pad(&i,0)==THY_QUEUE_FULL);
+        for(unsigned n=0;n<7u;++n)CHECK(saved[n]==i.voicing_previous[n]);
+        core.queue_count=0u;pads[8].valid_mask=0u;
+        CHECK(thy_instrument_press_pad(&i,8)==THY_OK);drain();
+        for(unsigned n=0;n<7u;++n)CHECK(saved[n]==i.voicing_previous[n]);
+        thy_instrument_panic(&i);CHECK(!i.voicing_previous_mask);
+    }
+    return 1;
+}
+static int register_voicing_controls_and_release(void) {
+    for(unsigned mode=3;mode<=4u;++mode) {
+        init();CHECK(thy_instrument_press_pad(&i,0)==THY_OK);drain();
+        uint16_t held=thy_core_owner_key(&core,0,0);
+        CHECK(thy_state_set(&e.state,THY_ROW_CHORDS_VOICINGMODE,(int32_t)mode)==THY_STATE_OK);
+        CHECK(thy_core_owner_key(&core,0,0)==held);
+        uint8_t inversion=i.performance.inversion,drops=i.drop_mask;
+        CHECK(thy_instrument_control(&i,1,0,1)==THY_OK);
+        CHECK(thy_instrument_control(&i,1,0,0)==THY_OK);
+        CHECK(i.performance.inversion==inversion && i.drop_mask==drops);
+        CHECK(thy_instrument_press_pad(&i,4)==THY_OK);drain();
+        CHECK(thy_instrument_release_pad(&i,0)==THY_OK);
+        CHECK(thy_instrument_release_pad(&i,4)==THY_OK);drain();
+        CHECK(!core.sounding_count);
+    }
+    return 1;
+}
+int main(void){int(*tests[])(void)={register_voicing_controls_and_release,leading_history_only_successful_attacks,automatic_leading_preserves_held_owners,follows_key_or_chord_and_retains_release,muted_chord_feeds_arp_without_direct_sound,
     failed_attack_does_not_select_and_transpose_contract,mpe_muted_selection_needs_no_members,
     generated_layouts_and_piano_share_the_actual_attack,dropped_voices_controls_are_independent_and_held_snapshot_stays,
     sequencer_chord_lighting_uses_generated_degrees,live_in_key_lighting_follows_the_effective_chord_pool,

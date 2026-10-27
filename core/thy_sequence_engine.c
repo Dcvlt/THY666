@@ -47,7 +47,7 @@ static int options_open(thy_engine *e,uint8_t track,int recording)
 int thy_engine_sequencer_open(thy_engine *e,uint8_t view)
 {
     if(!good(e) || view>THY_SEQ_VIEW_STEPS) return THY_STATE_INVALID;
-    if(e->expression_config.enabled)return THY_STATE_BLOCKED;
+    if(e->expression_config.enabled||e->instrument->guidance.open)return THY_STATE_BLOCKED;
     thy_engine_calibration_close(e);
     if(e->calibration_open)return THY_STATE_BLOCKED;
     (void)thy_engine_sequencer_options_close(e);
@@ -238,7 +238,7 @@ static int command(void *context,uint8_t cmd,uint8_t track)
 {return thy_engine_sequencer_action(context,cmd,track);}
 void thy_engine_sequencer_init(thy_engine *e)
 {
-    thy_sequencer_init(&e->sequencer);
+    thy_sequencer_init(&e->sequencer, e->sequencer.history);
     thy_sequencer_ui_init(&e->sequencer_ui,&e->sequencer,&e->rhythm_transport,
         &e->musical_clock,command,e);
     for(unsigned p=0;p<96u;++p) {

@@ -46,7 +46,8 @@ jobs:
       - name: Synthetic staging and packaging tests
         run: python -m unittest discover -s tests -p test_desktop_build.py -v
       - name: Locked dependency sources
-        run: python -c "import sys,subprocess;sys.path.insert(0,'tools');from build_desktop import build_environment;host=subprocess.check_output(['rustc','-vV'],text=True).split('host: ')[1].splitlines()[0];subprocess.run(['cargo','fetch','--manifest-path','desktop/Cargo.toml','--locked'],env=build_environment(host),check=True)"
+        run: >-
+          python -c "import sys,subprocess;sys.path.insert(0,'tools');from build_desktop import build_environment;host=subprocess.check_output(['rustc','-vV'],text=True).split('host: ')[1].splitlines()[0];subprocess.run(['cargo','fetch','--manifest-path','desktop/Cargo.toml','--locked'],env=build_environment(host),check=True)"
       - name: Synthetic native tests with a compile-only frontend
         run: python tools/build_desktop.py --test-only --offline
       - name: Check source shell compilation

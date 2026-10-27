@@ -1,0 +1,33 @@
+name: Bug report
+description: Report firmware, Client or updater behavior
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "Do not post device serials, private paths, credentials or personal backups. A bug report does not require flashing."
+  - type: input
+    id: version
+    attributes:
+      label: Release and full firmware build ID
+      placeholder: "v0.2.0; full build ID if connected"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment and relevant settings
+      description: "OS, browser or desktop Client version, board revision/modifications if known, MIDI route/channel, mode and settings."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Shortest reproduction
+      description: "Steps, expected result and actual result. State whether this is a preview, host test or physical board observation."
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: "Screenshots or relevant log excerpts; avoid full private captures."

@@ -53,7 +53,7 @@ export const STUDIO_MENU = {
       action('chords.editScales','Edit scales',['storage.user-scale-records'],'Browse eight named scale slots, edit degrees and names, then explicitly Save or Cancel.',live('library.editScales')),
       action('chords.editChords','Edit chords',['chords.chord_layouts'],'Browse 24 named seven-slot chords. Copy the selected base chord or edit note values, root and name. MIDI zero is valid.',live('library.editChords')),
       action('chords.editSix','Edit six sets',['chords.chord_layouts'],'Assign six saved chord templates to each named set. Empty columns remain silent.',live('library.editSix')),
-      select('chords.voicingMode','Voicing buttons','inversions',['inversions','drop-voices'],['chords.voicing_swap_1','chords.voicing_swap_2','chords.voicing_swap_3'],'Inversions preserves the current I/II/III behavior. Drop voices makes them independent lower-octave toggles for the second, third and fourth ascending voices. All changes affect future chords.',live('core.voicingMode')),
+      select('chords.voicingMode','Voicing','inversions',['inversions','drop-voices','auto-leading','octave-fold','guitar-register'],['chords.voicing_swap_1','chords.voicing_swap_2','chords.voicing_swap_3'],'Inversions preserves the current I/II/III behavior. Drop voices makes them independent lower-octave toggles for the second, third and fourth ascending voices. Auto leading chooses nearby octave placements from the last successful chord before Spread, bass octave and octave copies. Octave fold compacts the source into one octave. Guitar register uses standard EADGBE string pitches; seven distinct pitch classes remain unchanged. I/II/III are inactive in these three automatic modes. All changes affect future chords.',live('core.voicingMode')),
       toggle('chords.drop2','Lower voice 2',false,['chords.voicing_swap_1'],'Lower the second distinct enabled tone one octave in Drop voices mode. MIDI zero and original slot ordering remain valid.',live('core.drop2')),
       toggle('chords.drop3','Lower voice 3',false,['chords.voicing_swap_2'],'Lower the third distinct enabled tone one octave in Drop voices mode.',live('core.drop3')),
       toggle('chords.drop4','Lower voice 4',false,['chords.voicing_swap_3'],'Lower the fourth distinct enabled tone one octave in Drop voices mode. Chords with fewer voices are unaffected.',live('core.drop4')),
@@ -71,6 +71,7 @@ export const STUDIO_MENU = {
       info('chords.pattern', 'Strum pattern', 'Behavior contract pending', ['chords.strum_pattern'], 'Approved pattern intention needs an explicit pattern contract; no legacy flag is presented as a working engine.'),
       select('chords.destinations', 'Strummer output', 'usb1-din', ON_OFF_ROUTES, ['chords.strum_route'], 'Strummer route is independent of pad routing and captured when each note is scheduled.'),
       number('chords.channel', 'Strummer channel', 1, 1, 16, 1, ['chords.strum_route'], 'Human-facing channels are 1–16; the transport converts to zero-based wire channels.'),
+      action('chords.guidance', 'Harmony guidance', ['chords.harmony'], 'Read-only chord suggestions, scale discovery and modulation on the board. Capture held notes explicitly; navigation never plays or applies a key.', live('chords.guidance')),
       info('chords.ownership', 'Held-note contract', 'Press-time snapshot', ['chords.held_snapshots'], 'Changing the key, voicing, routing or menu never loses the original release destination.'),
     ] },
     { id: 'arps', label: 'Arpeggiators', shortLabel: 'ARPS', description: 'Two instances use the same editor and independent configuration and owners.', rows: [
@@ -461,7 +462,7 @@ performanceRows.splice(performanceRows.findIndex(item=>item.id==='performance.ve
 const BASIC_ROWS = {
   engines: ['play', 'arp', 'sequencer', 'drums', 'lightboard', 'user'],
   performance: ['velocityTarget', 'mpe', 'velocity', 'routeTarget', 'pressureMode', 'pressureBend', 'padOverlays'],
-  chords: ['layout','quality','userScale','sixBank','voicingMode','editScales','editChords','editSix', 'inversion', 'spread', 'strum', 'strumDirection', 'strummerTarget', 'continuous', 'strumLatch'],
+  chords: ['guidance','layout','quality','userScale','sixBank','voicingMode','editScales','editChords','editSix', 'inversion', 'spread', 'strum', 'strumDirection', 'strummerTarget', 'continuous', 'strumLatch'],
   arps: ['open', 'target', 'enabled', 'type', 'grouping', 'noteValue', 'pattern', 'gate', 'swing', 'clear'],
   sequencer: ['open', 'help', 'tempo', 'length', 'grid', 'input', 'launch'],
   midi: ['routingProfile', 'routeTarget', 'channel', 'destinations', 'velocity', 'pressure', 'clock', 'tempo', 'receiveTransport', 'sendClock', 'remoteRecord', 'remotePosition', 'assignmentKind', 'pedalEnabled', 'pedalAction'],

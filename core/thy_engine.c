@@ -728,14 +728,15 @@ static int write_setting(void *context, uint16_t row, uint8_t instance, int32_t 
     case THY_ROW_MIDI_ROUTETARGET:
         engine->route_target = (uint8_t)value; break;
     case THY_ROW_CHORDS_INVERSION: i->performance.inversion = (uint8_t)value; break;
-    case THY_ROW_CHORDS_LAYOUT:i->chord_layout=(uint8_t)value;i->live_degree_count=0u;break;
-    case THY_ROW_CHORDS_QUALITY:i->chord_quality=(uint8_t)value;i->live_degree_count=0u;break;
+    case THY_ROW_CHORDS_LAYOUT:i->chord_layout=(uint8_t)value;i->live_degree_count=0u;i->voicing_previous_mask=0u;break;
+    case THY_ROW_CHORDS_QUALITY:i->chord_quality=(uint8_t)value;i->live_degree_count=0u;i->voicing_previous_mask=0u;break;
     case THY_ROW_CHORDS_USERSCALE:return thy_engine_user_scale(engine,(uint8_t)value)==THY_OK?THY_STATE_OK:THY_STATE_INVALID;
-    case THY_ROW_CHORDS_SIXBANK:i->six_bank=(uint8_t)value;i->live_degree_count=0u;break;
+    case THY_ROW_CHORDS_SIXBANK:i->six_bank=(uint8_t)value;i->live_degree_count=0u;i->voicing_previous_mask=0u;break;
+    case THY_ROW_CHORDS_GUIDANCE:return thy_engine_guidance_open(engine);
     case THY_ROW_CHORDS_EDITSCALES:return thy_engine_library_open(engine,THY_LIBRARY_UI_SCALE,0u);
     case THY_ROW_CHORDS_EDITCHORDS:return thy_engine_library_open(engine,THY_LIBRARY_UI_CHORD,0u);
     case THY_ROW_CHORDS_EDITSIX:return thy_engine_library_open(engine,THY_LIBRARY_UI_SIX,0u);
-    case THY_ROW_CHORDS_VOICINGMODE:i->voicing_mode=(uint8_t)value;break;
+    case THY_ROW_CHORDS_VOICINGMODE:i->voicing_mode=(uint8_t)value;i->voicing_previous_mask=0u;break;
     case THY_ROW_CHORDS_DROP2:case THY_ROW_CHORDS_DROP3:case THY_ROW_CHORDS_DROP4:{
         uint8_t bit=(uint8_t)(1u<<(row-THY_ROW_CHORDS_DROP2));
         i->drop_mask=value?(uint8_t)(i->drop_mask|bit):(uint8_t)(i->drop_mask&~bit);break;}
@@ -796,9 +797,9 @@ static const char *setting_label(void *context, uint16_t row, int32_t value)
 }
 
 void thy_engine_init(thy_engine *engine, thy_instrument *instrument,
-    uint16_t scale, uint16_t scale_count)
+    uint16_t scale, uint16_t scale_count, thy_seq_event history[THY_SEQ_EVENTS])
 {
-    if (engine == NULL) return;
+    if (engine == NULL || history == NULL) return;
     *engine = (thy_engine){0};
     thy_mpe_defaults(&engine->expression_config);
     for(unsigned n=0;n<THY_INSTRUMENT_ROUTE_TARGETS;++n)engine->channel_routes[n].range=2u;
@@ -820,6 +821,7 @@ void thy_engine_init(thy_engine *engine, thy_instrument *instrument,
     engine->observed_clock_generation = engine->musical_clock.generation;
     for (unsigned n = 0u; n < 3u; ++n) engine->live_generation[n] = 1u;
     for (unsigned n = 0u; n < 2u; ++n) thy_arp_init(&engine->arps[n], n + 1u);
+    engine->sequencer.history = history;
     thy_engine_sequencer_init(engine);
     thy_engine_bind_music(engine);
 }
@@ -831,6 +833,7 @@ void thy_engine_repeat_cancel(thy_engine *engine)
 
 static int repeat_eligible(const thy_engine *engine)
 {
+    if(engine->instrument->guidance.open)return 0;
     const thy_library_ui *library=&engine->instrument->library_editor;
     if(library->open)return (library->page==THY_LIBRARY_UI_NAME && library->name_cursor<12u)||
         (library->editing==THY_LIBRARY_UI_VALUE_EDIT&&library->kind!=THY_LIBRARY_UI_SCALE)||
@@ -932,6 +935,7 @@ static void quick_transition(thy_engine *engine, int8_t direction)
 
 int thy_engine_arp_quick_open(thy_engine *engine)
 {
+    if(engine&&engine->instrument&&engine->instrument->guidance.open)return THY_STATE_BLOCKED;
     if (!engine || !engine->instrument) return THY_STATE_INVALID;
     thy_engine_calibration_close(engine);
     if(engine->calibration_open)return THY_STATE_BLOCKED;
@@ -992,11 +996,53 @@ static int control_filter(void *context, uint8_t bank, uint8_t index, int presse
     return thy_engine_control(context, bank, index, pressed);
 }
 
+int thy_engine_guidance_open(thy_engine *e)
+{
+    if(!e||!e->instrument||e->calibration_open||e->sequencer_ui.open||e->instrument->library_editor.open)
+        return THY_STATE_BLOCKED;
+    if(e->state.editing)(void)thy_state_cancel(&e->state);
+    thy_guidance_ui *u=&e->instrument->guidance;
+    *u=(thy_guidance_ui){.open=1,.tonic=e->instrument->performance.root};
+    for(unsigned n=0;n<e->instrument->degree_count;++n)
+        u->key|=(uint16_t)(1u<<((u->tonic+e->instrument->degrees[n])%12u));
+    u->target_root=u->tonic;
+    e->arp_quick_open=0;e->sensitivity_pick=0;thy_engine_repeat_cancel(e);
+    ++e->state.transition_revision;return THY_STATE_OK;
+}
+static int guidance_navigate(thy_engine *e,uint8_t action)
+{
+    thy_guidance_ui *u=&e->instrument->guidance;
+    if(action==THY_STATE_RIGHT && !u->page && u->cursor>=3u){
+        if(u->cursor==5u)u->notes=0;
+        else if(u->cursor==4u){
+            int16_t notes[THY_MAX_NOTES];size_t count=0;
+            if(e->instrument->selected_chord<48u && thy_instrument_preview_source(e->instrument,
+                e->instrument->selected_chord,notes,&count)==THY_OK){
+                u->notes=0;for(size_t n=0;n<count;++n)u->notes|=(uint16_t)(1u<<(notes[n]%12));
+            }
+        }else {
+            /* Press-time physical owners only. Generated output and sustain
+             * tails must not pollute deliberate discovery input. */
+            for(unsigned p=0;p<THY_PAD_COUNT;++p){
+                const thy_pad_owner *o=&e->instrument->core->owners[p];
+                if(o->held)for(unsigned n=0;n<o->count;++n){uint16_t key=thy_pad_owner_key(o,(uint8_t)n);
+                    if(key!=UINT16_MAX)u->notes|=(uint16_t)(1u<<((key%128u)%12u));}
+                for(unsigned a=0;a<2u;++a)if(e->arps[a].inputs[p].held)
+                    for(unsigned n=0;n<128u;++n)if(e->arps[a].inputs[p].pitches[n/64u]&(UINT64_C(1)<<(n%64u)))
+                        u->notes|=(uint16_t)(1u<<(n%12u));
+            }
+        }
+    }else thy_guidance_ui_navigate(u,action);
+    if(!u->open && action==THY_STATE_SELECT)e->state.level=THY_STATE_PLAY;
+    ++e->state.revision;++e->state.transition_revision;return THY_STATE_OK;
+}
+
 int thy_engine_navigate(thy_engine *engine, uint8_t action)
 {
     if (engine == NULL || engine->instrument == NULL || action > THY_STATE_RIGHT)
         return THY_STATE_INVALID;
     thy_engine_repeat_cancel(engine);
+    if(engine->instrument->guidance.open)return guidance_navigate(engine,action);
     if(engine->instrument->library_editor.open)return thy_engine_library_navigate(engine,action);
     if(engine->calibration_open)return thy_engine_calibration_navigate(engine,action);
     if(engine->sensitivity_pick) {
@@ -1058,7 +1104,7 @@ void thy_engine_center_levels(const thy_engine *engine,
     if (!i->center_brightness || i->center_brightness > 8u) return;
     for (unsigned n = 0u; n < 5u; ++n) {
         int index = shortcut_index((uint8_t)n);
-        int available = i->library_editor.open || engine->calibration_open || engine->sequencer_ui.open || (engine->arp_quick_open || engine->state.about_open ?
+        int available = i->guidance.open || i->library_editor.open || engine->calibration_open || engine->sequencer_ui.open || (engine->arp_quick_open || engine->state.about_open ?
             engine->arp_quick_open || n == THY_STATE_LEFT || n == THY_STATE_SELECT :
             engine->state.level != THY_STATE_PLAY || n == THY_STATE_SELECT ||
             (index >= 0 && i->play_nav[index] > THY_PLAY_HIDDEN &&
@@ -1068,7 +1114,7 @@ void thy_engine_center_levels(const thy_engine *engine,
     /* One immutable observation for this evaluation. Generated whole-side
      * availability resolves 48 cells; do not repeat it for every indicator. */
     uint8_t lower_active=(uint8_t)(thy_instrument_lower_mask(i)&thy_instrument_lower_available(i));
-    uint8_t drop_active=i->voicing_mode?(uint8_t)(i->drop_mask&thy_instrument_drop_available(i)):0u;
+    uint8_t drop_active=i->voicing_mode==1u?(uint8_t)(i->drop_mask&thy_instrument_drop_available(i)):0u;
     for (unsigned n = 0u; n < 14u; ++n) {
         int active;
         if (n < 3u) active = i->voicing_mode?!!(drop_active&(1u<<n)):

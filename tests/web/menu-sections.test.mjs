@@ -4,7 +4,7 @@ import { STUDIO_MENU, MENU_ROWS } from '../../web/studio-menu.js';
 
 test('all categories put basic controls before one advanced section without selectable separator rows', () => {
   assert.equal(STUDIO_MENU.groups.length, 13);
-  assert.equal(MENU_ROWS.length, 297);
+  assert.equal(MENU_ROWS.length, 298);
   for (const group of STUDIO_MENU.groups) {
     assert.ok(group.rows.some(row => !row.advanced), group.id);
     assert.ok(group.rows.some(row => row.advanced), group.id);

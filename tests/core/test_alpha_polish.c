@@ -33,7 +33,8 @@ static int setup(void)
     CHECK(thy_instrument_set_layout(&instrument, pads, 60, degrees, 7u) == THY_OK);
     CHECK(thy_instrument_set_route(&instrument, 0u, 1u, THY_ROUTE_USB0 | THY_ROUTE_DIN, 0) == THY_OK);
     CHECK(thy_instrument_set_route(&instrument, 1u, 1u, THY_ROUTE_USB0 | THY_ROUTE_DIN, 0) == THY_OK);
-    thy_engine_init(&engine, &instrument, 0u, 70u);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&engine, &instrument, 0u, 70u, undo_workspace_1);
     return 1;
 }
 

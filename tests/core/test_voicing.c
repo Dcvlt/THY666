@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "thy_voicing.h"
 
@@ -179,9 +180,81 @@ static int invalid_arguments_and_underflow_are_atomic(void)
     return 1;
 }
 
+static int automatic_leading(void)
+{
+    const int16_t prior[7]={60,64,67,999,-999,0,0};
+    const int16_t next[7]={65,69,72,999,-999,65,0};
+    int16_t out[7];
+    CHECK(thy_voicing_lead(next,39u,prior,7u,out)==THY_OK);
+    CHECK(out[0]==65 && out[1]==69 && out[2]==60 && out[5]==65);
+    CHECK(out[3]==999 && out[4]==-999 && out[6]==0);
+    CHECK(thy_voicing_lead(out,39u,out,39u,out)==THY_OK);
+    CHECK(out[0]==65 && out[1]==69 && out[2]==60);
+    CHECK(thy_voicing_lead(next,39u,prior,0u,out)==THY_OK);
+    CHECK(!memcmp(out,next,sizeof out));
+    CHECK(thy_voicing_lead(next,128u,prior,7u,out)==THY_INVALID_ARGUMENT);
+    CHECK(!memcmp(out,next,sizeof out));
+    CHECK(thy_voicing_lead(next,127u,prior,7u,out)==THY_INVALID_ARGUMENT);
+    CHECK(!memcmp(out,next,sizeof out));
+    CHECK(thy_voicing_lead(next,7u,prior,127u,out)==THY_INVALID_ARGUMENT);
+    CHECK(!memcmp(out,next,sizeof out));
+    /* Exhaustive two-voice oracle: enumerate every legal pitch pair, compare
+     * minimum movement and authored-register tie cost, independent of the DP. */
+    for(int root=0;root<128;root+=7)for(int third=1;third<12;third+=2) {
+        int16_t input[7]={root,(root+third)%128,root,0,0,0,0};
+        int16_t old[7]={36,79,0,0,0,0,0};
+        CHECK(thy_voicing_lead(input,7u,old,3u,out)==THY_OK);
+        unsigned best=UINT32_MAX;
+        for(int a=input[0]%12;a<128;a+=12)for(int b=input[1]%12;b<128;b+=12) {
+            if(a==b)continue;
+            int lo=a<b?a:b,hi=a>b?a:b;
+            unsigned cost=(unsigned)(abs(lo-36)+abs(hi-79))*1024u+
+                (unsigned)(abs(a-input[0])+abs(b-input[1]));
+            if(cost<best)best=cost;
+        }
+        int lo=out[0]<out[1]?out[0]:out[1],hi=out[0]>out[1]?out[0]:out[1];
+        unsigned actual=(unsigned)(abs(lo-36)+abs(hi-79))*1024u+
+            (unsigned)(abs(out[0]-input[0])+abs(out[1]-input[1]));
+        CHECK(actual==best && out[0]==out[2]);
+        CHECK(out[0]%12==input[0]%12 && out[1]%12==input[1]%12);
+    }
+    return 1;
+}
+
+static int register_modes_preserve_all_pitch_sets(void)
+{
+    for(unsigned pcs=1;pcs<4096u;++pcs) {
+        int16_t notes[7]={-9,-8,-7,-6,-5,-4,-3},out[7],alias[7];unsigned count=0;
+        for(unsigned n=0;n<12u;++n)if(pcs&(1u<<n))++count;
+        if(count>7u)continue;
+        unsigned at=0;for(unsigned n=0;n<12u;++n)if(pcs&(1u<<n)){notes[at]=(int16_t)(36+n+12*(at%4u));++at;}
+        uint8_t mask=(uint8_t)((1u<<count)-1u);
+        CHECK(thy_voicing_fold(notes,mask,out)==THY_OK);
+        int low=128,high=-1;unsigned actual=0;
+        for(unsigned n=0;n<count;++n){CHECK(out[n]%12==notes[n]%12);if(out[n]<low)low=out[n];if(out[n]>high)high=out[n];}
+        CHECK(high-low<12);
+        CHECK(thy_voicing_guitar(notes,mask,out)==THY_OK);
+        for(unsigned n=0;n<count;++n){CHECK(out[n]%12==notes[n]%12);actual|=1u<<(out[n]%12);if(count<=6u)CHECK(out[n]>=40 && out[n]<=75);}
+        CHECK(actual==pcs);
+        if(count==7u)CHECK(!memcmp(out,notes,sizeof notes));
+        for(unsigned n=count;n<7u;++n)CHECK(out[n]==notes[n]);
+        memcpy(alias,notes,sizeof notes);CHECK(thy_voicing_guitar(alias,mask,alias)==THY_OK);CHECK(!memcmp(alias,out,sizeof out));
+    }
+    const int16_t edge[7]={0,127,999,-1,0,0,0};int16_t out[7],before[7];
+    CHECK(thy_voicing_fold(edge,3u,out)==THY_OK && out[0]==0 && out[1]==7 && out[2]==999);
+    const int16_t top[7]={127,126,125,0,0,0,0};
+    CHECK(thy_voicing_fold(top,7u,out)==THY_OK && out[0]==127 && out[1]==126 && out[2]==125);
+    memcpy(before,out,sizeof out);
+    CHECK(thy_voicing_fold(edge,7u,out)==THY_INVALID_ARGUMENT && !memcmp(out,before,sizeof out));
+    CHECK(thy_voicing_guitar(edge,7u,out)==THY_INVALID_ARGUMENT && !memcmp(out,before,sizeof out));
+    CHECK(thy_voicing_fold(edge,128u,out)==THY_INVALID_ARGUMENT);
+    CHECK(thy_voicing_guitar(edge,128u,out)==THY_INVALID_ARGUMENT);
+    return 1;
+}
+
 int main(void)
 {
-    int(*tests[])(void)={basic_drop_and_protected_bass,
+    int(*tests[])(void)={register_modes_preserve_all_pitch_sets,automatic_leading,basic_drop_and_protected_bass,
         duplicates_holes_and_inactive_literals,permutations_use_pitch_rank_not_slot_index,
         exhaustive_duplicate_vectors_masks_and_drop_bits,every_midi_bass_and_boundary_combination,
         invalid_arguments_and_underflow_are_atomic};

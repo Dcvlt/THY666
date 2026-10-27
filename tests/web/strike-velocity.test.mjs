@@ -123,7 +123,7 @@ test('v13 cold restoration preserves velocity and pressure overrides without rep
   okay(h.firmware.setVelocity(95,config({mode:0,minimum:35,maximum:80})));
   okay(h.firmware.setResponse(95,response({attack:1450,curve:2})));
   h.strike(0,64);
-  const payload=h.engine.settings.encode();assert.equal(h.engine.settings.version,13);
+  const payload=h.engine.settings.encode();assert.equal(h.engine.settings.version,15);
   const cold=await fresh();assert.equal(cold.engine.settings.apply(payload),true);
   assert.deepEqual(cold.firmware.velocity(),h.firmware.velocity());
   assert.deepEqual(cold.firmware.velocity(95),h.firmware.velocity(95));

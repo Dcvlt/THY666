@@ -355,7 +355,7 @@ int thy_instrument_apply_scale(thy_instrument *i)
         i->degree_count=i->catalog_degree_count;
         for(unsigned n=0;n<i->catalog_degree_count;++n)i->degrees[n]=i->catalog_degrees[n];
     }
-    i->live_degree_count=0u;return THY_OK;
+    i->live_degree_count=0u; i->voicing_previous_mask=0u;return THY_OK;
 }
 
 int thy_instrument_set_mapping(thy_instrument *instrument,
@@ -1156,9 +1156,21 @@ static int plan_pad(const thy_instrument *instrument, uint8_t logical,
                 instrument->pad_octave_layers[logical] : instrument->octave_layers;
             shape->octave_layers = layers != 0u ? layers : 8u;
         }
-        if(instrument->voicing_mode){
+        if(instrument->voicing_mode==1u){
             result=thy_voicing_drop(plan->notes,(uint8_t)(~shape->excluded_slots&127u),
                 instrument->drop_mask,plan->chord_notes);
+            if(result!=THY_OK)return result;
+            plan->notes=plan->chord_notes;
+        } else if(instrument->voicing_mode==2u) {
+            result=thy_voicing_lead(plan->notes,(uint8_t)(~shape->excluded_slots&127u),
+                instrument->voicing_previous,instrument->voicing_previous_mask,plan->chord_notes);
+            if(result!=THY_OK)return result;
+            plan->notes=plan->chord_notes;
+        } else if(instrument->voicing_mode==3u || instrument->voicing_mode==4u) {
+            uint8_t mask=(uint8_t)(~shape->excluded_slots&127u);
+            result=instrument->voicing_mode==3u?
+                thy_voicing_fold(plan->notes,mask,plan->chord_notes):
+                thy_voicing_guitar(plan->notes,mask,plan->chord_notes);
             if(result!=THY_OK)return result;
             plan->notes=plan->chord_notes;
         } else shape->inversion = instrument->performance.inversion;
@@ -1217,7 +1229,7 @@ static int plan_pad(const thy_instrument *instrument, uint8_t logical,
 void thy_instrument_key_changed(thy_instrument *i)
 {
     if(!valid(i))return;
-    i->live_degree_count=0u;
+    i->live_degree_count=0u; i->voicing_previous_mask=0u;
     if(!i->keep_transpose)i->transpose[0]=i->transpose[1]=0;
 }
 void thy_instrument_follow_chord(thy_instrument *i,uint8_t logical,
@@ -1414,9 +1426,9 @@ int thy_instrument_press_pad(thy_instrument *instrument, uint8_t electrical)
         if (context == 1 && instrument->performance.chord_octave > -3) --instrument->performance.chord_octave;
         if (context == 2 && instrument->performance.chord_octave < 3) ++instrument->performance.chord_octave;
         if (context == 3) {
-            if(instrument->voicing_mode)instrument->drop_mask=instrument->drop_mask==0u?1u:
+            if(instrument->voicing_mode==1u)instrument->drop_mask=instrument->drop_mask==0u?1u:
                 instrument->drop_mask==1u?2u:instrument->drop_mask==2u?4u:0u;
-            else instrument->performance.inversion = (instrument->performance.inversion + 1u) % 4u;
+            else if(!instrument->voicing_mode)instrument->performance.inversion = (instrument->performance.inversion + 1u) % 4u;
         }
         if (context == 4) instrument->bass_octave = instrument->bass_octave <= -3 ? 0 :
             (int8_t)(instrument->bass_octave - 1);
@@ -1455,7 +1467,18 @@ int thy_instrument_press_source(thy_instrument *instrument, uint8_t electrical,
     if (result == THY_OK) {
         if(instrument->core->owners[electrical].held){
             instrument->selected_pad=logical;
-            if(logical<48u)instrument->selected_chord=logical;
+            if(logical<48u) {
+                instrument->selected_chord=logical;
+                uint8_t mask=(uint8_t)(~plan.shape.excluded_slots&127u);
+                if(instrument->voicing_mode==2u && mask) {
+                    int16_t resolved[THY_MAX_NOTES];size_t count=0u;
+                    if(thy_core_preview(instrument->core,plan.notes,plan.count,
+                        instrument->transpose[0],&plan.shape,resolved,&count)==THY_OK && count) {
+                        for(unsigned n=0;n<7u;++n)instrument->voicing_previous[n]=plan.notes[n];
+                        instrument->voicing_previous_mask=mask;
+                    }
+                }
+            }
         }
         if(!instrument->musical_attack && logical<48u && instrument->live_update){
             int16_t resolved[THY_MAX_NOTES];size_t count=0u;
@@ -1904,9 +1927,9 @@ int thy_instrument_control(thy_instrument *instrument, uint8_t bank,
             ++instrument->layout_revision;
         } else if (index < 3u) {
             uint8_t value = (uint8_t)(index + 1u);
-            if(instrument->voicing_mode){
+            if(instrument->voicing_mode==1u){
                 if(thy_instrument_drop_available(instrument)&(1u<<index))instrument->drop_mask^=(uint8_t)(1u<<index);
-            } else instrument->performance.inversion = instrument->performance.inversion == value ? 0u : value;
+            } else if(!instrument->voicing_mode)instrument->performance.inversion = instrument->performance.inversion == value ? 0u : value;
         } else if (index == 3u) instrument->performance.strum ^= 1u;
         else if (index < 7u) {
             uint8_t value = (uint8_t)(index - 3u);
@@ -1955,6 +1978,7 @@ int thy_instrument_controls(thy_instrument *instrument, uint8_t bank,
 
 void thy_instrument_panic(thy_instrument *instrument)
 {
+    if(instrument)instrument->voicing_previous_mask=0u;
     unsigned i;
     if (!valid(instrument)) return;
     if (instrument->musical_reset) instrument->musical_reset(instrument->musical_context);

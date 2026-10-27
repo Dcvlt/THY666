@@ -1,0 +1,1422 @@
+{
+  "format": "thy666.interval-collection",
+  "version": 1,
+  "scales": [
+    {
+      "name": "MAJOR",
+      "intervals": [
+        0,
+        2,
+        4,
+        5,
+        7,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "DORIAN",
+      "intervals": [
+        0,
+        2,
+        3,
+        5,
+        7,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "PHRYGIAN",
+      "intervals": [
+        0,
+        1,
+        3,
+        5,
+        7,
+        8,
+        10
+      ]
+    },
+    {
+      "name": "LYDIAN",
+      "intervals": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "MIXOLYDIAN",
+      "intervals": [
+        0,
+        2,
+        4,
+        5,
+        7,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "MINOR",
+      "intervals": [
+        0,
+        2,
+        3,
+        5,
+        7,
+        8,
+        10
+      ]
+    },
+    {
+      "name": "LOCRIAN",
+      "intervals": [
+        0,
+        1,
+        3,
+        5,
+        6,
+        8,
+        10
+      ]
+    },
+    {
+      "name": "MEL MINOR",
+      "intervals": [
+        0,
+        2,
+        3,
+        5,
+        7,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "DORIAN b2",
+      "intervals": [
+        0,
+        1,
+        3,
+        5,
+        7,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "LYDIAN AUG",
+      "intervals": [
+        0,
+        2,
+        4,
+        6,
+        8,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "LYDIAN DOM",
+      "intervals": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "MIXOLYD b6",
+      "intervals": [
+        0,
+        2,
+        4,
+        5,
+        7,
+        8,
+        10
+      ]
+    },
+    {
+      "name": "LOCRIAN #2",
+      "intervals": [
+        0,
+        2,
+        3,
+        5,
+        6,
+        8,
+        10
+      ]
+    },
+    {
+      "name": "ALTERED",
+      "intervals": [
+        0,
+        1,
+        3,
+        4,
+        6,
+        8,
+        10
+      ]
+    },
+    {
+      "name": "HARM MINOR",
+      "intervals": [
+        0,
+        2,
+        3,
+        5,
+        7,
+        8,
+        11
+      ]
+    },
+    {
+      "name": "LOCRIAN #6",
+      "intervals": [
+        0,
+        1,
+        3,
+        5,
+        6,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "IONIAN #5",
+      "intervals": [
+        0,
+        2,
+        4,
+        5,
+        8,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "DORIAN #4",
+      "intervals": [
+        0,
+        2,
+        3,
+        6,
+        7,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "PHRYG DOM",
+      "intervals": [
+        0,
+        1,
+        4,
+        5,
+        7,
+        8,
+        10
+      ]
+    },
+    {
+      "name": "LYDIAN #2",
+      "intervals": [
+        0,
+        3,
+        4,
+        6,
+        7,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "ULTRALOCRIAN",
+      "intervals": [
+        0,
+        1,
+        3,
+        4,
+        6,
+        8,
+        9
+      ]
+    },
+    {
+      "name": "HARM MAJOR",
+      "intervals": [
+        0,
+        2,
+        4,
+        5,
+        7,
+        8,
+        11
+      ]
+    },
+    {
+      "name": "DORIAN b5",
+      "intervals": [
+        0,
+        2,
+        3,
+        5,
+        6,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "PHRYGIAN b4",
+      "intervals": [
+        0,
+        1,
+        3,
+        4,
+        7,
+        8,
+        10
+      ]
+    },
+    {
+      "name": "LYDIAN b3",
+      "intervals": [
+        0,
+        2,
+        3,
+        6,
+        7,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "MIXOLYD b2",
+      "intervals": [
+        0,
+        1,
+        4,
+        5,
+        7,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "LYD AUG #2",
+      "intervals": [
+        0,
+        3,
+        4,
+        6,
+        8,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "LOCRIAN bb7",
+      "intervals": [
+        0,
+        1,
+        3,
+        5,
+        6,
+        8,
+        9
+      ]
+    },
+    {
+      "name": "MAJ PENT",
+      "intervals": [
+        0,
+        2,
+        4,
+        7,
+        9
+      ]
+    },
+    {
+      "name": "MIN PENT",
+      "intervals": [
+        0,
+        3,
+        5,
+        7,
+        10
+      ]
+    },
+    {
+      "name": "EGYPTIAN",
+      "intervals": [
+        0,
+        2,
+        5,
+        7,
+        10
+      ]
+    },
+    {
+      "name": "YO",
+      "intervals": [
+        0,
+        2,
+        5,
+        7,
+        9
+      ]
+    },
+    {
+      "name": "MAN GONG",
+      "intervals": [
+        0,
+        3,
+        5,
+        8,
+        10
+      ]
+    },
+    {
+      "name": "DOM PENT",
+      "intervals": [
+        0,
+        2,
+        4,
+        7,
+        10
+      ]
+    },
+    {
+      "name": "MINOR 6 PENT",
+      "intervals": [
+        0,
+        3,
+        5,
+        7,
+        9
+      ]
+    },
+    {
+      "name": "HIRAJOSHI",
+      "intervals": [
+        0,
+        2,
+        3,
+        7,
+        8
+      ]
+    },
+    {
+      "name": "IN SEN",
+      "intervals": [
+        0,
+        1,
+        5,
+        7,
+        10
+      ]
+    },
+    {
+      "name": "IWATO",
+      "intervals": [
+        0,
+        1,
+        5,
+        6,
+        10
+      ]
+    },
+    {
+      "name": "KUMOI",
+      "intervals": [
+        0,
+        2,
+        3,
+        7,
+        9
+      ]
+    },
+    {
+      "name": "PELOG",
+      "intervals": [
+        0,
+        1,
+        3,
+        7,
+        8
+      ]
+    },
+    {
+      "name": "RYUKYU",
+      "intervals": [
+        0,
+        4,
+        5,
+        7,
+        11
+      ]
+    },
+    {
+      "name": "HAMSADHWANI",
+      "intervals": [
+        0,
+        2,
+        4,
+        7,
+        11
+      ]
+    },
+    {
+      "name": "HINDOL",
+      "intervals": [
+        0,
+        4,
+        6,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "KALAVATI",
+      "intervals": [
+        0,
+        4,
+        7,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "CHANDRAKAUNS",
+      "intervals": [
+        0,
+        3,
+        5,
+        8,
+        11
+      ]
+    },
+    {
+      "name": "BLUES",
+      "intervals": [
+        0,
+        3,
+        5,
+        6,
+        7,
+        10
+      ]
+    },
+    {
+      "name": "MAJOR BLUES",
+      "intervals": [
+        0,
+        2,
+        3,
+        4,
+        7,
+        9
+      ]
+    },
+    {
+      "name": "MAJOR HEXA",
+      "intervals": [
+        0,
+        2,
+        4,
+        5,
+        7,
+        9
+      ]
+    },
+    {
+      "name": "MINOR HEXA",
+      "intervals": [
+        0,
+        2,
+        3,
+        5,
+        7,
+        10
+      ]
+    },
+    {
+      "name": "WHOLE TONE",
+      "intervals": [
+        0,
+        2,
+        4,
+        6,
+        8,
+        10
+      ]
+    },
+    {
+      "name": "AUGMENTED",
+      "intervals": [
+        0,
+        3,
+        4,
+        7,
+        8,
+        11
+      ]
+    },
+    {
+      "name": "SIX-TONE SYM",
+      "intervals": [
+        0,
+        1,
+        4,
+        5,
+        8,
+        9
+      ]
+    },
+    {
+      "name": "PROMETHEUS",
+      "intervals": [
+        0,
+        2,
+        4,
+        6,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "PROMETH NEAP",
+      "intervals": [
+        0,
+        1,
+        4,
+        6,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "TRITONE",
+      "intervals": [
+        0,
+        1,
+        4,
+        6,
+        7,
+        10
+      ]
+    },
+    {
+      "name": "ISTRIAN",
+      "intervals": [
+        0,
+        1,
+        3,
+        4,
+        6,
+        7
+      ]
+    },
+    {
+      "name": "MESSIAEN 5",
+      "intervals": [
+        0,
+        1,
+        5,
+        6,
+        7,
+        11
+      ]
+    },
+    {
+      "name": "HUNG MINOR",
+      "intervals": [
+        0,
+        2,
+        3,
+        6,
+        7,
+        8,
+        11
+      ]
+    },
+    {
+      "name": "HUNG MAJOR",
+      "intervals": [
+        0,
+        3,
+        4,
+        6,
+        7,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "HUNG GYPSY",
+      "intervals": [
+        0,
+        2,
+        3,
+        6,
+        7,
+        8,
+        10
+      ]
+    },
+    {
+      "name": "DOUBLE HARM",
+      "intervals": [
+        0,
+        1,
+        4,
+        5,
+        7,
+        8,
+        11
+      ]
+    },
+    {
+      "name": "NEAP MAJOR",
+      "intervals": [
+        0,
+        1,
+        3,
+        5,
+        7,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "NEAP MINOR",
+      "intervals": [
+        0,
+        1,
+        3,
+        5,
+        7,
+        8,
+        11
+      ]
+    },
+    {
+      "name": "PERSIAN",
+      "intervals": [
+        0,
+        1,
+        4,
+        5,
+        6,
+        8,
+        11
+      ]
+    },
+    {
+      "name": "ORIENTAL",
+      "intervals": [
+        0,
+        1,
+        4,
+        5,
+        6,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "MAJ LOCRIAN",
+      "intervals": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10
+      ]
+    },
+    {
+      "name": "LYDIAN MINOR",
+      "intervals": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        8,
+        10
+      ]
+    },
+    {
+      "name": "LEADING WT",
+      "intervals": [
+        0,
+        2,
+        4,
+        6,
+        8,
+        10,
+        11
+      ]
+    },
+    {
+      "name": "ENIGMATIC",
+      "intervals": [
+        0,
+        1,
+        4,
+        6,
+        8,
+        10,
+        11
+      ]
+    },
+    {
+      "name": "TODI",
+      "intervals": [
+        0,
+        1,
+        3,
+        6,
+        7,
+        8,
+        11
+      ]
+    },
+    {
+      "name": "POORVI",
+      "intervals": [
+        0,
+        1,
+        4,
+        6,
+        7,
+        8,
+        11
+      ]
+    },
+    {
+      "name": "MARWA",
+      "intervals": [
+        0,
+        1,
+        4,
+        6,
+        7,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "LALIT",
+      "intervals": [
+        0,
+        1,
+        4,
+        5,
+        6,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "BEBOP DOM",
+      "intervals": [
+        0,
+        2,
+        4,
+        5,
+        7,
+        9,
+        10,
+        11
+      ]
+    },
+    {
+      "name": "BEBOP MAJOR",
+      "intervals": [
+        0,
+        2,
+        4,
+        5,
+        7,
+        8,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "BEBOP DORIAN",
+      "intervals": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        7,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "BEB MEL MIN",
+      "intervals": [
+        0,
+        2,
+        3,
+        5,
+        7,
+        8,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "SPANISH 8",
+      "intervals": [
+        0,
+        1,
+        3,
+        4,
+        5,
+        6,
+        8,
+        10
+      ]
+    },
+    {
+      "name": "DIM W-H",
+      "intervals": [
+        0,
+        2,
+        3,
+        5,
+        6,
+        8,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "DIM H-W",
+      "intervals": [
+        0,
+        1,
+        3,
+        4,
+        6,
+        7,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "MESSIAEN 3",
+      "intervals": [
+        0,
+        2,
+        3,
+        4,
+        6,
+        7,
+        8,
+        10,
+        11
+      ]
+    },
+    {
+      "name": "MESSIAEN 4",
+      "intervals": [
+        0,
+        1,
+        2,
+        5,
+        6,
+        7,
+        8,
+        11
+      ]
+    },
+    {
+      "name": "MESSIAEN 6",
+      "intervals": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11
+      ]
+    },
+    {
+      "name": "MESSIAEN 7",
+      "intervals": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6,
+        7,
+        8,
+        9,
+        11
+      ]
+    },
+    {
+      "name": "BLUES 9",
+      "intervals": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        9,
+        10
+      ]
+    },
+    {
+      "name": "CHROMATIC",
+      "intervals": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ]
+    }
+  ],
+  "chords": [
+    {
+      "names": [
+        "",
+        "maj",
+        "M"
+      ],
+      "intervals": [
+        0,
+        4,
+        7
+      ]
+    },
+    {
+      "names": [
+        "m",
+        "min",
+        "-"
+      ],
+      "intervals": [
+        0,
+        3,
+        7
+      ]
+    },
+    {
+      "names": [
+        "dim",
+        "\u00b0",
+        "o"
+      ],
+      "intervals": [
+        0,
+        3,
+        6
+      ]
+    },
+    {
+      "names": [
+        "aug",
+        "+"
+      ],
+      "intervals": [
+        0,
+        4,
+        8
+      ]
+    },
+    {
+      "names": [
+        "sus2"
+      ],
+      "intervals": [
+        0,
+        2,
+        7
+      ]
+    },
+    {
+      "names": [
+        "sus4",
+        "sus"
+      ],
+      "intervals": [
+        0,
+        5,
+        7
+      ]
+    },
+    {
+      "names": [
+        "6",
+        "maj6",
+        "M6"
+      ],
+      "intervals": [
+        0,
+        4,
+        7,
+        9
+      ]
+    },
+    {
+      "names": [
+        "m6",
+        "min6",
+        "-6"
+      ],
+      "intervals": [
+        0,
+        3,
+        7,
+        9
+      ]
+    },
+    {
+      "names": [
+        "7",
+        "dom7"
+      ],
+      "intervals": [
+        0,
+        4,
+        7,
+        10
+      ]
+    },
+    {
+      "names": [
+        "maj7",
+        "M7",
+        "\u0394",
+        "\u03947",
+        "ma7"
+      ],
+      "intervals": [
+        0,
+        4,
+        7,
+        11
+      ]
+    },
+    {
+      "names": [
+        "m7",
+        "min7",
+        "-7"
+      ],
+      "intervals": [
+        0,
+        3,
+        7,
+        10
+      ]
+    },
+    {
+      "names": [
+        "mMaj7",
+        "mM7",
+        "m(maj7)",
+        "minmaj7",
+        "m\u03947",
+        "-\u03947"
+      ],
+      "intervals": [
+        0,
+        3,
+        7,
+        11
+      ]
+    },
+    {
+      "names": [
+        "m7b5",
+        "\u00f8",
+        "\u00f87",
+        "min7b5",
+        "-7b5"
+      ],
+      "intervals": [
+        0,
+        3,
+        6,
+        10
+      ]
+    },
+    {
+      "names": [
+        "dim7",
+        "\u00b07",
+        "o7"
+      ],
+      "intervals": [
+        0,
+        3,
+        6,
+        9
+      ]
+    },
+    {
+      "names": [
+        "7#5",
+        "aug7",
+        "+7"
+      ],
+      "intervals": [
+        0,
+        4,
+        8,
+        10
+      ]
+    },
+    {
+      "names": [
+        "7b5"
+      ],
+      "intervals": [
+        0,
+        4,
+        6,
+        10
+      ]
+    },
+    {
+      "names": [
+        "maj7#5",
+        "augmaj7",
+        "+M7"
+      ],
+      "intervals": [
+        0,
+        4,
+        8,
+        11
+      ]
+    },
+    {
+      "names": [
+        "7sus4",
+        "7sus"
+      ],
+      "intervals": [
+        0,
+        5,
+        7,
+        10
+      ]
+    },
+    {
+      "names": [
+        "7sus2"
+      ],
+      "intervals": [
+        0,
+        2,
+        7,
+        10
+      ]
+    },
+    {
+      "names": [
+        "add9",
+        "add2"
+      ],
+      "intervals": [
+        0,
+        2,
+        4,
+        7
+      ]
+    },
+    {
+      "names": [
+        "madd9",
+        "m(add9)",
+        "madd2"
+      ],
+      "intervals": [
+        0,
+        2,
+        3,
+        7
+      ]
+    },
+    {
+      "names": [
+        "9"
+      ],
+      "intervals": [
+        0,
+        2,
+        4,
+        7,
+        10
+      ]
+    },
+    {
+      "names": [
+        "maj9",
+        "M9",
+        "\u03949"
+      ],
+      "intervals": [
+        0,
+        2,
+        4,
+        7,
+        11
+      ]
+    },
+    {
+      "names": [
+        "m9",
+        "min9",
+        "-9"
+      ],
+      "intervals": [
+        0,
+        2,
+        3,
+        7,
+        10
+      ]
+    },
+    {
+      "names": [
+        "6/9",
+        "69",
+        "6add9"
+      ],
+      "intervals": [
+        0,
+        2,
+        4,
+        7,
+        9
+      ]
+    },
+    {
+      "names": [
+        "m6/9",
+        "m69"
+      ],
+      "intervals": [
+        0,
+        2,
+        3,
+        7,
+        9
+      ]
+    },
+    {
+      "names": [
+        "9sus4",
+        "9sus"
+      ],
+      "intervals": [
+        0,
+        2,
+        5,
+        7,
+        10
+      ]
+    },
+    {
+      "names": [
+        "7b9"
+      ],
+      "intervals": [
+        0,
+        1,
+        4,
+        7,
+        10
+      ]
+    },
+    {
+      "names": [
+        "7#9"
+      ],
+      "intervals": [
+        0,
+        3,
+        4,
+        7,
+        10
+      ]
+    },
+    {
+      "names": [
+        "13"
+      ],
+      "intervals": [
+        0,
+        2,
+        4,
+        7,
+        9,
+        10
+      ]
+    },
+    {
+      "names": [
+        "maj13",
+        "M13"
+      ],
+      "intervals": [
+        0,
+        2,
+        4,
+        7,
+        9,
+        11
+      ]
+    },
+    {
+      "names": [
+        "m13"
+      ],
+      "intervals": [
+        0,
+        2,
+        3,
+        7,
+        9,
+        10
+      ]
+    }
+  ]
+}

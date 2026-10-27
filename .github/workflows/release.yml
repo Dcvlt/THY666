@@ -1,0 +1,98 @@
+name: Release Client installers
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vX.X.X tag to build
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  client:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            artifact: macos-arm64
+          - os: windows-latest
+            artifact: windows-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      RUSTUP_TOOLCHAIN: '1.98.1'
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - name: Check tag and package versions
+        shell: bash
+        run: python tools/check_release_version.py --tag "$RELEASE_TAG"
+      - name: Prepare Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --target wasm32-unknown-unknown
+      - name: Prepare pinned C compiler
+        run: python tools/setup_core_tools.py
+      - name: Test and build public core
+        run: python tools/build_core.py --test --core-only
+      - name: Build browser updater
+        run: python tools/build_browser_updater.py
+      - name: Test and build Client without firmware resources
+        run: python tools/build_desktop.py --test --without-releases
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        run: choco install nsis --version=3.12 -y --no-progress
+      - name: Package Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python tools/package_client_release.py --makensis "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+      - name: Package macOS disk image
+        if: runner.os == 'macOS'
+        run: python3 tools/package_client_release.py
+      - name: Retain build evidence
+        shell: bash
+        run: |
+          cp build/desktop-target/desktop-build.json "build/releases/Client-${{ matrix.artifact }}-build.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: client-${{ matrix.artifact }}
+          path: build/releases/
+          if-no-files-found: error
+  stage-release:
+    needs: client
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: client-*
+          merge-multiple: true
+          path: release-assets
+      - name: Stage prerelease for firmware and source review
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          if gh release view "$RELEASE_TAG" --json isDraft > release.json; then
+            python3 -c 'import json; assert json.load(open("release.json"))["isDraft"], "Published releases are never overwritten"'
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --prerelease --title "THY666 $RELEASE_TAG" --notes 'Unsigned Client installers. Firmware, matching source and qualification notes must be reviewed before publication.'
+          fi
+          gh release upload "$RELEASE_TAG" release-assets/*

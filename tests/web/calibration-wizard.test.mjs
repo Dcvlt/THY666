@@ -128,7 +128,7 @@ test('the left-cluster raw wizard provides temporary playable review, tuning and
   for(const [index,pad] of [48,95].entries())assert.deepEqual(engine.firmware.response(pad),rightBefore[index].response);
   assert.deepEqual(engine.drain(),[]);
   const saved=engine.settings.encode(),cold=await createCore({bytes});
-  assert.equal(engine.settings.version,13);assert.equal(saved.length,5633);
+  assert.equal(engine.settings.version,15);assert.equal(saved.length,5633);
   assert.equal(cold.settings.apply(saved),true);
   assert.deepEqual(cold.firmware.response(47),engine.firmware.response(47));
   assert.deepEqual(cold.firmware.velocity(0),engine.firmware.velocity(0));

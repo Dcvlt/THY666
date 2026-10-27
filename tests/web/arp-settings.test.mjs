@@ -40,8 +40,8 @@ test('two Arps, shared clock and quick-page preferences cold restore without mus
   okay(engine.rhythm.configure({ bpm: 139.125, source: 'usb', meterNumerator: 5, meterDenominator: 8, quantization: 'beat' }));
   const expected = [0, 1].map(n => parameters(engine.arp.snapshot(n)));
   const encoded = engine.settings.encode(); assert.equal(encoded.length, 5633);
-  assert.equal(engine.settings.version, 13); assert.equal(engine.settings.payloadVersion(encoded), 13);
-  const storage = storageFor(13, engine, encoded), cold = await fresh();
+  assert.equal(engine.settings.version, 15); assert.equal(engine.settings.payloadVersion(encoded), 15);
+  const storage = storageFor(15, engine, encoded), cold = await fresh();
   const prefs = new PreviewSettings(cold.engine, storage);
   assert.equal(prefs.restore(() => true), 'Saved locally');
   assert.deepEqual([0, 1].map(n => parameters(cold.engine.arp.snapshot(n))), expected);
@@ -81,7 +81,7 @@ test('v2 restore retains old preferences, defaults new Arp fields and migrates o
   prefs.tick(0, false); prefs.tick(2000, false); assert.equal(storage.getItem(PREVIEW_SETTINGS_KEY), original);
   prefs.tick(2001, true);
   const migrated = JSON.parse(storage.getItem(PREVIEW_SETTINGS_KEY));
-  assert.equal(migrated.version, 13); assert.equal(migrated.payload.length, 5633);
+  assert.equal(migrated.version, 15); assert.equal(migrated.payload.length, 5633);
   assert.deepEqual(cold.engine.drain(), []);
 });
 
@@ -108,11 +108,11 @@ test('v3 restores enabled Arps and clock while idle migration appends presentati
   assert.equal(storage.getItem(PREVIEW_SETTINGS_KEY), original);
   prefs.tick(2001, true);
   const migrated = JSON.parse(storage.getItem(PREVIEW_SETTINGS_KEY));
-  assert.equal(migrated.version, 13); assert.equal(migrated.payload.length, 5633);
+  assert.equal(migrated.version, 15); assert.equal(migrated.payload.length, 5633);
   assert.deepEqual(cold.engine.drain(), []);
 });
 
-test('v5 preferences migrate without sequencer runtime and save a complete v13 song payload at idle', async () => {
+test('v5 preferences migrate without sequencer runtime and save a complete v15 song payload at idle', async () => {
   const {engine,model}=await fresh();
   okay(model.set('controls.left','arps'));okay(engine.arp.configure(1,{enabled:true,channel:8,rateTicks:480}));
   okay(engine.sequencer.add(0,[{tick:0,duration:240,pitch:60,value:96}]));
@@ -123,19 +123,19 @@ test('v5 preferences migrate without sequencer runtime and save a complete v13 s
   assert.equal(cold.engine.sequencer.snapshot().count,0);assert.equal(cold.engine.sequencer.snapshot().capture.state,'off');
   assert.deepEqual(cold.engine.sequencer.snapshot().remote,{record:false,position:false,channel:0});
   prefs.tick(0,false);prefs.tick(2000,false);assert.equal(storage.getItem(PREVIEW_SETTINGS_KEY),original);prefs.tick(2001,true);
-  const migrated=JSON.parse(storage.getItem(PREVIEW_SETTINGS_KEY));assert.equal(migrated.version,13);assert.equal(migrated.payload.length,5633);assert.deepEqual(cold.engine.drain(),[]);
+  const migrated=JSON.parse(storage.getItem(PREVIEW_SETTINGS_KEY));assert.equal(migrated.version,15);assert.equal(migrated.payload.length,5633);assert.deepEqual(cold.engine.drain(),[]);
 });
 
-test('truncated v13 and unknown versions cannot masquerade as legacy or overwrite storage', async () => {
+test('truncated v14 and unknown versions cannot masquerade as legacy or overwrite storage', async () => {
   const { engine } = await fresh(), payload = engine.settings.encode();
   for (const count of [2103, 2157, 2217, 2309, 2320, 2345, 2880, 2965, 3217, 3508,3548,3740,3748,4263,4883,5013]) {
     const truncated = payload.slice(0, count);
     assert.equal(engine.settings.validate(truncated), false);
     assert.equal(engine.settings.apply(truncated), false);
   }
-  for (const mutate of [record => { record.version = 14; }, record => { record.payload[record.payload.length - 1] = 2; },
+  for (const mutate of [record => { record.version = 15; }, record => { record.payload[record.payload.length - 1] = 2; },
     record => { record.payload[2207] ^= 1; }]) {
-    const storage = storageFor(13, engine, payload), record = JSON.parse(storage.getItem(PREVIEW_SETTINGS_KEY));
+    const storage = storageFor(14, engine, payload), record = JSON.parse(storage.getItem(PREVIEW_SETTINGS_KEY));
     mutate(record); storage.setItem(PREVIEW_SETTINGS_KEY, JSON.stringify(record));
     const original = storage.getItem(PREVIEW_SETTINGS_KEY), cold = await fresh(), prefs = new PreviewSettings(cold.engine, storage);
     prefs.restore(() => assert.fail('Corrupt or future records must not load a catalog'));

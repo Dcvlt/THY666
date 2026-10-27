@@ -256,7 +256,10 @@ int main(void)
     thy_core_init(&core);
     thy_instrument_init(&instrument, &core);
     thy_instrument_memory_init();
-    thy_engine_init(&high_level, &instrument, (uint16_t)group_index, 70u);
+    /* CPU-only undo storage in ordinary SRAM, separate from the CCM engine.
+     * No capacity sharing: history remains available during recording/playback. */
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&high_level, &instrument, (uint16_t)group_index, 70u, undo_workspace_1);
     thy_engine_bind_calibration(&high_level,&calibration);
     thy_engine_bind_expression(&high_level,&expression);
     thy_engine_bind_channel_expression(&high_level,&channel_expression);

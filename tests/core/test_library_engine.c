@@ -27,7 +27,8 @@ static void init(void)
             .valid_mask=p<48u?7u:1u,.color=1u};
     const int16_t degrees[]={0,2,4,5,7,9,11};
     (void)thy_instrument_set_layout(&instrument,layout,60,degrees,7);
-    thy_engine_init(&engine,&instrument,21,70);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&engine,&instrument,21,70, undo_workspace_1);
     thy_engine_bind_expression(&engine,&mpe);
     thy_engine_bind_channel_expression(&engine,&ordinary);
     thy_engine_bind_controls(&engine);
@@ -593,9 +594,66 @@ static int non_c_capture_roundtrips_without_double_transposition(void)
     CHECK(!memcmp(&again,&before,sizeof again));return 1;
 }
 
+static int board_guidance_is_advisory_and_physical_controls_release(void)
+{
+    init();instrument.context_controls=0;
+    CHECK(thy_instrument_press_pad(&instrument,0)==THY_OK);drain();
+    before_core=core;thy_library saved=instrument.library;
+    CHECK(thy_state_begin_edit(&engine.state,THY_ROW_CHORDS_GUIDANCE)==THY_STATE_OK);
+    CHECK(instrument.guidance.key==0xab5u);
+    CHECK(thy_engine_library_open(&engine,0,0)==THY_STATE_BLOCKED);
+    CHECK(thy_engine_sequencer_open(&engine,0)==THY_STATE_BLOCKED);
+    CHECK(thy_engine_arp_quick_open(&engine)==THY_STATE_BLOCKED);
+    CHECK(thy_engine_calibration_open(&engine)==THY_STATE_BLOCKED);
+    /* Three physical DOWN presses, then RIGHT: explicit held-note capture. */
+    for(unsigned n=0;n<3u;++n){
+        CHECK(thy_instrument_control(&instrument,0,THY_STATE_DOWN,1)==THY_OK);
+        CHECK(thy_instrument_control(&instrument,0,THY_STATE_DOWN,0)==THY_OK);
+    }
+    CHECK(instrument.guidance.cursor==3u);
+    CHECK(thy_instrument_control(&instrument,0,THY_STATE_RIGHT,1)==THY_OK);
+    CHECK(thy_instrument_control(&instrument,0,THY_STATE_RIGHT,0)==THY_OK);
+    CHECK(instrument.guidance.notes==0x91u);
+    CHECK(!memcmp(&core,&before_core,sizeof core));
+    /* A held Arp source contributes even with no dry output; a generated
+     * note and an unheld input must not contribute. */
+    engine.arps[0].inputs[2].held=1;
+    engine.arps[0].inputs[2].pitches[1]=UINT64_C(1)<<2; /* F#4 */
+    engine.arps[0].inputs[3].pitches[1]=UINT64_C(1)<<4; /* unheld G#4 */
+    core.generated[0].count=1;core.generated[0].keys[0]=70; /* generated Bb */
+    CHECK(navigate(THY_STATE_RIGHT));CHECK(instrument.guidance.notes==0xd1u);
+    engine.arps[0].inputs[2].held=0;core=before_core;
+    instrument.guidance.notes=0x91u;
+    CHECK(!memcmp(&saved,&instrument.library,sizeof saved));
+    /* Release still reaches the original owner while browsing. */
+    CHECK(thy_instrument_release_pad(&instrument,0)==THY_OK);
+    CHECK(!core.owners[0].held);drain();
+    CHECK(instrument.guidance.notes==0x91u);
+    for(unsigned n=0;n<3;++n)CHECK(navigate(THY_STATE_UP));
+    CHECK(navigate(THY_STATE_RIGHT));CHECK(instrument.guidance.page==1u&&instrument.guidance.count);
+    CHECK(navigate(THY_STATE_LEFT));CHECK(navigate(THY_STATE_DOWN));CHECK(navigate(THY_STATE_RIGHT));
+    CHECK(instrument.guidance.page==2u&&instrument.guidance.total>=instrument.guidance.count);
+    CHECK(navigate(THY_STATE_RIGHT));CHECK(instrument.guidance.page==3u);
+    CHECK(navigate(THY_STATE_RIGHT));CHECK(instrument.guidance.editing);
+    uint8_t root=instrument.performance.root;uint16_t key=instrument.guidance.key;
+    CHECK(navigate(THY_STATE_UP));CHECK(instrument.performance.root==root&&instrument.guidance.key==key);
+    CHECK(navigate(THY_STATE_LEFT));CHECK(!instrument.guidance.editing&&instrument.guidance.page==3u);
+    CHECK(navigate(THY_STATE_SELECT));CHECK(!instrument.guidance.open&&engine.state.level==THY_STATE_PLAY);
+    CHECK(!memcmp(&saved,&instrument.library,sizeof saved));
+    printf("Board guidance workspace: %u bytes\n",(unsigned)sizeof(thy_guidance_ui));
+    CHECK(thy_engine_guidance_open(&engine)==THY_STATE_OK);
+    CHECK(!instrument.guidance.notes);CHECK(navigate(THY_STATE_DOWN));CHECK(navigate(THY_STATE_RIGHT));
+    CHECK(!instrument.guidance.count);CHECK(navigate(THY_STATE_DOWN));CHECK(!instrument.guidance.cursor);
+    CHECK(navigate(THY_STATE_SELECT));
+    CHECK(thy_engine_library_open(&engine,0,0)==THY_STATE_OK);
+    CHECK(thy_engine_guidance_open(&engine)==THY_STATE_BLOCKED);
+    return 1;
+}
+
 int main(void)
 {
     int (*tests[])(void)={
+        board_guidance_is_advisory_and_physical_controls_release,
         canonical_crud_rejects_invalid_records_atomically,
         external_selection_and_shortcuts_protect_deletions,
         live_owners_and_background_work_guard_all_writes,

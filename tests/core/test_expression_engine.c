@@ -14,7 +14,8 @@ static unsigned assertions;
 static void init(void)
 {
     thy_core_init(&core);thy_instrument_init(&instrument,&core);
-    thy_engine_init(&engine,&instrument,21,70);thy_engine_bind_expression(&engine,&mpe);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&engine,&instrument,21,70, undo_workspace_1);thy_engine_bind_expression(&engine,&mpe);
 }
 static unsigned drain(unsigned kind)
 {

@@ -37,7 +37,8 @@ static int callback(void *ctx,uint8_t kind,uint8_t track)
 static void init(unsigned view,int created)
 {
     thy_core_init(&core);thy_clock_init(&clock_state,0u);thy_transport_init(&transport,&clock_state);
-    thy_sequencer_init(&seq);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_sequencer_init(&seq, undo_workspace_1);
     if(created) (void)thy_sequencer_create(&seq,0u);
     thy_sequencer_ui_init(&ui,&seq,&transport,&clock_state,callback,NULL);
     thy_sequencer_ui_open(&ui,(uint8_t)view);

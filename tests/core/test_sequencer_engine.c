@@ -18,7 +18,8 @@ static void init(void)
     for(unsigned p=0;p<96;++p)layout[p]=(thy_instrument_pad){.notes={60,64,67},.valid_mask=p<48?7u:1u,.color=1u};
     layout[48].notes[0]=62;
     (void)thy_instrument_set_layout(&instrument,layout,60,degrees,7);
-    thy_engine_init(&engine,&instrument,21,70);(void)thy_engine_advance(&engine,0);
+    static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&engine,&instrument,21,70, undo_workspace_1);(void)thy_engine_advance(&engine,0);
     for(unsigned t=0;t<21;++t)engine.sequencer.tracks[t].destinations=THY_ROUTE_USB0;
 }
 static unsigned drain(void)

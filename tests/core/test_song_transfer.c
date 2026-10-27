@@ -23,11 +23,13 @@ static int command(const char *text,uint32_t now,int available,const char *expec
 }
 static void init(void)
 {
-    thy_core_init(&core);thy_instrument_init(&instrument,&core);thy_engine_init(&engine,&instrument,0,70);
+    thy_core_init(&core);thy_instrument_init(&instrument,&core);static thy_seq_event undo_workspace_1[THY_SEQ_EVENTS];
+    thy_engine_init(&engine,&instrument,0,70, undo_workspace_1);
     (void)thy_engine_advance(&engine,0);
     thy_seq_event original={.tick=0,.duration=960,.kind=THY_SEQ_NOTE,.pitch=64,.value=90};
     (void)thy_sequencer_add(&engine.sequencer,0,&original,1);
-    thy_sequencer_init(&donor);original.pitch=67;original.value=101;
+    static thy_seq_event undo_workspace_2[THY_SEQ_EVENTS];
+    thy_sequencer_init(&donor, undo_workspace_2);original.pitch=67;original.value=101;
     (void)thy_sequencer_add(&donor,1,&original,1);(void)thy_sequencer_encode(&donor,candidate,sizeof(candidate),&candidate_size);
     memset(buffer,0xa5,sizeof(buffer));thy_song_transfer_init(&transfer,buffer,sizeof(buffer));
 }
