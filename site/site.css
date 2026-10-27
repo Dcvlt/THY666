@@ -37,3 +37,12 @@ main{max-width:1380px;margin:auto;padding:0 46px}h1,h2,h3{line-height:1.2;margin
 /* Preserve display titles; share the navigation and smaller heading family. */
 h2,h3{font-family:Orbitron,Oxanium,system-ui,sans-serif;color:var(--ui-ink);font-weight:500}
 .site-header nav a,.site-header nav a:hover,.site-header nav a[aria-current]{color:var(--ui-ink)}
+
+/* Keep the two-line headline within its column at every viewport size. */
+.hero-copy{container-type:inline-size}
+.hero-title{font-size:clamp(16px,7cqi,64px);line-height:1.45}
+.hero-title span{display:block;white-space:nowrap;color:var(--ui-ink)}
+.hero-title span:last-child{color:var(--accent)}
+
+.view-controls [data-view-dots]{flex-wrap:wrap;justify-content:center;gap:6px}
+.view-controls [data-view-dots] button{min-width:32px;min-height:36px;padding:4px}

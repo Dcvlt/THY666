@@ -36,6 +36,11 @@ function pixels(frame) {
   return result;
 }
 const definitions = [
+  ...[['detailed', 'Detailed', 'notes'], ['chladni', 'Chladni', 'chladni'],
+      ['orbit', 'Orbit', 'orbit'], ['waves', 'Waves', 'waves']].map(([id, label, value]) =>
+    [id, `${label} · C major held`, async engine => {
+      set(engine, 'lights.view', value); okay(engine.firmware.pressPad(0));
+    }]),
   ['simple', 'Simple · C major held', async engine => {
     okay(engine.state.set(row('lights.view'), 4)); okay(engine.firmware.pressPad(0));
   }],

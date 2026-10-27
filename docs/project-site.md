@@ -101,8 +101,8 @@ or fetched from another project. Reviewed release choices can be added later.
 
 ## Presentation assets and roadmap
 
-The screen carousel draws Simple, Piano and Circle of fifths directly from the
-shared guide figures. It advances only by explicit controls or arrow keys. The
+The screen carousel draws all seven implemented views (Simple, Detailed, Piano,
+Chladni, Orbit, Waves and Circle of fifths) directly from shared C-rendered guide figures. It advances only by explicit controls or arrow keys. The
 Client screenshot shows a disconnected session with no device identifiers; refresh
 `site/assets/client-preview.png` when the interface changes. Large display titles retain Monoton; navigation and smaller headings use Orbitron,
 white on dark surfaces and dark in light mode.

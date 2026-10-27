@@ -167,6 +167,7 @@ test('documentation navigation and search render real articles using text nodes'
 
 test('documentation examples reproduce the current C renderer with synthetic musical input', () => {
   assert.deepEqual(Object.keys(HELP_SCREEN_FRAMES), [
+    'detailed', 'chladni', 'orbit', 'waves',
     'simple', 'piano', 'fifths', 'engines', 'arp', 'steps', 'track',
     'performance', 'chords', 'library', 'midi', 'aftertouch', 'mpe',
     'sensitivity', 'pick', 'calibration', 'at-stage', 'draft', 'applied',
@@ -176,7 +177,7 @@ test('documentation examples reproduce the current C renderer with synthetic mus
     [fileURLToPath(new URL('../../tools/render_help_examples.mjs', import.meta.url)), '--check'],
     { cwd: fileURLToPath(new URL('../../', import.meta.url)), encoding: 'utf8' });
   assert.equal(checked.status, 0, checked.stderr);
-  assert.match(checked.stdout, /23 shared C documentation screenshots verified/);
+  assert.match(checked.stdout, /27 shared C documentation screenshots verified/);
 });
 
 test('instruction diagrams preserve physical counts and distinguish step selection from input', () => {

@@ -11,10 +11,10 @@ test('screen carousel selects and wraps actual C examples using buttons and arro
   globalThis.document={querySelectorAll:()=>[mount],createElement:()=>node()};
   try {
     const {screenViews}=await import('../../build/site/screen-carousel.js');
-    assert.equal(screenViews.length,3);
+    assert.deepEqual(screenViews.map(view=>view.label.split(' · ')[0]), ['Simple','Detailed','Piano','Chladni','Orbit','Waves','Circle of fifths']);
     assert.equal(elements.img.src,screenViews[0].src);
     elements['[data-view-prev]'].listeners.click();
-    assert.equal(elements.img.src,screenViews[2].src);
+    assert.equal(elements.img.src,screenViews[6].src);
     elements['[data-view-next]'].listeners.click();
     assert.equal(elements.img.src,screenViews[0].src);
     elements['[data-view-dots]'].children[1].listeners.click();
@@ -22,6 +22,6 @@ test('screen carousel selects and wraps actual C examples using buttons and arro
     let prevented=false;mount.listeners.keydown({key:'ArrowRight',preventDefault(){prevented=true;}});
     assert.equal(prevented,true);assert.equal(elements.img.src,screenViews[2].src);
     assert.equal(elements['[data-view-dots]'].children[2].attributes['aria-pressed'],'true');
-    assert.equal(elements['[data-view-count]'].textContent,'3 / 3');
+    assert.equal(elements['[data-view-count]'].textContent,'3 / 7');
   } finally {globalThis.document=original;}
 });
