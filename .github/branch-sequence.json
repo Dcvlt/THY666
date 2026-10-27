@@ -1,0 +1,9 @@
+{
+  "last_allocated": 4,
+  "allocations": {
+    "01": "feature/01-branch-governance",
+    "02": "feature/02-readme-front-door",
+    "03": "fix/03-release-runner",
+    "04": "fix/04-release-documentation"
+  }
+}

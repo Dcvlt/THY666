@@ -1,0 +1,29 @@
+name: Pull request routing
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+permissions:
+  contents: read
+jobs:
+  routing:
+    name: PR routing
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_BRANCH: ${{ github.base_ref }}
+      HEAD_BRANCH: ${{ github.head_ref }}
+      HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+      BASE_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Require develop integration and explicit main promotion
+        run: |
+          python3 - <<'PY'
+          import os
+          base, head = os.environ['BASE_BRANCH'], os.environ['HEAD_BRANCH']
+          if base == 'develop':
+              print('Integration PR accepted; contributor branch names and PR titles are unrestricted.')
+          elif base == 'main' and head == 'develop' and os.environ['HEAD_REPOSITORY'] == os.environ['BASE_REPOSITORY']:
+              print('Release promotion from this repository develop branch.')
+          else:
+              raise SystemExit('Target develop for normal changes. Only this repository develop branch can promote to main.')
+          PY
