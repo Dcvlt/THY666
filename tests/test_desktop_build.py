@@ -63,7 +63,9 @@ class DesktopBuildTests(unittest.TestCase):
         executable.write_bytes(b"synthetic executable")
         app = build.macos_development_bundle(executable, assets, b"synthetic notices")
         self.assertEqual((app / "Contents/MacOS/thy666-desktop").read_bytes(), executable.read_bytes())
-        self.assertTrue((app / "Contents/MacOS/thy666-desktop").stat().st_mode & 0o100)
+        # Windows stat does not expose POSIX executable permissions.
+        if os.name != "nt":
+            self.assertTrue((app / "Contents/MacOS/thy666-desktop").stat().st_mode & 0o100)
         info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
         self.assertEqual(info["CFBundleExecutable"], "thy666-desktop")
         self.assertTrue((app / "Contents/Resources/resources/README.txt").is_file())

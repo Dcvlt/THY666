@@ -1,3 +1,5 @@
+<!-- Target develop for normal changes; only develop promotes to main. Titles are unrestricted. -->
+
 ## Change
 
 Describe the problem and the resulting behavior. Link the relevant issue.

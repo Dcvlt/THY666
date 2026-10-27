@@ -30,7 +30,7 @@ prompts, screenshots or logs.
 
 ## Development and pull requests
 
-1. Fork the repository and make a focused branch. Keep unrelated cleanup out of
+1. Fork the repository and make a focused branch. Target **develop** with your PR. Keep unrelated cleanup out of
    a behavior change so reviewers can understand its effect.
 2. Build the public core with `npm run setup` and `npm run build:core`.
    The connected Client and core tests need no private chord archive. Instrument
@@ -106,3 +106,27 @@ Release tags use **vX.X.X**. A prerelease is a testing milestone, not a claim th
 all hardware paths are qualified. Publishing, firmware installation and settings
 restoration are separate actions; a review or build never implicitly requests
 writing to a board.
+
+
+## Maintainer branches and integration
+
+Our internal branch convention is `<type>/<XX>-<short-name>`, where type is
+`feature`, `fix` or `hotfix`. Use lowercase words joined by hyphens. Numbers
+are sequential across all three types: after `feature/01-example`, the next
+branch could be `fix/02-another-example`, not `fix/01-another-example`.
+Pad numbers to at least two digits; do not reset or reuse them after merging.
+
+Maintainers reserve the next number in `.github/branch-sequence.json` and check
+both local and remote branches before starting work. `main` and `develop` are
+long-lived exceptions to this convention. Contributor fork branch names, issue
+numbers and issue/PR titles are not required to follow it.
+
+Normal PRs merge into **develop**. Only a promotion PR from this repository's
+**develop** branch may target **main**. Main requires passing checks and a PR;
+direct pushes, force-pushes and branch deletion are blocked. Resolve review
+threads before merging. Do not impose a mandatory second-person approval on a
+solo-maintainer project; passing CI and explicit review remain required.
+
+Keep Pages deployment on main. Release tags point at reviewed main commits.
+Use merge commits for develop-to-main promotions so both branches retain their
+shared ancestry; do not squash or rebase a long-lived branch promotion.

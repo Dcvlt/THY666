@@ -140,3 +140,19 @@ with a byte-identical post-boot export. That test used an empty song/library and
 default pad overrides; do not generalize it to nonempty material or calibrated
 profiles. Update-aware configuration handling, Original v5 through Rust,
 interrupted-update recovery and macOS/Linux USB remain release milestones.
+
+
+## Branch workflow
+
+Use `feature/XX-short-name`, `fix/XX-short-name` or `hotfix/XX-short-name` for our
+branches. XX is one shared sequential number across all types, padded to at least
+two digits. Check local/remote refs and reserve the next number in
+`.github/branch-sequence.json`; never reset or reuse numbers after merging.
+Do not use a codex/ prefix in this repository. Main and develop are long-lived
+exceptions. This convention does not constrain external contributor branch
+names, issue titles or pull request titles.
+
+Target normal PRs at develop. Promote develop to main through a merge-commit PR
+from the same repository, after required checks pass. Do not push directly to
+main or bypass its protections. Keep deployment on main and release tags bound
+to reviewed main commits. Preserve develop/main ancestry during promotions.
