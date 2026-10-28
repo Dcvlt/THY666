@@ -67,6 +67,8 @@ class WorkbenchBundleTests(unittest.TestCase):
         self.assertIn("function initializeCompanionShell", module)
         self.assertIn("function initializeAppSettings", module)
         self.assertIn("function inspectDeviceBackup", module)
+        self.assertIn("function createBackupPayloadMigrator", module)
+        self.assertIn("backup-migration.js", self.manifest["assets_sha256"])
         self.assertIn("function initializeUpdaterPanel", module)
         self.assertIn("function createUpdaterClient", module)
         self.assertIn("THY666-UPDATER/1", module)

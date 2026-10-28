@@ -50,7 +50,7 @@ def main():
         compiler = [str(executable), "cc"]
     subprocess.run([sys.executable, str(ROOT / "tools/build_studio_schema.py")], cwd=ROOT, check=True)
     sources = [ROOT / "core" / name for name in
-               ("thy_core.c", "thy_chord_layout.c", "thy_voicing.c", "thy_harmony.c", "thy_library.c", "thy_library_ui.c", "thy_library_engine.c", "thy_mpe.c", "thy_channel_expression.c", "thy_expression_profile.c", "thy_expression_engine.c", "thy_midi.c", "thy_clock.c", "thy_transport.c", "thy_arp.c", "thy_rhythm.c", "thy_calibration.c", "thy_calibration_engine.c", "thy_sequencer.c", "thy_sequencer_ui.c", "thy_sequence_engine.c", "thy_song_transfer.c", "thy_instrument.c", "thy_lighting.c", "thy_ui.c",
+               ("thy_core.c", "thy_chord_layout.c", "thy_voicing.c", "thy_harmony.c", "thy_harmony_workspace.c", "thy_library.c", "thy_library_ui.c", "thy_library_engine.c", "thy_mpe.c", "thy_channel_expression.c", "thy_expression_profile.c", "thy_expression_engine.c", "thy_midi.c", "thy_clock.c", "thy_transport.c", "thy_arp.c", "thy_rhythm.c", "thy_calibration.c", "thy_calibration_engine.c", "thy_sequencer.c", "thy_sequencer_ui.c", "thy_sequence_engine.c", "thy_song_transfer.c", "thy_instrument.c", "thy_lighting.c", "thy_ui.c",
                 "thy_menu_data.c", "thy_state.c", "thy_engine.c", "thy_studio_ui.c", "thy_display.c", "thy_settings.c", "thy_settings_transfer.c", "thy_companion.c")]
     bridge = ROOT / "host/wasm_bridge.c"
     output = ROOT / "web/generated"
@@ -106,6 +106,9 @@ def main():
                             ("test_chord_layout", ["test_chord_layout.c"]),
                             ("test_voicing", ["test_voicing.c"]),
                             ("test_harmony", ["test_harmony.c"]),
+                            ("test_harmony_workspace", ["test_harmony_workspace.c"]),
+                            ("test_cluster_swap", ["test_cluster_swap.c"]),
+                            ("test_menu_reset", ["test_menu_reset.c"]),
                             ("test_library", ["test_library.c"]),
                             ("test_library_ui", ["test_library_ui.c"]),
                             ("test_library_engine", ["test_library_engine.c"]),

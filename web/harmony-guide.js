@@ -1,90 +1,109 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
- * Advisory drafts and presentation only. All harmonic analysis is shared C.
- * No transport, sound, settings writes or device connection capabilities. */
-export function initializeHarmonyGuide(mount, guidance) {
-  const doc=mount.ownerDocument;
-  const noteNames=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
-  const notes=mask=>noteNames.filter((_,n)=>mask&(1<<n)).join(' · ')||'None';
-  const el=(tag,text='',className='')=>{const n=doc.createElement(tag);n.textContent=text;n.className=className;return n;};
-  const button=(text,action)=>{const n=el('button',text,'button');n.type='button';n.addEventListener('click',action);return n;};
-  const select=(label,options,value,onChange)=>{
-    const field=el('label',label,'harmony-field'),input=el('select');input.setAttribute('aria-label',label);
-    for(const [id,text] of options){const option=el('option',text);option.value=String(id);input.append(option);}
-    input.value=String(value);input.addEventListener('change',()=>onChange(Number(input.value)));field.append(input);return {field,input};
+ * Device projection only: ranking, maps, note ownership and key changes stay in C. */
+export function initializeHarmonyGuide(mount,{families=[],action=async()=>{},control=async()=>{},set=async()=>{},scaleLabel=v=>`Scale ${v+1}`}={}) {
+  const doc=mount.ownerDocument,names=['C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'];
+  const notes=mask=>names.filter((_,n)=>mask&(1<<n)).join(' · ')||'—';
+  const el=(tag,text='',cls='')=>{const n=doc.createElement(tag);n.textContent=text;n.className=cls;return n;};
+  let live=null,connected=false,supported=false,writable=false,controlsReady=false,busy=false;
+  const buttons=[],settings=[];
+  const button=(label,code,value=0)=>{
+    const b=el('button',label,'button');b.type='button';
+    if(typeof code==='string')b.dataset.setting=code;
+    if(typeof code==='function')b.dataset.harmonyControl='true';
+    b.addEventListener('click',()=>void invoke(code,typeof value==='function'?value():value));buttons.push(b);return b;
   };
-  let sourceRoot=0,sourceFamily=0,targetRoot=7,targetFamily=0,selected=0x091;
-  mount.classList.add('harmony-guide');
-  const head=el('div','','companion-page-head'),titles=el('div');
-  titles.append(el('p','EXPLORE THE MUSIC','eyebrow'),el('h1','Harmony'));head.append(titles);
-  const intro=el('p','Explore chords, discover scales and compare keys. These are local musical sketches: nothing plays, connects or changes your board.','harmony-intro');
-  const source=el('section','','harmony-card'),sourceControls=el('div','','harmony-controls');
-  source.append(el('h2','Your working key'),sourceControls);
-  const roots=noteNames.map((name,id)=>[id,name]),families=guidance.families.map(({id,name})=>[id,name]);
-  const rootPicker=select('Key root',roots,sourceRoot,v=>{sourceRoot=v;render();});
-  const familyPicker=select('Key scale',families,sourceFamily,v=>{sourceFamily=v;render();});
-  sourceControls.append(rootPicker.field,familyPicker.field);
-  const keyNotes=el('p','','harmony-notes');source.append(keyNotes);
-  const input=el('section','','harmony-card'),pitchButtons=el('div','','harmony-pitches');
-  input.append(el('h2','Notes to explore'),el('p','Start with the C major example, or select your own notes. Octaves and enharmonic spellings are combined.'),pitchButtons);
-  const toggles=noteNames.map((name,n)=>{
-    const b=button(name,()=>{selected^=1<<n;render();});b.setAttribute('aria-label',`Include ${name}`);pitchButtons.append(b);return b;
-  });
-  const current=el('p','','harmony-notes');current.setAttribute('aria-live','polite');input.append(current,button('Clear notes',()=>{selected=0;render();}));
-  const columns=el('div','','harmony-panels'),tabs=el('div','','harmony-tabs');
-  let active='chords';const tabButtons=new Map();
-  const chords=el('section','','harmony-card'),chordRows=el('div','','harmony-results');
-  chords.append(el('h2','Where next?'),el('p','In-key chord options ranked by shared tones. Tonic and fifth-root options break ties. Select a card to explore its notes; this is not a prescribed progression.'),chordRows);
-  const discovery=el('section','','harmony-card'),scaleInfo=el('p'),scaleRows=el('div','','harmony-results');
-  discovery.append(el('h2','Scale discovery'),el('p',`${guidance.families.length} scale families in every root. All matches contain every selected note; fewer extra notes rank first. Matches cannot establish your intended key.`),scaleInfo,scaleRows);
-  columns.append(chords,discovery);
-  const modulation=el('section','','harmony-card'),targetControls=el('div','','harmony-controls'),comparison=el('div','','harmony-comparison');
-  modulation.append(el('h2','Modulation guidance'),el('p','Compare a destination with your working key. Shared tones and pivot chords suggest a route; phrasing and resolution establish the new tonal center.'),targetControls,comparison);
-  const targetRootPicker=select('Destination root',roots,targetRoot,v=>{targetRoot=v;render();});
-  const targetFamilyPicker=select('Destination scale',families,targetFamily,v=>{targetFamily=v;render();});
-  targetControls.append(targetRootPicker.field,targetFamilyPicker.field);
-  modulation.append(button('Use destination as working key',()=>{
-    sourceRoot=targetRoot;sourceFamily=targetFamily;rootPicker.input.value=String(sourceRoot);familyPicker.input.value=String(sourceFamily);render();
-  }),el('p','Changes this local sketch only. Use Parameters separately when you choose to change the board.','harmony-caption'));
-  const status=el('p','','harmony-caption');status.setAttribute('role','status');status.setAttribute('aria-live','polite');
-  columns.append(modulation);
-  const inputGrid=el('div','','harmony-input-grid');inputGrid.append(source,input);
-  const panels={chords,discovery,modulation};
-  for(const [id,label] of [['chords','Chord suggestions'],['discovery','Scale discovery'],['modulation','Modulation']]) {
-    const tab=button(label,()=>{active=id;showPanel();});
-    tab.setAttribute('aria-controls',`harmony-${id}`);panels[id].id=`harmony-${id}`;
-    tabButtons.set(id,tab);tabs.append(tab);
+  const picker=(label,options,id,key,maximum)=>{
+    const field=el('label',label,'harmony-field'),input=el(options?'select':'input');input.setAttribute('aria-label',label);
+    if(options)for(const [value,text] of options){const option=el('option',text);option.value=String(value);input.append(option);}
+    else {input.type='number';input.min=0;input.max=maximum;input.step=1;}
+    if(typeof id==='string')input.dataset.setting=id;
+    input.addEventListener('change',()=>void invoke(id,Number(input.value)));field.append(input);settings.push({input,key});return field;
+  };
+  mount.classList.add('harmony-guide');mount.dataset.view='1';
+  const head=el('div','','companion-page-head'),title=el('div'),enter=button('Enter Harmony',0,()=>live?.active?0:1);
+  title.append(el('p','HARMONIC WORKSPACE','eyebrow'),el('h1','Harmony'));head.append(title,enter);
+  const state=el('p','','harmony-caption');state.setAttribute('role','status');
+  const content=el('div'),intro=el('p','Play a chord, release it, then explore the highlighted choices. Columns keep their roots; rows offer four chord qualities. Lock the map to keep assignments.','harmony-intro');
+  const workspace=el('div','','harmony-live-workspace'),overview=el('section','','harmony-card'),map=el('section','','harmony-card');
+  const key=el('p','','harmony-key'),current=el('h2'),tones=el('p','','harmony-notes'),next=el('p'),reason=el('p'),recent=el('p','','harmony-caption'),preference=el('p','','harmony-caption');
+  const ring=el('div','','harmony-fifths');ring.setAttribute('role','img');const ringNotes=[];
+  for(let n=0;n<12;n++){const pitch=n*7%12,node=el('span',names[pitch],'harmony-fifth');node.style.setProperty('--fifth',n);ring.append(node);ringNotes.push({pitch,node});}
+  const capture=el('div','','harmony-tabs'),pin=button('Pin input',9,()=>live?.pinned?0:1);
+  capture.append(button('Capture selected pad',7),button('Capture held chord',8),pin,button('Clear input',6));
+  overview.append(key,current,tones,ring,next,reason,recent,preference,capture);
+  const halves=el('div','','harmony-mini-halves'),pads=[],halfLabels=[];
+  map.append(el('h2','Playing surface'),el('p','Bright pads suggest a next chord. Every chord pad remains playable. This diagram sends no notes.'),halves);
+  for(let side=0;side<2;side++){
+    const half=el('div'),label=el('p','','harmony-caption'),grid=el('div','','harmony-live-pads');half.append(label,grid);halfLabels.push(label);halves.append(half);
+    for(let n=0;n<48;n++){const cell=el('span');cell.setAttribute('aria-label',`${side?'RIGHT':'LEFT'} row ${n%4+1}, pad ${Math.floor(n/4)+1}`);cell.style.setProperty('grid-column',Math.floor(n/4)+1);cell.style.setProperty('grid-row',n%4+1);grid.append(cell);pads.push(cell);}
   }
-  function showPanel(){for(const [id,panel] of Object.entries(panels)){panel.hidden=id!==active;tabButtons.get(id).setAttribute('aria-pressed',String(id===active));}}
-  mount.append(head,intro,inputGrid,tabs,columns,status);
+  workspace.append(overview,map);
+  const options=el('section','','harmony-card'),grid=el('div','','harmony-controls'),toggle=[[0,'Off'],[1,'On']];
+  grid.append(
+    picker('Direction',[[0,'Balanced'],[1,'Resolve'],[2,'Colour'],[3,'Travel']],'harmony.direction','direction'),
+    picker('Outside key · %',null,'harmony.outside','outside',100),
+    picker('Stay in key',toggle,'harmony.stayInKey','stayInKey'),
+    picker('Lock map',toggle,'harmony.lockMap','lockMap'),
+    picker('Chord bank',[[0,'Adaptive'],[1,'Major / minor / 7 / maj7'],[2,'m7 / sus2 / sus4 / dim'],[3,'dim7 / half-dim / aug / 6'],[4,'m6 / maj9 / 9 / m9']],'harmony.palette','palette'),
+    picker('Note surface',[[0,'Chromatic'],[1,'Chord tones']],'harmony.rightMode','rightMode'),
+    picker('Melody input',[[0,'Live additions'],[1,'Melody only'],[2,'Manual capture']],'harmony.analysis','analysis'),
+    picker('Voicing',[[0,'Inversions'],[1,'Drop voices'],[2,'Auto leading'],[3,'Octave fold'],[4,'Guitar register']],'harmony.voicing','voicing'),
+    picker('Leading bass',[[0,'Smooth'],[1,'Root bass']],'harmony.bass','bassRoot'),
+    picker('Register low · MIDI',null,'harmony.low','lowNote',127),picker('Register high · MIDI',null,'harmony.high','highNote',127),
+    picker('Pad hints',toggle,'harmony.highlights','highlights'),picker('Hint contrast · %',null,'harmony.contrast','hintContrast',100),picker('Motion',toggle,'harmony.motion','motion'));
+  options.append(el('h2','Workspace settings'),grid);
+  const shortcuts=el('section','','harmony-card'),bank=button('',()=>control(3,0)),mode=button('',()=>control(3,1)),target=button('',()=>control(3,11));
+  const top=el('div','','harmony-tabs'),lower=el('div','','harmony-tabs'),scales=el('div','','harmony-tabs'),roots=el('div','','harmony-tabs');
+  top.append(bank,mode,button('Octave −',()=>control(3,9)),button('Octave +',()=>control(3,10)),target);
+  const lowerButtons=[],scaleButtons=[];
+  for(let n=0;n<7;n++){const l=button('',()=>control(1,n+7)),s=button('',()=>control(3,n+2));lower.append(l);scales.append(s);lowerButtons.push(l);scaleButtons.push(s);}
+  for(let n=0;n<12;n++)roots.append(button(names[n],()=>control(2,n)));
+  shortcuts.append(el('h2','Physical shortcuts'),top,el('h3','Lower controls'),lower,el('h3','Scale preview · M1–M7'),scales,el('h3','Root preview'),roots);
+  const tabs=el('div','','harmony-tabs');for(const [id,label] of [[0,'Chord suggestions'],[1,'Scale discovery'],[2,'Key comparison']])tabs.append(button(label,1,id));
+  const results=el('section','','harmony-card'),resultTitle=el('h2'),table=el('table','','harmony-live-table'),tableHead=el('thead'),body=el('tbody');table.append(tableHead,body);results.append(resultTitle,table);
+  const destination=el('section','','harmony-card'),destinationControls=el('div','','harmony-controls'),comparison=el('p'),apply=button('Apply destination key',5,1);
+  destinationControls.append(picker('Destination root',names.map((v,n)=>[n,v]),3,'targetRoot'),picker('Destination scale',families.map(({id,name})=>[id,name]),4,'targetFamily'));
+  destination.append(el('h2','Compare a key'),destinationControls,comparison,apply,el('p','Only Apply changes the home key.'));
+  const error=el('p');error.setAttribute('role','alert');content.append(intro,workspace,options,shortcuts,tabs,results,destination);mount.append(head,state,content,error);
+  async function invoke(code,value){
+    if(!connected||!supported||!writable||busy||typeof code!=='string'&&code!==0&&!live?.active||typeof code==='function'&&!controlsReady)return;
+    busy=true;error.textContent='';render();
+    try{if(typeof code==='function')await code();else if(typeof code==='string')await set(code,value);else await action(code,value);}catch(e){error.textContent=e.message;}finally{busy=false;render();}
+  }
   function render(){
-    showPanel();
-    const key=guidance.scale(sourceFamily,sourceRoot),target=guidance.scale(targetFamily,targetRoot);
-    keyNotes.textContent=notes(key);
-    toggles.forEach((b,n)=>b.setAttribute('aria-pressed',String(Boolean(selected&(1<<n)))));
-    current.textContent=selected?`${guidance.label(selected)} · ${notes(selected)}`:'Select notes to discover scales.';
-    chordRows.replaceChildren();
-    const suggestions=guidance.chords(key,sourceRoot,selected);
-    for(const chord of suggestions){
-      const b=button('',()=>{selected=chord.mask;render();toggles[0].focus();});b.classList.add('harmony-result');
-      b.append(el('strong',guidance.label(chord.mask,chord.root)),el('span',notes(chord.mask)),el('small',`${chord.shared} shared tone${chord.shared===1?'':'s'}`));chordRows.append(b);
+    const available=connected&&supported,ready=available&&live,canAct=ready&&live.active&&writable&&!busy;
+    state.textContent=!connected?'Connect a board to open Harmony.':!supported?'This firmware does not expose live Harmony v4. Update to use this page.':!live?'Reading Harmony…':!writable?'Monitoring only: the Client and firmware menus differ.':live.active?`Harmony active · ${live.clusterSwapped?'RIGHT chords / LEFT notes':'LEFT chords / RIGHT notes'}`:'Enter Harmony to explore chords.';
+    content.hidden=!ready;enter.textContent=live?.active?'Return to Play':'Enter Harmony';
+    for(const b of buttons)b.disabled=!ready||!writable||busy||!b.dataset.setting&&!live.active||Boolean(b.dataset.harmonyControl)&&!controlsReady;
+    enter.disabled=!available||!writable||busy;
+    for(const {input} of settings)input.disabled=!ready||!writable||busy||!input.dataset.setting&&!live.active;
+    if(!ready)return;
+    for(const {input,key} of settings){const v=live[key];input.value=String(typeof v==='boolean'?Number(v):v??0);}
+    key.textContent=`HOME / ${live.keyLabel}`;current.textContent=live.inputMask?live.inputLabel:'Play a chord';tones.textContent=notes(live.inputMask);
+    next.textContent=live.selectedLabel?`NEXT / ${live.selectedLabel}`:'Choose a chord';reason.textContent=live.reason||'';
+    recent.textContent=(live.history||[]).slice().reverse().map(h=>`${names[h.root]} (${notes(h.mask)})`).join(' → ');
+    preference.textContent=`${['Balanced','Resolve','Colour','Travel'][live.direction]||'Balanced'} · ${live.lockMap?'Map locked':live.palette?'Fixed bank':'Adaptive map'} · ${live.stayInKey?'In-key only':`Outside key ${live.outside??35}%`}${live.pending?' · Updates after release':''}`;
+    pin.textContent=live.pinned?'Follow playing':'Pin input';pin.setAttribute('aria-pressed',String(live.pinned));
+    ring.setAttribute('aria-label',`Circle of fifths: ${live.inputLabel}; next ${live.selectedLabel||'none'}.`);
+    const nextMask=live.page===0?live.rows[live.cursor]?.mask||0:0;
+    for(const {pitch,node} of ringNotes){node.classList.toggle('is-input',Boolean(live.inputMask&(1<<pitch)));node.classList.toggle('is-next',Boolean(nextMask&(1<<pitch)));node.classList.toggle('is-root',pitch===live.sourceRoot);}
+    halfLabels.forEach((label,side)=>label.textContent=`${side?'RIGHT':'LEFT'} / ${(side===0)!==live.clusterSwapped?'CHORDS':'NOTES'}`);
+    for(let n=0;n<96;n++){const p=n%48,chord=(n<48)!==live.clusterSwapped;pads[n].dataset.role=live.physicalCurrentPads[n]?'current':live.physicalSelectedPads[n]?'selected':live.physicalSuggestedPads[n]?'suggested':'other';pads[n].textContent=chord?names[Math.floor(p/4)]:'';pads[n].title=chord?notes(live.padMasks?.[p]||0):'Note pad';}
+    bank.textContent=`5 · ${live.controlBank?'Octave layers':'Suggestions'}`;mode.textContent=`12 · ${live.rightMode?'Chord tones':'Chromatic'}`;target.textContent=`U3 · ${live.octaveTarget?'Note':'Chord'} octave`;
+    for(let n=0;n<7;n++){
+      lowerButtons[n].textContent=live.controlBank?`${n>3?'+':''}${n-3} oct`:`Suggestion ${n+1}`;
+      lowerButtons[n].setAttribute('aria-pressed',String(live.controlBank?Boolean(live.chordLayers&1<<n):live.selectedSuggestion===n));
+      lowerButtons[n].disabled=!canAct||!controlsReady||!live.controlBank&&n>=live.suggestionCount;
+      scaleButtons[n].textContent=`M${n+1} · ${scaleLabel(live.scaleButtons[n])}`;scaleButtons[n].disabled=!canAct||!controlsReady||live.scaleButtons[n]>=70;
     }
-    if(!suggestions.length)chordRows.append(el('p','No other supported chord fits this key. Try another working scale.'));
-    scaleRows.replaceChildren();
-    if(selected){
-      const {matches,total}=guidance.discover(selected);scaleInfo.textContent=`Showing ${matches.length} of ${total} matches, ranked by fewest extra notes. Mode names with the same notes remain distinct.`;
-      for(const match of matches){
-        const b=button('',()=>{targetRoot=match.root;targetFamily=match.family;targetRootPicker.input.value=String(targetRoot);targetFamilyPicker.input.value=String(targetFamily);active='modulation';render();targetRootPicker.input.focus();});b.classList.add('harmony-result');
-        b.append(el('strong',`${noteNames[match.root]} ${guidance.families[match.family].name}`),el('span',`${match.extra} extra notes · Compare as destination`));scaleRows.append(b);
-      }
-    } else scaleInfo.textContent='Select at least one note. No key is inferred from silence.';
-    const m=guidance.modulation(key,target,selected);comparison.replaceChildren();
-    for(const [label,mask] of [['Shared notes',m.common],['Introduce',m.added],['Leave behind',m.removed]]){
-      const cell=el('div');cell.append(el('h3',label),el('p',notes(mask)));comparison.append(cell);
-    }
-    const same=sourceRoot===targetRoot&&sourceFamily===targetFamily;
-    comparison.append(el('p',same?'This is already your working key.':key===target?'Same pitch collection, different tonal center. Emphasize the destination root and its characteristic tones.':!selected?'Select notes to check whether your current material fits both keys.':m.currentFits?'Your selected notes fit both keys. They can connect the two collections.':'Your selected notes do not all fit both keys. Change them deliberately when moving to the destination.'));
-    comparison.append(el('p',m.pivot?`Possible pivot: ${guidance.label(m.pivot,m.pivotRoot)} (${notes(m.pivot)}). Try it between the two tonal centers.`:'No shared major, minor or diminished triad. Consider a common-note transition or a deliberate direct change.'));
-    status.textContent=`Local sketch · ${noteNames[sourceRoot]} ${guidance.families[sourceFamily].name} → ${noteNames[targetRoot]} ${guidance.families[targetFamily].name}`;
+    results.hidden=live.page===2;destination.hidden=live.page!==2;resultTitle.textContent=live.page===1?'Scales containing the input':'Next chords';
+    const heading=el('tr');(live.page===1?['Scale','Notes','Extra tones']:['Chord pad','Notes','Relationship']).forEach(t=>heading.append(el('th',t)));tableHead.replaceChildren(heading);body.replaceChildren();
+    live.rows.forEach((row,index)=>{
+      const tr=el('tr'),pick=el('button',live.page===1?`Compare ${names[row.root]} ${families.find(f=>f.id===row.family)?.name||'Scale'}`:`Row ${row.pad%4+1} · pad ${Math.floor(row.pad/4)+1}`,'button');pick.type='button';pick.disabled=!canAct;pick.addEventListener('click',()=>void invoke(live.page===1?10:2,index));pick.setAttribute('aria-pressed',String(index===live.cursor));
+      const cell=el('td');cell.append(pick);tr.append(cell,el('td',notes(row.mask)),el('td',live.page===1?String(row.extra):['Shared tones','Next step','In home key','Outside key','Extension','Resolution','Secondary dominant','Parallel major/minor'][row.reason]));body.append(tr);
+    });
+    comparison.textContent=`${live.keyLabel} → ${live.targetLabel}. Shared: ${notes(live.common)}. Introduce: ${notes(live.added)}. Leave: ${notes(live.removed)}.`;apply.disabled=!canAct||!live.canApply;
   }
-  render();return {refresh:render};
+  let lastProjection='';
+  render();return {update(snapshot,connection={}){const projection=JSON.stringify([snapshot,connection.connected,connection.supported,connection.writable,connection.controlsReady]);if(projection===lastProjection)return;lastProjection=projection;live=snapshot;connected=Boolean(connection.connected);supported=Boolean(connection.supported);writable=Boolean(connection.writable);controlsReady=Boolean(connection.controlsReady);render();},refresh:render};
 }

@@ -70,15 +70,25 @@ const definitions = [
   ['chords', 'Chords · musical layout and voicing', async engine => {
     focus(engine, 'chords.layout');
   }],
-  ...['chord-advice','scale-discovery','modulation-advice'].map((id, page) => [id, ['Chord advice · C major','Scale discovery · C–E–G','Modulation · from C major'][page], async engine => {
-    okay(engine.firmware.pressPad(0));
-    focus(engine, 'chords.guidance'); okay(engine.state.navigate('right'));
-    for(let n=0;n<3;n++) okay(engine.state.navigate('down'));
-    okay(engine.state.navigate('right'));
-    for(let n=0;n<3;n++) okay(engine.state.navigate('up'));
-    for(let n=0;n<page;n++) okay(engine.state.navigate('down'));
-    okay(engine.state.navigate('right'));
+  ...['chord-advice','scale-discovery','modulation-advice'].map((id, page) => [id, ['Harmony Fifths · C major','Scale discovery · C–E–G','Key preview · from C major'][page], async engine => {
+    set(engine,'chords.layout','diatonic');
+    okay(engine.state.harmonyAction(0,1));
+    set(engine,'harmony.palette',1);
+    okay(engine.firmware.pressPad(0));okay(engine.release(0));
+    for(let n=1;n<=60;n++)okay(engine.rhythm.advance(n));
+    if(page)okay(engine.state.harmonyAction(1,page));
+    if(page===2)okay(engine.state.harmonyAction(3,7));
+    okay(engine.rhythm.advance(61));
   }]),
+  ['harmony-fifths','Harmony Fifths · C major and next chord',async engine=>{
+    set(engine,'chords.layout','diatonic');okay(engine.state.harmonyAction(0,1));
+    set(engine,'harmony.palette',1);okay(engine.firmware.pressPad(0));okay(engine.release(0));
+    for(let n=1;n<=60;n++)okay(engine.rhythm.advance(n));
+  }],
+  ['harmony-settings','Harmony · dedicated playing controls',async engine=>{focus(engine,'harmony.direction');}],
+  ['reset-options','Reset options · Cancel is selected initially',async engine=>{
+    focus(engine,'lights.resetOptions');okay(engine.state.begin(row('lights.resetOptions')));
+  }],
   ['library', 'Chord editor · a synthetic C major record', async engine => {
     okay(engine.firmware.library.set(1, 0, { used: true, name: 'C MAJOR', root: 60, notes: [60,64,67,0,0,0,0], mask: 7 }));
     okay(engine.firmware.library.openEditor(1, 0));

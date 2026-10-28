@@ -1,11 +1,14 @@
 import { createDeviceClient } from './installer/device-client.js';
 import { createBrowserUpdaterClient } from './installer/browser-updater-client.js';
 import { initializeUpdaterPanel } from './installer/updater-panel.js';
+import { createCore } from './client/core.js';
+import { createBackupPayloadMigrator } from './client/backup-migration.js';
 
 const mount = document.querySelector('#browser-updater');
 const status = document.querySelector('#browser-install-status');
 let panel;
-const client = createDeviceClient({ onState() { panel?.refresh(); } });
+const client = createDeviceClient({ onState() { panel?.refresh(); },
+  migrateBackupPayload:createBackupPayloadMigrator({createEngine:()=>createCore()}) });
 const showNotice = (message, kind = 'info') => {
   status.textContent = message; status.dataset.state = kind; status.hidden = kind !== 'error';
 };

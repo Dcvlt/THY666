@@ -85,7 +85,8 @@ size_t thy_settings_transfer_command(thy_settings_transfer *s,const thy_engine *
     text w={response,0u,capacity};const char *p=line;uint32_t first=0u,second=0u;
     (void)thy_settings_transfer_expire(s,now);
     if(same(line,"backup caps")){
-        add(&w,"BACKUP version=1 settings=13 max=");number(&w,THY_BACKUP_FILE_MAX);
+        add(&w,"BACKUP version=1 settings=");number(&w,THY_SETTINGS_VERSION);
+        add(&w," max=");number(&w,THY_BACKUP_FILE_MAX);
         add(&w," chunk=32 target=");number(&w,s->identity.target);add(&w," compatibility=");number(&w,s->identity.compatibility);
         add(&w," uid=");add(&w,s->identity.uid?s->identity.uid:"");add(&w," build=");add(&w,s->identity.build?s->identity.build:"");
         add(&w," schema=");add(&w,s->identity.schema?s->identity.schema:"");
@@ -106,7 +107,8 @@ size_t thy_settings_transfer_command(thy_settings_transfer *s,const thy_engine *
             s->payload_bytes=(uint32_t)bytes;s->payload_crc=thy_settings_crc32(s->buffer,bytes);
             if(!identity_header(s))add(&w,"ERR backup-identity");
             else{s->bytes=64u+(uint32_t)bytes;s->received=0u;s->crc=file_crc(s);s->state=THY_BACKUP_DOWNLOAD;s->last_ms=now;
-                add(&w,"BACKUP export bytes=");number(&w,s->bytes);add(&w," crc32=");hex(&w,s->crc,8u);add(&w," settings=13");}
+                add(&w,"BACKUP export bytes=");number(&w,s->bytes);add(&w," crc32=");hex(&w,s->crc,8u);
+                add(&w," settings=");number(&w,THY_SETTINGS_VERSION);}
         }
     }else if(prefix(&p,"backup begin ")&&decimal(&p,&first)&&*p++==' '&&decimal(&p,&second)&&!*p){
         if(!available||thy_settings_transfer_busy(s)||!quiet||j->status==THY_SETTINGS_ERROR||j->status==THY_SETTINGS_UNSUPPORTED)add(&w,"ERR backup-busy");

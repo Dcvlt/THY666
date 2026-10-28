@@ -33,6 +33,11 @@ _Static_assert(THY_SETTINGS_RECORD_BYTES<=THY_SETTINGS_WRITE_SLOT_SPAN*THY_SETTI
     X(keep_transpose,1) X(live_update,1) X(live_lock_scale,1) X(live_mute_chord,1) \
     X(chord_layout,THY_CHORD_LAYOUT_USER) X(chord_quality,THY_CHORD_QUALITY_COUNT-1u) \
     X(six_bank,THY_LIBRARY_SIX_SETS-1u) X(voicing_mode,4) X(drop_mask,7) X(user_scale,THY_LIBRARY_SCALES)
+#define HARMONY_BYTES(X) \
+    X(pattern,3) X(highlights,1) X(motion,1) X(view,3) X(control_bank,1) \
+    X(octave_target,1) X(right_mode,1) X(analysis,2) X(bass_root,1) X(low_note,127) X(high_note,127)
+#define HARMONY_V17_BYTES(X) X(direction,3) X(pad_map,1) X(hint_contrast,100)
+#define HARMONY_V18_BYTES(X) X(outside,100) X(stay_in_key,1) X(lock_map,1) X(palette,4)
 #define CONFIG_BYTES(X) \
     X(fixed_velocity,127) X(pressure_enabled,1) X(lights_enabled,1) \
     X(light_idle,8) X(light_held,8) X(light_chord_mode,2) \
@@ -57,6 +62,10 @@ typedef struct config {
     uint32_t tempo;
     uint8_t clock_source, numerator, denominator, quantize, arp_target, arp_quick_keys;
     uint8_t engine_kind, scale_shortcuts[THY_SCALE_SHORTCUT_COUNT];
+#define FIELD(name,max) uint8_t harmony_##name;
+    HARMONY_BYTES(FIELD) HARMONY_V17_BYTES(FIELD) HARMONY_V18_BYTES(FIELD)
+#undef FIELD
+    uint8_t cluster_swap;
     thy_view_config display_config[THY_VIEW_COUNT];
     uint32_t seq_grid, seq_window, seq_region_start, seq_region_end;
     uint8_t seq_layout, seq_swapped, seq_input, seq_pitch, seq_track;
@@ -110,6 +119,8 @@ static void config_defaults(config *c) {
     c->tempo=THY_CLOCK_DEFAULT_TEMPO; c->numerator=4u; c->denominator=4u;
     c->quantize=THY_TRANSPORT_BAR; c->arp_quick_keys=1u;
     c->engine_kind=THY_PLAY_ENGINE_PLAY;
+    c->harmony_pattern=c->harmony_highlights=c->harmony_motion=1u;
+    c->harmony_octave_target=1u;c->harmony_high_note=127u;c->harmony_view=1u;c->harmony_hint_contrast=65u;c->harmony_outside=35u;
     for(unsigned n=0;n<THY_SCALE_SHORTCUT_COUNT;++n)
         c->scale_shortcuts[n]=thy_instrument_default_scale_shortcut((uint8_t)n);
     thy_views_defaults(c->display_config);
@@ -280,7 +291,8 @@ static int valid_config(const config *c, uint16_t scales, unsigned version) {
     if(version>=4u) {
         /* The old v4 workspace byte accepted Scales=0 and Chromatic=1. Both
          * migrate to Play only after their original range is validated. */
-        if((version==4u?c->engine_kind>1u:version==5u?c->engine_kind!=THY_PLAY_ENGINE_PLAY:!thy_play_engine_available(c->engine_kind)) ||
+        if((version==4u?c->engine_kind>1u:version==5u?c->engine_kind!=THY_PLAY_ENGINE_PLAY:
+            version<16u?(c->engine_kind!=THY_PLAY_ENGINE_PLAY&&c->engine_kind!=THY_PLAY_ENGINE_SEQUENCER):!thy_play_engine_available(c->engine_kind)) ||
             !thy_view_available(c->display_view) || (version==4u && c->display_view>=V4_VIEW_COUNT)) return 0;
         for(unsigned n=0;n<THY_SCALE_SHORTCUT_COUNT;++n)
             if(c->scale_shortcuts[n]>THY_SCALE_SHORTCUT_LAYOUT+(version>=12u?THY_LIBRARY_SCALES:0u)) return 0;
@@ -356,7 +368,7 @@ static int valid_config(const config *c, uint16_t scales, unsigned version) {
     return 1;
 }
 static size_t parameter_bytes(unsigned version) {
-    return version>=12u?THY_SETTINGS_V12_PARAMETER_BYTES:version>=11u?THY_SETTINGS_V11_PARAMETER_BYTES:version>=10u?THY_SETTINGS_V10_PARAMETER_BYTES:version>=9u?THY_SETTINGS_V9_PARAMETER_BYTES:version>=8u?THY_SETTINGS_V8_PARAMETER_BYTES:version>=7u?THY_SETTINGS_V7_PARAMETER_BYTES:THY_SETTINGS_V6_PARAMETER_BYTES;
+    return version>=18u?THY_SETTINGS_V18_PARAMETER_BYTES:version>=17u?THY_SETTINGS_V17_PARAMETER_BYTES:version>=16u?THY_SETTINGS_V16_PARAMETER_BYTES:version>=12u?THY_SETTINGS_V12_PARAMETER_BYTES:version>=11u?THY_SETTINGS_V11_PARAMETER_BYTES:version>=10u?THY_SETTINGS_V10_PARAMETER_BYTES:version>=9u?THY_SETTINGS_V9_PARAMETER_BYTES:version>=8u?THY_SETTINGS_V8_PARAMETER_BYTES:version>=7u?THY_SETTINGS_V7_PARAMETER_BYTES:THY_SETTINGS_V6_PARAMETER_BYTES;
 }
 int thy_settings_payload_version(const uint8_t *in,size_t count) {
     if(!in) return 0u;
@@ -389,6 +401,12 @@ int thy_settings_payload_version(const uint8_t *in,size_t count) {
         in[3]==0xf2u && in[4]==0x54u && in[5]==0x48u && in[6]==14u) return 14u;
     if(count>=THY_SETTINGS_V15_PARAMETER_BYTES+32u && count<=THY_SETTINGS_PAYLOAD_MAX &&
         in[3]==0xf2u && in[4]==0x54u && in[5]==0x48u && in[6]==15u) return 15u;
+    if(count>=THY_SETTINGS_V16_PARAMETER_BYTES+32u && count<=THY_SETTINGS_PAYLOAD_MAX &&
+        in[3]==0xf2u && in[4]==0x54u && in[5]==0x48u && in[6]==16u) return 16u;
+    if(count>=THY_SETTINGS_V18_PARAMETER_BYTES+32u && count<=THY_SETTINGS_PAYLOAD_MAX &&
+        in[3]==0xf2u && in[4]==0x54u && in[5]==0x48u && in[6]==18u) return 18u;
+    if(count>=THY_SETTINGS_V17_PARAMETER_BYTES+32u && count<=THY_SETTINGS_PAYLOAD_MAX &&
+        in[3]==0xf2u && in[4]==0x54u && in[5]==0x48u && in[6]==17u) return 17u;
     return 0u;
 }
 /* Read the validated byte projection directly. No 740-byte automatic library
@@ -416,12 +434,33 @@ static int decode(config *c,const uint8_t *in,size_t count,uint16_t scales) {
             !library_references_valid(c,in+s.at)) return 0;
         s.at+=THY_LIBRARY_PAYLOAD_BYTES;
     }
+    if(version>=16u){
+#define FIELD(name,max) byte(&s,&c->harmony_##name);if(c->harmony_##name>max)return 0;
+        HARMONY_BYTES(FIELD)
+#undef FIELD
+        byte(&s,&c->cluster_swap);if(c->cluster_swap>1u||c->harmony_low_note>c->harmony_high_note)return 0;
+    }
+    if(version>=17u){
+#define FIELD(name,max) byte(&s,&c->harmony_##name);if(c->harmony_##name>max)return 0;
+        HARMONY_V17_BYTES(FIELD)
+#undef FIELD
+    }
+    if(version==17u&&c->harmony_direction>2u)return 0;
+    if(version>=18u){
+#define FIELD(name,max) byte(&s,&c->harmony_##name);if(c->harmony_##name>max)return 0;
+        HARMONY_V18_BYTES(FIELD)
+#undef FIELD
+    }
     return s.at==parameters &&
         (version<6u || thy_sequencer_validate(in+parameters,count-parameters)==THY_OK);
 }
 /* Legacy presentation flags remain part of the frozen byte stream. Convert
  * them only after validating their original ranges, before publishing values. */
 static void migrate_legacy(config *c,unsigned version) {
+    if(version<18u){
+        c->harmony_direction=c->harmony_direction==2u?3u:0u;
+        c->harmony_view=1u;c->harmony_pad_map=0u;
+    }
     if(version<8u) {
         c->release_policy=(thy_instrument_release_policy){(uint16_t)(c->response.attack_raw-c->response.release_raw),1u};
         for(unsigned n=0;n<THY_PAD_COUNT;++n)c->pad_release_policy[n]=(thy_instrument_release_policy){
@@ -475,6 +514,10 @@ THY_SETTINGS_NOINLINE int thy_settings_encode(const thy_engine *e,uint8_t *out,s
     c.quantize=e->rhythm_transport.launch_quantize;
     c.arp_target=e->arp_target; c.arp_quick_keys=e->arp_quick_keys;
     c.engine_kind=i->engine_kind;
+#define FIELD(name,max) c.harmony_##name=e->harmony.name;
+    HARMONY_BYTES(FIELD) HARMONY_V17_BYTES(FIELD) HARMONY_V18_BYTES(FIELD)
+#undef FIELD
+    c.cluster_swap=i->cluster_swap;
     /* Preserve the frozen v6 prefix, but retire competing old canvas modes.
      * Per-track editor grids now live in independently versioned THYS v2. */
     c.seq_layout=0u; c.seq_swapped=0u;
@@ -513,11 +556,22 @@ THY_SETTINGS_NOINLINE int thy_settings_encode(const thy_engine *e,uint8_t *out,s
     }
     if(!valid_config(&c,e->state.scale_count,THY_SETTINGS_VERSION) ||
         !thy_library_valid(&i->library) || !library_references_valid(&c,(const uint8_t *)&i->library)) return 0;
-    if(capacity<THY_SETTINGS_V12_PARAMETER_BYTES+thy_sequencer_song_size(&e->sequencer)) return 0;
+#define FIELD(name,max) if(c.harmony_##name>max)return 0;
+    HARMONY_BYTES(FIELD) HARMONY_V17_BYTES(FIELD) HARMONY_V18_BYTES(FIELD)
+#undef FIELD
+    if(c.cluster_swap>1u||c.harmony_low_note>c.harmony_high_note||
+        capacity<THY_SETTINGS_V18_PARAMETER_BYTES+thy_sequencer_song_size(&e->sequencer)) return 0;
     stream s={out,NULL,capacity,0,1}; transfer(&s,&c,THY_SETTINGS_VERSION);
     if(!s.valid || s.at!=THY_SETTINGS_V12_LIBRARY_OFFSET ||
         thy_library_payload_encode(&i->library,out+s.at,capacity-s.at)!=THY_LIBRARY_OK) return 0;
     s.at+=THY_LIBRARY_PAYLOAD_BYTES;
+#define FIELD(name,max) byte(&s,&c.harmony_##name);
+    HARMONY_BYTES(FIELD)
+#undef FIELD
+    byte(&s,&c.cluster_swap);
+#define FIELD(name,max) byte(&s,&c.harmony_##name);
+    HARMONY_V17_BYTES(FIELD) HARMONY_V18_BYTES(FIELD)
+#undef FIELD
     size_t song_bytes=0u;
     if(thy_sequencer_encode(&e->sequencer,out+s.at,capacity-s.at,&song_bytes)!=THY_OK) return 0;
     *used=s.at+song_bytes; return 1;
@@ -534,7 +588,7 @@ int thy_settings_catalog(const uint8_t *in,size_t count,uint16_t *scale,uint8_t 
     *scale=(uint16_t)(in[0]|(uint16_t)in[1]<<8); *root=in[2]; return 1;
 }
 static int can_apply_config(const thy_engine *e,const config *c) {
-    if(!e || !e->instrument || !e->instrument->core) return 0;
+    if(!e || !e->instrument || !e->instrument->core || e->state.reset_open) return 0;
     const thy_instrument *i=e->instrument;
     if(i->input_enabled || i->core->sounding_count || i->core->queue_count || i->core->pending_keys ||
         i->core->sustain_count || i->core->generated_count) return 0;
@@ -707,6 +761,11 @@ THY_SETTINGS_NOINLINE int thy_settings_apply(thy_engine *e,const uint8_t *in,siz
          * setup moved between these two lists; preserve other categories. */
         e->state.cursors[thy_menu_rows[THY_ROW_CHORDS_LAYOUT].group]=0u;
     }
+#define FIELD(name,max) e->harmony.name=c.harmony_##name;
+    HARMONY_BYTES(FIELD) HARMONY_V17_BYTES(FIELD) HARMONY_V18_BYTES(FIELD)
+#undef FIELD
+    i->cluster_swap=c.cluster_swap;
+    thy_engine_harmony_reset(e);
     ++i->revision; return 1;
 }
 static uint32_t crc_update(uint32_t crc,const uint8_t *data,size_t bytes) {
@@ -791,6 +850,7 @@ static int blank_slot(thy_settings_journal *j,unsigned slot) {
 static void fail(thy_settings_journal *j) {++j->errors; j->writing=0u; j->status=THY_SETTINGS_ERROR;}
 THY_SETTINGS_NOINLINE void thy_settings_journal_task(thy_settings_journal *j,const thy_engine *e,uint32_t now,int idle) {
     if(!j || !e || j->status==THY_SETTINGS_ERROR || j->status==THY_SETTINGS_UNSUPPORTED) return;
+    if(e->state.reset_open)idle=0;
     if(j->writing) {
         if(!idle) return;
         if(j->erase_pending) {

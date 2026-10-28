@@ -406,6 +406,15 @@ export async function createCore({ bytes, url = new URL('./generated/core.wasm',
       const pointer = c.bridge_companion_snapshot(now);
       return pointer ? new Uint8Array(c.memory.buffer, pointer, 1680).slice() : null;
     },
+    harmonySnapshot(now = 0) {
+      if (!integer(now, 0, 4294967295) || !c.bridge_harmony_snapshot) return null;
+      const pointer = c.bridge_harmony_snapshot(now);
+      return pointer ? new Uint8Array(c.memory.buffer, pointer, 800).slice() : null;
+    },
+    harmonyAction(action,value=0) {
+      if (!integer(action,0,10)||!integer(value,-2147483648,2147483647)||!c.bridge_harmony_action) return stateResult(-1);
+      return stateResult(c.bridge_harmony_action(action,value));
+    },
   };
   const settingsBytes = bytes => {
     if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > c.bridge_settings_capacity()) return false;

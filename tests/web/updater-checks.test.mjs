@@ -67,7 +67,7 @@ test('settings saving, unsupported formats, unavailable storage and errors never
   for (const status of ['pending', 'saving', 'error', 'unsupported', 'unavailable', 'unknown']) {
     assert.throws(() => checkUpdateHealth('settings', replace('settings', 'status', status), operation()), status);
   }
-  for (const version of ['0', '12', '16', '999']) assert.throws(() => checkUpdateHealth('settings', replace('settings', 'version', version), operation()), `version ${version}`);
+  for (const version of ['0', '12', '19', '999']) assert.throws(() => checkUpdateHealth('settings', replace('settings', 'version', version), operation()), `version ${version}`);
   assert.throws(() => checkUpdateHealth('settings', replace('settings', 'errors', '1'), operation()));
 });
 test('display checks require the known report version, an initial completed frame and no transfer or driver faults', () => {
@@ -107,9 +107,18 @@ test('wrong report families, failed commands, oversized output and nonstrings ne
 
 test('settings health accepts v14 while retaining v13 compatibility', () => {
   assert.match(checkUpdateHealth('settings', reports.settings.replace('version=13', 'version=14'), operation()), /Saved settings/);
-  assert.throws(() => checkUpdateHealth('settings', reports.settings.replace('version=13', 'version=16'), operation()), /not supported/);
+  assert.throws(() => checkUpdateHealth('settings', reports.settings.replace('version=13', 'version=19'), operation()), /not supported/);
 });
 
  test('settings health accepts current v15 without dropping prior format support',()=>{
   assert.match(checkUpdateHealth('settings',reports.settings.replace('version=13','version=15'),operation()),/Saved settings/);
  });
+
+test('Harmony v16 storage passes only when idle and healthy', () => {
+  const report = reports.settings.replace('version=13', 'version=16');
+  assert.match(checkUpdateHealth('settings', report, operation()), /Saved settings/);
+  assert.match(checkUpdateHealth('settings', report.replace('status=saved', 'status=defaults'), operation()), /Factory settings/);
+  for (const status of ['pending', 'saving', 'error'])
+    assert.throws(() => checkUpdateHealth('settings', report.replace('status=saved', `status=${status}`), operation()));
+  assert.throws(() => checkUpdateHealth('settings', report.replace('errors=0', 'errors=1'), operation()));
+});

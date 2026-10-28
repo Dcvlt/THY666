@@ -284,6 +284,10 @@ const char *thy_guidance_scale_name(unsigned family)
 {return family<thy_guidance_scale_count()?guidance_scales[family].name:NULL;}
 uint16_t thy_guidance_scale_mask(unsigned family,unsigned root)
 {return family<thy_guidance_scale_count()&&root<12u?guidance_rotate(guidance_scales[family].mask,root):0u;}
+int thy_guidance_catalog_family(unsigned catalog)
+{return catalog<sizeof guidance_catalog_families?guidance_catalog_families[catalog]:-1;}
+int thy_guidance_playable_catalog(unsigned family)
+{for(unsigned n=0;n<sizeof guidance_catalog_families;++n)if(guidance_catalog_families[n]==family)return (int)n;return -1;}
 int thy_guidance_chords(uint16_t key,uint8_t tonic,uint16_t current,
     thy_chord_suggestion *out,size_t capacity,size_t *count)
 {

@@ -123,6 +123,7 @@ static int advance_shared_time(thy_engine *engine, uint32_t now_ms, int process_
         thy_engine_repeat_tick(engine, now_ms);
         thy_engine_calibration_tick(engine);
         thy_engine_expression_tick(engine, now_ms);
+        thy_engine_harmony_tick(engine);
     }
     return THY_OK;
 }
@@ -363,7 +364,7 @@ int thy_engine_press_shaped(thy_engine *engine, uint8_t pad, const int16_t *note
     if (result != THY_OK) return result;
     result = synchronize_input(engine);
     if (result != THY_OK) return result;
-    unsigned logical = i->mapping[pad];
+    unsigned logical = thy_instrument_role_pad(i,i->mapping[pad]);
     if (logical >= THY_PAD_COUNT) return THY_INVALID_ARGUMENT;
     int input = thy_sequencer_ui_input(&engine->sequencer_ui, (uint8_t)logical);
     uint8_t role = input ? (uint8_t)(input == 2) : (uint8_t)(logical < 48u);
@@ -384,6 +385,8 @@ int thy_engine_press_shaped(thy_engine *engine, uint8_t pad, const int16_t *note
             thy_instrument_capture_silent_input(i,pad,(uint8_t)musical_source,resolved,resolved_count);
         if(result==THY_OK && !consumed && role)
             thy_instrument_follow_chord(i,(uint8_t)musical_source,resolved,resolved_count,transpose);
+        if(result==THY_OK && !consumed)
+            thy_engine_harmony_input(engine,(uint8_t)musical_source,resolved,resolved_count);
         if (result==THY_OK && resolved_count && !consumed &&
             shape->strum_order==THY_STRUM_ALTERNATING) core->alternating_down^=1u;
         return result;
@@ -427,6 +430,7 @@ int thy_engine_press_shaped(thy_engine *engine, uint8_t pad, const int16_t *note
                 engine->live_generation[n], thy_clock_ready(&engine->musical_clock));
     thy_engine_sequencer_input(engine,pad,resolved,resolved_count,velocity,role);
     if(role)thy_instrument_follow_chord(i,(uint8_t)musical_source,resolved,resolved_count,transpose);
+    thy_engine_harmony_input(engine,(uint8_t)musical_source,resolved,resolved_count);
     thy_engine_sequencer_capture(engine);
     return THY_OK;
 }
@@ -442,6 +446,7 @@ static int musical_attack(void *context, uint8_t pad, const int16_t *notes,
 static int musical_release(void *context, uint8_t pad)
 {
     thy_engine *engine = context;
+    thy_engine_harmony_release(engine,thy_instrument_role_pad(engine->instrument,engine->instrument->mapping[pad]));
     if (engine->expression_config.enabled && engine->expression)
         return thy_mpe_release(engine->expression,pad);
     /* Release is never rejected because a timing source went away. It removes
@@ -462,6 +467,7 @@ static int musical_release(void *context, uint8_t pad)
 static void musical_reset(void *context)
 {
     thy_engine *engine = context;
+    for(unsigned n=0u;n<96u;++n)thy_engine_harmony_release(engine,(uint8_t)n);
     if (engine->expression) thy_mpe_release_all(engine->expression);
     if (engine->channel_expression) thy_channel_expression_release_all(engine->channel_expression);
     thy_sequencer_cancel(&engine->sequencer);
@@ -482,6 +488,45 @@ static void musical_reset(void *context)
 static int light_overlay(void *context,uint8_t logical,uint16_t components[3])
 {
     thy_engine *e=context;
+    uint8_t role=thy_instrument_role_pad(e->instrument,logical);
+    if(thy_engine_harmony_active(e)&&e->harmony.cache_ready&&role<48u&&
+        e->harmony.pad_masks[role]&&!thy_instrument_context_pad(e->instrument,role)) {
+        unsigned pad=0;while(pad<96u&&e->instrument->mapping[pad]!=logical)++pad;
+        if(pad<96u&&!e->instrument->sensors[pad].held&&!e->instrument->core->owners[pad].held) {
+            uint8_t root=e->harmony.pad_roots[role];if(root>=12u)root=0;
+            uint8_t hint=thy_engine_harmony_pad_role(e,role);
+            int result=thy_lighting_harmony_color(thy_lighting_note_color_palette(root,e->instrument->light_palette),hint,components);
+            unsigned factor=100u;
+            if(hint==THY_HARMONY_OTHER&&e->harmony.highlights)factor=100u-e->harmony.hint_contrast*60u/100u;
+            else if(hint==THY_HARMONY_SELECTED&&e->harmony.motion&&e->instrument->animations_enabled){
+                unsigned phase=e->instrument->core->now_ms%1600u;if(phase>800u)phase=1600u-phase;factor=75u+phase/32u;
+            }
+            for(unsigned c=0;c<3u;++c)components[c]=(uint16_t)(components[c]*factor/100u);
+            return result;
+        }
+    }
+    if(thy_engine_harmony_active(e)&&role>=48u&&
+       !thy_instrument_context_pad(e->instrument,role)) {
+        unsigned pad=0;while(pad<96u&&e->instrument->mapping[pad]!=logical)++pad;
+        if(pad<96u&&!e->instrument->sensors[pad].held&&!e->instrument->core->owners[pad].held) {
+            int16_t note=0;
+            if(thy_engine_harmony_melody_plan(e,role,&note)==1) {
+                unsigned pitch=(unsigned)((note+e->instrument->transpose[1])%12+12)%12u;
+                unsigned level=!e->harmony.highlights?1792u:(e->harmony.base_mask&(1u<<pitch))?3072u:
+                    (e->harmony.key_mask&(1u<<pitch))?2048u:1024u;
+                int black=pitch==1u||pitch==3u||pitch==6u||pitch==8u||pitch==10u;
+                if(e->instrument->light_key_contrast&&black){
+                    level=level*e->instrument->light_key_contrast_percent/100u;
+                    /* The physical LEDs have eight amplitudes: a nonzero
+                     * contrast setting must not erase an available note. */
+                    if(level&&level<512u)level=512u;
+                }
+                uint32_t color=thy_lighting_note_color_palette((uint8_t)pitch,e->instrument->light_palette);
+                for(unsigned c=0;c<3u;++c)components[c]=(uint16_t)((((color>>(16u-c*8u))&255u)*level+127u)/255u);
+                return 1;
+            }
+        }
+    }
     if(e->expression_config.enabled && e->expression && e->instrument->light_held_feedback) {
         unsigned pad=0;
         while(pad<96u && e->instrument->mapping[pad]!=logical)++pad;
@@ -508,12 +553,27 @@ static int light_overlay(void *context,uint8_t logical,uint16_t components[3])
 static int musical_pressure(void *context,uint8_t pad,uint8_t pressure,uint8_t aftertouch)
 { return thy_engine_expression_pressure_axes(context,pad,pressure,aftertouch); }
 
+static int musical_quiet(void *context)
+{
+    const thy_engine *e=context;
+    if(!valid_engine(e)||!thy_engine_library_quiet(e)||e->instrument->library_editor.open||
+       e->sensitivity_pick)return 0;
+    for(unsigned p=0;p<THY_PAD_COUNT;++p)
+        if(e->input_identity[p]||e->sequencer_ui.pads[p].held||
+           e->arps[0].inputs[p].held||e->arps[1].inputs[p].held)return 0;
+    return 1;
+}
+
 void thy_engine_bind_music(thy_engine *engine)
 {
     if (!valid_engine(engine)) return;
     thy_instrument_set_musical_handler(engine->instrument, musical_attack,
         musical_release, musical_reset, engine);
     engine->instrument->musical_pressure=musical_pressure;
+    engine->instrument->musical_quiet=musical_quiet;
+    engine->instrument->musical_melody_plan=thy_engine_harmony_melody_plan;
+    engine->instrument->musical_chord_plan=thy_engine_harmony_chord_plan;
+    engine->instrument->musical_voicing_plan=thy_engine_harmony_voicing_plan;
     thy_instrument_set_pad_filter(engine->instrument, thy_engine_sequencer_pad, engine);
     engine->instrument->light_overlay=light_overlay;
     engine->instrument->light_overlay_context=engine;

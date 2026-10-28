@@ -110,7 +110,7 @@ export class StudioModel {
       trackOptions ? this.visibleRows(group, true) : group.rows;
     const cursor = quick ? info.quickCursor : trackOptions ?
       Math.max(0, definitions.findIndex(row => row === group.rows[info.cursor])) : info.cursor;
-    const rows = !quick && info.level === 1 ? this.groups.map((item, index) => ({ id: item.id, label: item.shortLabel || item.label, value: '>', selected: index === cursor, status: 'group' })) : definitions.map((row, index) => ({
+    const rows = !quick && info.level === 1 ? this.groups.map((item, index) => ({ id: item.id, label: item.shortLabel || item.label, value: '>', selected: index === cursor, status: 'group', nested:item.nested })).filter(item=>!item.nested) : definitions.map((row, index) => ({
       id: row.id, label: row.shortLabel || row.label, value: this.format(row, edit?.id === row.id ? edit.value : this.get(row.id)),
       compactValue: this.shared.compact(this.indices.get(row.id), Boolean(edit?.id === row.id)), selected: index === cursor, status: row.status,
     }));

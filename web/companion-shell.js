@@ -4,7 +4,9 @@
  */
 import { STUDIO_MENU, MENU_ROWS } from './studio-menu.js';
 import { createDeviceClient, inspectDeviceBackup } from './device-client.js';
-import { decodeCompanionSnapshot, paintDeviceOLED } from './companion-protocol.js';
+import { createCore } from './core.js';
+import { createBackupPayloadMigrator } from './backup-migration.js';
+import { decodeCompanionSnapshot, decodeHarmonySnapshot, paintDeviceOLED } from './companion-protocol.js';
 import { renderCompanionScreen } from './companion-display.js';
 export { renderCompanionScreen };
 import { initializeHelp } from './help.js';
@@ -16,7 +18,7 @@ import { initializeHarmonyGuide } from './harmony-guide.js';
 import { initializeCockpit } from './cockpit.js';
 
 const icons={board:'▦',harmony:'◇',parameters:'◈',library:'♫',backups:'⇅',diagnostics:'⌁'};
-const devicePages=new Set(['parameters','library','backups','diagnostics']);
+const devicePages=new Set(['parameters','harmony','library','backups','diagnostics']);
 const el=(tag,className='',text)=>{
   const node=document.createElement(tag);node.className=className;if(text!==undefined)node.textContent=String(text);return node;
 };
@@ -62,6 +64,9 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   document.title='THY666 · Client';document.body.classList.add('companion-app');
   let page='board',area='client',display='web',snapshot=null,previewSnapshot=null,expanded=false;
   let previewPayload=null,restoringPreview=null,polling=false,disposed=false,lastGeneration=null,lastRevision='',lastValues=0,readIndex=0,selectedPad=0;
+  let configurationPending=false,configurationRetryAt=0;
+  let harmonySnapshot=null,harmonyNeedsRefresh=true;
+  let resetDialogOpen=false,resetBusy=false,resetDisplayedEpoch=0,resetFocus=null,resetRenderedFrame=null;
   let pollTimer=null,pollEpoch=0,pollConnectionActive=false,hostActive=true,lastConnectionKey='';
   let updater=null;
   let renderedSnapshot=null,renderedWeb=null,renderedOLED=null,renderedCockpit=null,lastCockpitAt=0;
@@ -97,13 +102,31 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     nav.setAttribute('aria-label',label);nav.dataset.label=label;nav.title=label;nav.append(el('span','rail-icon',icons[id]),el('span','rail-text',label));clientNav.append(nav);subButtons.set(id,nav);
     const pane=el('section','companion-page');pane.id=`companion-${id}`;pane.hidden=id!=='board';panes.set(id,pane);content.append(pane);
   }
-  initializeHarmonyGuide(panes.get('harmony'),engine.guidance);
+  const harmony=initializeHarmonyGuide(panes.get('harmony'),{families:engine.guidance.families,
+    action:async(code,value)=>{if(updater?.usbBusy)throw new Error('The updater owns USB. Wait for it to finish.');
+      await client.harmonyAction(code,value);harmonyNeedsRefresh=true;await poll();},
+    control:async(bank,index)=>{if(updater?.usbBusy)throw new Error('The updater owns USB. Wait for it to finish.');
+      await client.harmonyControl(bank,index);harmonyNeedsRefresh=true;await poll();},
+    set:async(id,value)=>{if(updater?.usbBusy)throw new Error('The updater owns USB. Wait for it to finish.');
+      const row=rowIndex.get(id);if(!Number.isInteger(row)||!id.startsWith('harmony.'))throw new Error('This Harmony setting is unavailable.');
+      await client.set(row,0,value);records.clear();harmonyNeedsRefresh=true;await poll();},
+    scaleLabel:value=>studio.model.options?.(MENU_ROWS[rowIndex.get('engines.assignment')])?.find(option=>option.value===value)?.label||`Scale ${value+1}`});
   workspace.append(rail,content);
   const updatePane=el('section','companion-page companion-update-area');updatePane.id='companion-update';updatePane.hidden=true;
   panes.set('update',updatePane);
   const docsMount=el('section','companion-docs');docsMount.hidden=true;docsMount.id='documentation';
   const notice=el('div','companion-notice');notice.setAttribute('role','status');notice.hidden=true;
+  const noticeIcon=el('span','companion-notice-icon','ⓘ');noticeIcon.setAttribute('aria-hidden','true');
+  const noticeText=el('span','companion-notice-text');
+  const noticeClose=button('×','button companion-notice-close',()=>tell(''));noticeClose.setAttribute('aria-label','Dismiss message');
+  notice.append(noticeIcon,noticeText,noticeClose);
   oldMain.before(notice,workspace,updatePane,docsMount);
+  const resetOverlay=el('div','companion-reset-overlay');resetOverlay.hidden=true;
+  const resetDialog=el('section','companion-reset-dialog'),resetTitle=el('h2','','Reset options'),resetDescription=el('p','','Review the device’s captured reset scope below. Nothing is reset until you explicitly confirm this request.'),resetScreen=el('div','companion-reset-screen'),resetError=el('p','companion-reset-error');
+  resetTitle.id='companion-reset-title';resetDescription.id='companion-reset-description';
+  resetDialog.setAttribute('role','alertdialog');resetDialog.setAttribute('aria-modal','true');resetDialog.setAttribute('aria-labelledby',resetTitle.id);resetDialog.setAttribute('aria-describedby',resetDescription.id);resetError.setAttribute('role','alert');
+  const resetButtons=el('div','harmony-tabs'),resetCancel=button('Cancel','button',()=>void resolveReset(false)),resetConfirm=button('Reset options','button',()=>void resolveReset(true));
+  resetButtons.append(resetCancel,resetConfirm);resetDialog.append(resetTitle,resetDescription,resetScreen,resetError,resetButtons);resetOverlay.append(resetDialog);document.body.append(resetOverlay);
   const pageTitle=el('h1','','Board'),firmwareLabel=el('p','eyebrow','THY666');
   const boardHead=el('div','companion-page-head');const titleWrap=el('div','');
   titleWrap.append(firmwareLabel,pageTitle);
@@ -194,8 +217,9 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   oldMain.remove();
   const help=initializeHelp({mount:docsMount,onNavigate:()=>showArea('documentation')});
   const appSettings=initializeAppSettings({onPollIntervalChange:ms=>{if(pollConnectionActive&&!disposed)schedulePolling(ms);}});
-  const client=createClient({expectedSchema:engine.state.schemaHash(),onState:updateConnection});
-  const backup=initializeBackupPanel({mount:backupMount,client,getEngine:()=>engine,onApplied:async()=>{await readConfiguration();await poll();},notify:message=>tell(message),runtime});
+  const client=createClient({expectedSchema:engine.state.schemaHash(),onState:updateConnection,
+    migrateBackupPayload:createBackupPayloadMigrator({createEngine:()=>createCore()})});
+  const backup=initializeBackupPanel({mount:backupMount,client,getEngine:()=>engine,onApplied:async()=>{await readConfiguration();await poll();},runtime});
   // Preserve explicit native/helper integrations. Supported browser sessions
   // use WebHID; the Rust helper launch fragment retains its existing route.
   const launchFragment=window.__thyUpdateLaunchFragment||location.hash||'';
@@ -223,7 +247,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     error:error=>tell(error.message),
   };
   studio.setDeviceBridge?.(bridge);
-  function tell(message){notice.textContent=String(message);notice.hidden=!message;externalNotice(message);}
+  function tell(message){noticeText.textContent=String(message);notice.hidden=!message;externalNotice(message);}
   async function run(operation){try{return await operation();}catch(error){tell(error.message);return null;}}
   function updateConnection(state){
     if(!state.connected&&!state.connecting&&previewPayload)void restorePreview();
@@ -242,6 +266,9 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     connect.title=updateBusy?'The updater owns USB. Wait for its terminal status before reconnecting the application.':client.available===false?
       runtime?.kind==='desktop'?'Native USB is unavailable. Restart the desktop app and check its diagnostics.':'USB requires Web Serial. Open this app in Chrome or Edge over HTTPS or localhost to connect.':'';
     firmwareLabel.textContent=state.connected?`THY666 / ${state.identity.build.slice(0,8)}`:'THY666';
+    if(!state.connected){harmonySnapshot=null;harmonyNeedsRefresh=true;}
+    harmony.update(harmonySnapshot,{connected:state.connected,supported:client.harmonySupported,writable:state.compatible,controlsReady:harmonyControlsReady()});
+    syncResetConfirmation();
     parameterSource.textContent=state.connected?(state.compatible?'RIGHT applies on the board and autosave follows.':'This client and firmware have different menus. Monitoring and backups remain available; parameter writes are disabled.'):'Connect your board to edit parameters.';
     libraryNote.textContent=state.connected?'Use the board or Parameters to edit songs and library settings. These diagrams mirror the shared engine.':'Connect your board to inspect songs and library settings.';
     document.body.classList.toggle('device-connected',state.connected);
@@ -275,6 +302,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     if(restoringPreview)return restoringPreview;
     if(!previewPayload)return;
     const payload=previewPayload;previewPayload=null;snapshot=null;records.clear();lastGeneration=null;lastRevision='';
+    configurationPending=false;configurationRetryAt=0;
     renderedSnapshot=renderedWeb=renderedOLED=renderedCockpit=null;lastCockpitAt=0;
     restoringPreview=Promise.resolve().then(()=>applyPayload(payload)).then(()=>{studio.refresh();renderedSnapshot=null;render();}).catch(error=>tell(error.message)).finally(()=>{restoringPreview=null;});
     return restoringPreview;
@@ -291,16 +319,17 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
       nav.classList.toggle('is-selected',next===id);nav.setAttribute('aria-pressed',String(next===id));
     }
     if(pollConnectionActive)schedulePolling();
+    syncResetConfirmation();
   }
   function showPage(next){
     // Keep existing links/API callers working while Update is a separate area.
     if(next==='update'){showArea('update');return;}
     if(updater?.usbBusy){tell('The updater owns USB. Wait for it to finish before opening Client.');return;}
-    if(devicePages.has(next)&&!client.connected){tell('Connect your board to open this page. Board, Harmony, Update and Documentation remain available offline.');next='board';}
+    if(devicePages.has(next)&&!client.connected){tell('Connect your board to open this page.');next='board';}
     if(!panes.has(next))next='board';if(page==='board'&&next!=='board'&&!client.connected)onPreviewStart?.();page=next;selectArea('client');
     for(const [id,pane] of panes)pane.hidden=id!==next;
     for(const [id,nav] of subButtons){nav.classList.toggle('is-selected',id===next);nav.setAttribute('aria-current',id===next?'page':'false');}
-    location.hash=`client/${next}`;if(next==='board'){resizeBoard();render();}if(next==='parameters')void refreshRecords(currentRows()).catch(error=>tell(error.message));backup.refresh();updater.refresh();
+    location.hash=`client/${next}`;if(next==='board'){resizeBoard();render();}if(next==='harmony'){harmonyNeedsRefresh=true;void poll();}if(next==='parameters')void refreshRecords(currentRows()).catch(error=>tell(error.message));backup.refresh();updater.refresh();
   }
   function setRailCollapsed(collapsed,persist=true){
     workspace.classList.toggle('rail-collapsed',collapsed);railToggle.setAttribute('aria-expanded',String(!collapsed));
@@ -379,11 +408,22 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     studio.refresh();
   }
   async function readConfiguration(){
-    if(updater?.usbBusy)return;
+    if(updater?.usbBusy)return false;
     const bytes=await client.downloadBackup(),info=inspectDeviceBackup(bytes,client.backupIdentity);
-    if(!client.compatible)return;
-    await applyPayload(info.payload);records.clear();lastGeneration=snapshot?.savedGeneration??null;
+    if(!client.compatible){configurationPending=false;configurationRetryAt=0;return true;}
+    await applyPayload(info.payload);records.clear();
     await refreshRecords(currentRows());
+    lastGeneration=snapshot?.savedGeneration??null;configurationPending=false;configurationRetryAt=0;
+    return true;
+  }
+  async function refreshConfigurationAutomatically(){
+    if(!configurationPending||Date.now()<configurationRetryAt)return;
+    // A save, physical input or frozen snapshot may temporarily own staging.
+    // Keep sampling/rendering and retry at most once per second, without
+    // treating a deferred mirror refresh as a failed explicit backup.
+    configurationRetryAt=Date.now()+1000;
+    try{await readConfiguration();}
+    catch(error){if(!/^ERR backup-busy$/.test(error.message))throw error;}
   }
   async function toggleConnection(){
     if(updater.usbBusy){tell('The updater owns USB. Check its status before reconnecting the application.');return;}
@@ -391,26 +431,63 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     await run(async()=>{
       await restoringPreview;
       onPreviewStart?.();previewPayload=engine.settings.encode();
-      await client.connect();await readConfiguration();await poll();tell('');
+      try { await client.connect(); }
+      catch(error){if(error.name==='NotFoundError'||/No port selected by the user/.test(error.message)){tell('Connection cancelled.');return;}throw error;}
+      configurationPending=true;configurationRetryAt=0;await refreshConfigurationAutomatically();await poll();tell('');
     });
   }
   async function poll(){
-    if(polling||!client.connected||client.busy||updater?.usbBusy||disposed||!hostActive||document.hidden||area==='update'||page==='backups')return;polling=true;
+    if(polling||!client.connected||client.busy||updater?.usbBusy||disposed||!hostActive||document.hidden||area==='update')return;polling=true;
     try{
       const packet=await client.snapshot();if(disposed)return;snapshot=decodeCompanionSnapshot(packet.bytes,client.identity);
+      syncResetConfirmation();
       if(!hostActive||document.hidden||area==='update'||updater?.usbBusy)return;
+      if(area==='client'&&page==='backups')return; // Monitor modal state without background configuration exports.
       const signature=`${snapshot.instrumentRevision}:${snapshot.stateRevision}:${snapshot.layoutRevision}`;
-      const generationChanged=lastGeneration!==null&&lastGeneration!==snapshot.savedGeneration;
-      lastGeneration=snapshot.savedGeneration;
-      if(generationChanged){await readConfiguration();lastGeneration=snapshot.savedGeneration;}
+      if(lastGeneration===null&&!configurationPending)lastGeneration=snapshot.savedGeneration;
+      if(lastGeneration!==null&&lastGeneration!==snapshot.savedGeneration)configurationPending=true;
+      if(configurationPending)await refreshConfigurationAutomatically();
       else if(area==='client'&&page==='parameters'&&(signature!==lastRevision||Date.now()-lastValues>1000)){
         const ids=currentRows(),selected=studio.snapshot().selectedId;
         const slice=ids.slice(readIndex,readIndex+5);readIndex=ids.length?(readIndex+5)%ids.length:0;
         await refreshRecords([selected,...slice]);lastValues=Date.now();
       }
+      // The base lease is already released before this optional cached read.
+      // Hidden pages and unchanged revisions add no Harmony transfer traffic.
+      if(area==='client'&&page==='harmony'&&client.harmonySupported&&
+        (harmonyNeedsRefresh||harmonySnapshot?.revision!==snapshot.harmonyRevision)){
+        const identity=client.identity;
+        const packet=await client.harmonySnapshot();
+        if(disposed||!client.connected||['uid','build','schema'].some(key=>identity[key]!==client.identity?.[key]))return;
+        harmonySnapshot=decodeHarmonySnapshot(packet.bytes,identity);harmonyNeedsRefresh=false;
+      }
+      if(area==='client'&&page==='harmony')harmony.update(harmonySnapshot,{connected:client.connected,supported:client.harmonySupported,writable:client.compatible,controlsReady:harmonyControlsReady()});
       lastRevision=signature;render();
     }catch(error){if(!/^(?:COMPANION\/1 )?ERR (?:busy|rate|snapshot-active)/.test(error.message))tell(error.message);}
     finally{polling=false;}
+  }
+  function harmonyControlsReady(){
+    return Boolean(snapshot&&snapshot.level===0&&!snapshot.resetOpen&&!snapshot.editing&&!snapshot.info&&!snapshot.about&&!snapshot.design&&
+      !snapshot.arpQuick&&!snapshot.sequenceOpen&&!snapshot.trackOptions);
+  }
+  function syncResetConfirmation(){
+    const live=snapshot,show=Boolean(client.connected&&client.resetSupported&&live?.resetOpen&&area==='client'&&!updater?.usbBusy);
+    if(!show){if(resetDialogOpen){resetDialogOpen=false;resetOverlay.hidden=true;resetDisplayedEpoch=0;resetRenderedFrame=null;resetError.textContent='';if(resetFocus?.isConnected)resetFocus.focus();resetFocus=null;}return;}
+    const fresh=!resetDialogOpen||resetDisplayedEpoch!==live.resetEpoch;
+    if(fresh){resetFocus=document.activeElement;resetError.textContent='';resetDisplayedEpoch=live.resetEpoch;resetRenderedFrame=null;}
+    resetDialogOpen=true;resetOverlay.hidden=false;
+    const group=client.compatible?STUDIO_MENU.groups[live.resetGroup]?.label:null;
+    resetTitle.textContent=live.resetTrack<21?`Reset track ${live.resetTrack+1} options`:group?`Reset ${group} options`:'Device reset confirmation';
+    if(!resetRenderedFrame||!sameValues(resetRenderedFrame,live.frame)){renderCompanionScreen(resetScreen,live);resetRenderedFrame=live.frame;}
+    resetCancel.disabled=resetConfirm.disabled=resetBusy||!client.compatible;
+    if(fresh&&!resetCancel.disabled)resetCancel.focus();
+  }
+  async function resolveReset(confirmed){
+    if(!resetDialogOpen||resetBusy||!client.connected||!client.compatible)return;
+    const epoch=resetDisplayedEpoch;resetBusy=true;resetError.textContent='';syncResetConfirmation();
+    try{await client.confirmReset(epoch,confirmed);records.clear();await poll();}
+    catch(error){resetError.textContent=error.message;}
+    finally{resetBusy=false;syncResetConfirmation();}
   }
   function render(){
     if(!client.connected){cockpit.update(null,{connected:false});return;}
@@ -455,6 +532,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   const intercept=event=>{
     if(event.target.closest?.('.desktop-window-chrome'))return;
     if(updater.modalOpen&&!event.target.closest?.('.updater-confirmation')){event.preventDefault();event.stopImmediatePropagation();return;}
+    if(resetDialogOpen&&!event.target.closest?.('.companion-reset-dialog,.companion-connect')){event.preventDefault();event.stopImmediatePropagation();return;}
     if(client.connected&&[songMount,libraryMount,debugPanels].some(host=>host.contains(event.target))){event.preventDefault();event.stopImmediatePropagation();return;}
     const target=event.target.closest?.('.controller-face button');if(!target||!target.matches('.pad,[data-control]'))return;
     event.preventDefault();event.stopImmediatePropagation();
@@ -464,7 +542,13 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   const keyGuard=event=>{
     if(event.target.closest?.('.desktop-window-chrome')){event.stopPropagation();return;}
     if(updater?.usbBusy&&event.target.closest?.('.controller-face,.engine-groups,.engine-editor')){event.preventDefault();event.stopImmediatePropagation();return;}
-    if(appSettings.modalOpen||updater.modalOpen){event.stopPropagation();return;}
+    if((appSettings.modalOpen||updater.modalOpen)&&!resetDialogOpen){event.stopPropagation();return;}
+    if(resetDialogOpen){
+      event.stopPropagation();
+      if(event.type==='keydown'&&event.key==='Escape'&&!event.repeat){event.preventDefault();void resolveReset(false);}
+      else if(event.type==='keydown'&&event.key==='Tab'){const targets=[resetCancel,resetConfirm].filter(node=>!node.disabled);if(targets.length){event.preventDefault();const index=targets.indexOf(document.activeElement);targets[(index+(event.shiftKey?-1:1)+targets.length)%targets.length].focus();}}
+      return;
+    }
     // Header, sidebar and presentation controls keep native keyboard activation.
     // Their Enter/arrow keys must never navigate the physical instrument.
     if(event.target.closest?.('.companion-topbar,.companion-rail,.board-toolbar,.companion-display-tools')&&['ArrowLeft','ArrowUp','ArrowRight','ArrowDown','Enter',' '].includes(event.key)){
@@ -488,7 +572,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   };
   document.addEventListener('keydown',keyGuard,true);document.addEventListener('keyup',keyGuard,true);
   function cancelPolling(){++pollEpoch;if(pollTimer!==null){clearTimeout(pollTimer);pollTimer=null;}}
-  function refreshInterval(){return area==='client'&&['board','parameters'].includes(page)?appSettings.pollIntervalMs:Math.max(1000,appSettings.pollIntervalMs);}
+  function refreshInterval(){return area==='client'&&['board','parameters','harmony'].includes(page)?appSettings.pollIntervalMs:Math.max(1000,appSettings.pollIntervalMs);}
   function schedulePolling(delay=refreshInterval()){
     cancelPolling();if(disposed||!pollConnectionActive||!hostActive||updater?.usbBusy)return;
     const epoch=pollEpoch;
@@ -524,6 +608,6 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     client,help,updater,get connected(){return client.connected;},get snapshot(){return snapshot;},
     updatePreview(){/* The disconnected board has no playable preview. */},
     render,showPage,showArea,setHostActive,
-    destroy(){disposed=true;cancelPolling();resizeObserver?.disconnect();window.removeEventListener('hashchange',route);window.removeEventListener('beforeunload',unloadUpdate);document.removeEventListener('visibilitychange',visibility);for(const type of ['pointerdown','pointerup','pointercancel','lostpointercapture','click','beforeinput','input','change'])document.removeEventListener(type,intercept,true);document.removeEventListener('keydown',keyGuard,true);document.removeEventListener('keyup',keyGuard,true);help.destroy();backup.destroy();updater.destroy();appSettings.destroy();cockpit.destroy();void client.disconnect();},
+    destroy(){disposed=true;cancelPolling();resizeObserver?.disconnect();window.removeEventListener('hashchange',route);window.removeEventListener('beforeunload',unloadUpdate);document.removeEventListener('visibilitychange',visibility);for(const type of ['pointerdown','pointerup','pointercancel','lostpointercapture','click','beforeinput','input','change'])document.removeEventListener(type,intercept,true);document.removeEventListener('keydown',keyGuard,true);document.removeEventListener('keyup',keyGuard,true);help.destroy();backup.destroy();updater.destroy();appSettings.destroy();cockpit.destroy();resetOverlay.remove();void client.disconnect();},
   };
 }

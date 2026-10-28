@@ -57,13 +57,25 @@ void thy_lighting_defaults(thy_lighting_config *config);
 int thy_lighting_config_valid(const thy_lighting_config *config);
 uint32_t thy_lighting_note_color(uint8_t midi_note);
 uint32_t thy_lighting_note_color_palette(uint8_t midi_note, uint8_t palette);
+/* Harmony workspace presentation only. Convert a normalized packed GRB hue
+ * into the existing overlay's 0..4095 components, keeping CURRENT, SELECTED,
+ * SUGGESTED and OTHER distinguishable at the physical eight-step amplitude.
+ * Their peak amplitudes are 4, 6, 3 and 1; held feedback retains its ordinary
+ * amplitude, independently of the retained current-chord overlay.
+ * The caller determines cached roles and preserves held/context/empty-pad
+ * precedence. No pad planning, ownership, mapping or timing lives here.
+ * Invalid input leaves output untouched. */
+int thy_lighting_harmony_color(uint32_t normalized_grb, uint8_t role,
+    uint16_t grb[3]);
 /* Resolve the archive's degree/color token through its original melody
  * column, requiring that pitch class in the playable chord. Returns its
  * transposed pitch class 0..11 without rotating/replacing any musical notes.
  * On failure output is untouched; callers may use explicit Bass policy. */
 int thy_lighting_chord_root(const thy_instrument *instrument, uint8_t logical,
     int16_t *pitch_class);
-/* Logical layout order: chords 0..47, melody 48..95. Uses the same read-only
+/* Physical logical output order: physical left0..47,right48..95. Musical
+ * chord/melody roles follow cluster_swap without moving RGB/sensor indices.
+ * Uses the same read-only
  * voicing preview as actual presses; empty/out-of-range/blocked pads are dark,
  * except explicitly enabled context-control legends. Chord colors select the
  * harmonic root, actual bass, or fixed major-degree policy. Held notes use

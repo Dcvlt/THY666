@@ -18,7 +18,7 @@ const memoryStorage = () => {
 };
 test('new categories and Play shortcuts execute shared C navigation', async () => {
   const { engine, model } = await fresh();
-  assert.equal(engine.state.groupCount, 13);
+  assert.equal(engine.state.groupCount, 15);
   model.navigate('select');
   assert.equal(model.snapshot().selectedId,'engines');
   model.play();

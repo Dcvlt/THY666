@@ -61,6 +61,7 @@ typedef struct thy_state {
     uint32_t revision;
     uint32_t transition_revision;
     uint32_t edit_event; /* Frozen note identity for a selected-event draft. */
+    uint32_t reset_epoch; /* Monotonic confirmation identity, never persisted. */
     uint16_t scale_count;
     uint16_t edit_row;
     int32_t edit_value;
@@ -71,6 +72,8 @@ typedef struct thy_state {
     uint8_t editing;
     uint8_t about_open; /* Ephemeral credits screen, never a stored preference. */
     uint8_t info_open; /* Selected information page; RIGHT opens, LEFT closes. */
+    uint8_t reset_open, reset_confirm, reset_group, reset_track;
+    uint8_t reset_targets[9]; /* Frozen instances indexed by thy_menu_instance. */
     uint8_t design_editing; /* Future configuration UI is explicitly opt-in. */
     uint8_t edit_instance; /* Captured at begin; changing target cannot retarget. */
     uint8_t notice;
@@ -83,6 +86,7 @@ int thy_state_set_scale_count(thy_state *state, uint16_t count);
 int thy_state_set_design_mode(thy_state *state, uint8_t enabled);
 /* Canonical row IDs/cursors never become filtered ordinals. Live mode shows
  * only implemented controls. Future controls and information are opt-in. */
+int thy_state_group_visible(uint8_t group);
 int thy_state_row_visible(const thy_state *state, uint16_t row);
 /* Track-only rows share canonical bindings, not the global menu surface. */
 int thy_state_track_row(uint16_t row);
@@ -97,6 +101,10 @@ int thy_state_set(thy_state *state, uint16_t row, int32_t value);
 int thy_state_set_instance(thy_state *state, uint16_t row, uint8_t instance, int32_t value);
 int thy_state_set_text(thy_state *state, uint16_t row, const char *text);
 int thy_state_begin_edit(thy_state *state, uint16_t row);
+int thy_state_reset_row(uint16_t row);
+int thy_state_reset_begin(thy_state *,uint16_t row);
+/* An explicit second action. Stale epochs never act on a different menu. */
+int thy_state_reset_resolve(thy_state *,uint32_t epoch,int confirmed);
 int thy_state_edit_set(thy_state *state, int32_t value);
 int thy_state_edit_text(thy_state *state, const char *text);
 /* Numeric editor limits include related values for the captured instance.

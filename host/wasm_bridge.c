@@ -474,7 +474,7 @@ int bridge_firmware_preview_pad(int pad) {
 }
 int bridge_firmware_context(int pad) {
     return pad >= 0 && pad < (int)THY_PAD_COUNT ?
-        thy_instrument_context_pad(&firmware, (uint8_t)pad) : 0;
+        thy_instrument_context_pad(&firmware, thy_instrument_role_pad(&firmware,(uint8_t)pad)) : 0;
 }
 int bridge_firmware_context_held(int pad) {
     return pad >= 0 && pad < (int)THY_PAD_COUNT ? firmware.context_held[pad] : 0;
@@ -855,13 +855,13 @@ int bridge_state_focus(int group, int row) {
 }
 void bridge_state_open(void) {
     thy_engine_calibration_close(&shared_engine);
-    if (shared_engine.sequencer_ui.open) (void)thy_engine_sequencer_close(&shared_engine);
+    if (shared_engine.sequencer_ui.options_open) (void)thy_engine_sequencer_options_close(&shared_engine);
     shared_engine.arp_quick_open = 0u;
     thy_state_open(&shared_engine.state);
 }
 void bridge_state_play(void) {
     thy_engine_calibration_close(&shared_engine);
-    if (shared_engine.sequencer_ui.open) (void)thy_engine_sequencer_close(&shared_engine);
+    if (shared_engine.sequencer_ui.options_open) (void)thy_engine_sequencer_options_close(&shared_engine);
     (void)thy_engine_arp_quick_close(&shared_engine);
     thy_state_play(&shared_engine.state);
 }
@@ -1058,6 +1058,22 @@ uintptr_t bridge_companion_snapshot(uint32_t now) {
     (void)thy_companion_command(&service, &shared_engine, 1, now,
         "companion snapshot", response, sizeof response);
     return service.active ? (uintptr_t)companion_frame : 0;
+}
+uintptr_t bridge_harmony_snapshot(uint32_t now) {
+    thy_companion service;
+    const thy_companion_identity identity = {
+        "0000000000000000", "000000000000000000000000", NULL
+    };
+    char response[THY_COMPANION_RESPONSE_BYTES];
+    thy_companion_init(&service, companion_frame, sizeof companion_frame,
+        &identity, preview_companion_visual, &now);
+    (void)thy_companion_command(&service, &shared_engine, 1, now,
+        "companion harmony snapshot", response, sizeof response);
+    return service.active ? (uintptr_t)companion_frame : 0;
+}
+int bridge_harmony_action(int action,int32_t value) {
+    if (action<THY_HARMONY_ACTIVATE || action>THY_HARMONY_COMPARE_SCALE) return -1;
+    return thy_engine_harmony_action(&shared_engine,(uint8_t)action,value);
 }
 /* Startup presentation only. Preview replay never resets musical state,
  * routes, settings, acquisition or note ownership. */

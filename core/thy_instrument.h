@@ -224,6 +224,7 @@ typedef int (*thy_instrument_control_filter_fn)(void *context, uint8_t bank,
  * must retain the role captured at press, even after a workspace change. */
 typedef int (*thy_instrument_pad_filter_fn)(void *context, uint8_t electrical,
     int pressed, int *result);
+/* Overlay coordinates and RGB output indices are physical logical pads. */
 typedef int (*thy_instrument_light_overlay_fn)(void *context, uint8_t logical,
     uint16_t components[3]);
 
@@ -246,12 +247,22 @@ typedef int (*thy_instrument_attack_fn)(void *context, uint8_t electrical,
 typedef int (*thy_instrument_release_fn)(void *context, uint8_t electrical);
 typedef int (*thy_instrument_pressure_fn)(void *context, uint8_t electrical, uint8_t pressure,uint8_t aftertouch);
 typedef void (*thy_instrument_reset_fn)(void *context);
+/* Read-only planning seams. Role IDs 0..47 are chords,48..95 melody.
+ * Return1 for a complete override,0 for normal planning,negative on error.
+ * A melody override supplies one pre-transpose MIDI pitch. Voicing receives
+ * seven authored slots and may replace them without changing valid_mask. */
+typedef int (*thy_instrument_melody_plan_fn)(void *context,uint8_t role_logical,int16_t *out);
+typedef int (*thy_instrument_voicing_plan_fn)(void *context,uint8_t role_logical,
+    const int16_t notes[7],uint8_t valid_mask,int16_t out[7]);
+typedef int (*thy_instrument_quiet_fn)(void *context);
 
 /* One external core, bounded RAM, no allocation, hardware access or libc.
  * Calls are serialized by the caller. Electrical IDs are ADC bank*16+select;
- * layout IDs 0..47 are chords and 48..95 melody. Identity mapping is only a
+ * physical logical IDs identify the two physical clusters. Musical role IDs
+ * 0..47 are chords/editor and48..95 melody/input; cluster_swap exchanges them.
+ * Identity mapping is only a
  * bring-up default, not a claim about the physical orientation of the pads.
- * set_mapping() installs an explicit one-to-one electrical->layout map.
+ * set_mapping() installs an explicit one-to-one electrical->physical map.
  */
 typedef struct thy_instrument {
     thy_core *core;
@@ -272,6 +283,11 @@ typedef struct thy_instrument {
     thy_instrument_release_fn musical_release;
     thy_instrument_pressure_fn musical_pressure;
     thy_instrument_reset_fn musical_reset;
+    thy_instrument_melody_plan_fn musical_melody_plan;
+    thy_instrument_voicing_plan_fn musical_voicing_plan;
+    /* NULL notes/mask queries whether the processor reserves this chord pad. */
+    int (*musical_chord_plan)(void *,uint8_t,int16_t [7],uint8_t *);
+    thy_instrument_quiet_fn musical_quiet;
     void *musical_context;
     thy_instrument_sensor sensors[THY_PAD_COUNT];
     thy_instrument_response response;
@@ -305,6 +321,7 @@ typedef struct thy_instrument {
     uint32_t errors;
     int last_error;
     uint8_t mapping[THY_PAD_COUNT];
+    uint8_t cluster_swap; /* Musical roles only; mapping/calibration stay physical. */
     uint8_t excluded_slots[48];
     uint8_t global_excluded_slots;
     uint8_t slot_scope;
@@ -493,7 +510,8 @@ void thy_instrument_set_sampling_provider(thy_instrument *instrument,
 int thy_instrument_set_layout(thy_instrument *instrument,
     const thy_instrument_pad pads[THY_PAD_COUNT], int16_t anchor,
     const int16_t *degrees, uint8_t degree_count);
-/* Predict a future logical pad press using the exact attack shaping path.
+/* Predict a future PHYSICAL logical pad press using the exact attack shaping
+ * path, including cluster_swap. Source/chord/context helpers use ROLE IDs.
  * Does not mutate owners, clocks, counters, selected pad or alternating strum
  * direction. Outputs stay untouched on errors. Held notes use owner snapshots
  * instead; this preview describes the current next-press settings. */
@@ -520,6 +538,12 @@ int thy_instrument_chord_root(const thy_instrument *instrument, uint8_t logical,
 void thy_instrument_capture_pad_color(thy_instrument *instrument, uint8_t electrical);
 int thy_instrument_set_mapping(thy_instrument *instrument,
     const uint8_t electrical_to_layout[THY_PAD_COUNT]);
+/* Electrical mapping names PHYSICAL logical pads. These involutive helpers
+ * translate physical cluster positions to musical roles and back. Invalid
+ * instrument/IDs return UINT8_MAX. Swap is an atomic quiet-only setting. */
+uint8_t thy_instrument_role_pad(const thy_instrument *,uint8_t physical_logical);
+uint8_t thy_instrument_physical_pad(const thy_instrument *,uint8_t role_logical);
+int thy_instrument_set_cluster_swap(thy_instrument *,uint8_t enabled);
 int thy_instrument_set_route(thy_instrument *instrument, uint8_t side,
     uint8_t channel, uint8_t destinations, int16_t transpose);
 /* Independent configurations: target 0 whole board; 1/2 left/right split;

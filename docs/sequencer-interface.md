@@ -1,6 +1,6 @@
 # Sequencer: quick guide
 
-The shared C engine and the web preview use the same workflow. Open **Engines → Sequencer**, or **Settings → Sequencer → Open sequencer**. Opening it never starts playback.
+The shared C engine and Client use the same workflow. Select **Engines → Sequencer**. Opening it never starts playback.
 
 ## 1. Create or open a track
 
@@ -9,7 +9,7 @@ The OLED lists only tracks you have created, with note counts, progress, recordi
 - **UP / DOWN:** choose a track or **+ New track**.
 - **RIGHT:** create the new track, or open the selected track.
 - **LEFT:** ask to delete the selected track. RIGHT confirms; LEFT cancels.
-- **CENTER:** return directly to Play, without stopping backing tracks.
+- **CENTER:** open global Settings; CENTER again returns to the sequencer without stopping backing tracks.
 
 There are 21 available tracks. An empty created track is saved too.
 
@@ -44,7 +44,7 @@ These apply only while the sequencer is open. The upper RIGHT controls become:
 | **U1 / U2** | Input octave down / up |
 | **U3** | Next scale in Chords; next note layout in Notes |
 
-The upper LEFT twelve keys choose the root. Center inversion, spread, strum and chord-tone controls retain their musical functions for chord input. In the editor, **RIGHT** opens this track's settings, **LEFT** returns to Tracks, and **CENTER** returns to Play.
+The upper LEFT twelve keys choose the root. Center inversion, spread, strum and chord-tone controls retain their musical functions for chord input. In the editor, **RIGHT** opens this track's settings, **LEFT** returns to Tracks, and **CENTER** opens global Settings. Closing global Settings restores the editor and selected step.
 
 Switching between isolated and all-track playback restarts sequencer playback at the loop starts. Live pads and independent live Arps keep their owners. It does not store temporary solo state.
 
@@ -63,7 +63,7 @@ From the step editor, press **RIGHT** to open **T1 Settings** (or the current tr
 - **UP / DOWN:** select an option; while editing, change its value.
 - **RIGHT:** edit the selected option, then apply it.
 - **LEFT:** cancel an unfinished edit; otherwise return directly to the same track and selected step.
-- **CENTER:** leave the sequencer interface and return to Play, discarding an unfinished edit.
+- **CENTER:** return to the editor, discarding an unfinished edit.
 
 The LEFT step grid and RIGHT playing surface remain active while track settings are open, including their lighting and existing held-note ownership. Backing playback continues.
 
@@ -71,7 +71,7 @@ Each track has its own **MIDI channel** and **Outputs**. A new T1 initially uses
 
 ## 6. Global settings and saving
 
-**Settings → Sequencer** contains **Open sequencer, Quick help, Tempo and Start timing**, followed by song save/history tools. It does not contain the selected track's options. Per-track controls are kept in the track editor rather than the global menu.
+**Engines → Settings → Sequencer** contains **Open sequencer, Quick help, Tempo and Start timing**, followed by song save/history tools. It does not contain the selected track's options. Per-track controls are kept in the track editor rather than the global menu.
 
 Preferences and song content save through the existing journal when playback is stopped and controls/pads are released. Wait for Saved before disconnecting power. Reboot restores content and preferences without starting playback or restoring held notes. Web file export/import and explicit device song transfer remain available.
 

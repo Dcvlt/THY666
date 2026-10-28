@@ -80,9 +80,10 @@ test('Backups mounts without connecting or reading, clearly separates preview an
   const f = fixture();
   assert.deepEqual(f.calls, []); assert.equal(f.engineReads(), 0);
   assert.equal(f.find('backupAction', 'read').disabled, true); assert.equal(f.find('backupAction', 'restore').disabled, true);
-  assert.match(f.mount.textContent, /Connect to back up the physical device/);
-  assert.match(f.mount.textContent, /Browser files are separate from device backups/);
-  assert.match(f.mount.textContent, /Excludes firmware, bootloader, raw flash and unsaved drafts/);
+  assert.match(f.mount.textContent, /Connect your board to save or restore a backup/);
+  assert.match(f.mount.textContent, /Restore requires the same board/);
+  assert.match(f.mount.textContent, /not firmware, the bootloader or unsaved edits/);
+  assert.equal(f.find('backupReadout', 'notice').hidden, true);
   assert.equal(f.find('backupAction', 'help').dataset.help, 'backup');
   f.client.connected = true; f.panel.refresh(); assert.equal(f.find('backupAction', 'read').disabled, false);
   f.client.busy = true; f.panel.refresh(); assert.equal(f.find('backupAction', 'read').disabled, true);
@@ -139,8 +140,7 @@ test('confirmed restore supplies exact bytes and calls onApplied only after save
   f.fire(f.find('backupAction', 'restore')); f.fire(f.find('backupAction', 'confirm')); await flush();
   assert.equal(f.calls.length, 1); assert.equal(f.calls[0][0], 'restore'); assert.deepEqual(f.calls[0][1], f.bytes);
   assert.deepEqual(f.applied, [{ verified: true, generation: 20 }]);
-  assert.match(f.find('backupReadout', 'notice').textContent, /Saved and read back verified/);
-  assert.match(f.find('backupReadout', 'notice').textContent, /cold reboot is a separate check/);
+  assert.equal(f.find('backupReadout', 'notice').textContent, 'Restore complete. Settings saved and verified.');
 });
 
 test('applied-but-unverified or save-error results preserve the selected file and never claim success', async () => {

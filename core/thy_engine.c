@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "thy_engine.h"
+#include "thy_lighting.h"
 
 /* The menu preserves its approved option order; pad planning has stable IDs. */
 static const uint8_t layout_from_menu[] = {0u,4u,7u,1u,8u,5u,2u,3u,6u};
@@ -130,8 +131,18 @@ int thy_engine_workspace(thy_engine *engine, uint8_t workspace)
     if (!engine || !engine->instrument || !thy_play_engine_available(workspace)) return THY_STATE_UNAVAILABLE;
     if (workspace == THY_PLAY_ENGINE_SEQUENCER)
         return thy_engine_sequencer_open(engine, THY_SEQ_VIEW_TRACKS);
-    if (engine->sequencer_ui.open) return thy_engine_sequencer_close(engine);
+    if (engine->calibration_open || engine->instrument->library_editor.open) return THY_STATE_BLOCKED;
+    if (engine->sequencer_ui.open) {
+        int result=thy_engine_sequencer_close(engine);if(result!=THY_STATE_OK)return result;
+    }
     thy_instrument *i = engine->instrument;
+    if (workspace == THY_PLAY_ENGINE_HARMONY) {
+        if(i->engine_kind!=workspace)thy_engine_harmony_reset(engine);
+        i->guidance.open=0u;engine->arp_quick_open=0u;i->engine_kind=workspace;
+        engine->session.playing_mode=workspace;thy_state_play(&engine->state);
+        ++i->revision;return THY_STATE_OK;
+    }
+    thy_state_play(&engine->state);
     if (i->engine_kind == workspace) {
         engine->session.playing_mode = workspace;
         return THY_STATE_OK;
@@ -496,6 +507,29 @@ static int read_setting(void *context, uint16_t row, uint8_t instance, int32_t *
     case THY_ROW_EXPRESSION_INTERVAL:*value=engine->expression_config.semitone_window;break;
     case THY_ROW_SENSITIVITY_TARGET:*value=engine->sensitivity_target;break;
     case THY_ROW_ARPS_TARGET: *value = engine->arp_target; break;
+    case THY_ROW_HARMONY_DIRECTION:*value=engine->harmony.direction;break;
+    case THY_ROW_HARMONY_OUTSIDE:*value=engine->harmony.outside;break;
+    case THY_ROW_HARMONY_STAYINKEY:*value=engine->harmony.stay_in_key;break;
+    case THY_ROW_HARMONY_LOCKMAP:*value=engine->harmony.lock_map;break;
+    case THY_ROW_HARMONY_PALETTE:*value=engine->harmony.palette;break;
+    case THY_ROW_HARMONY_PADMAP:*value=engine->harmony.pad_map;break;
+    case THY_ROW_HARMONY_CONTRAST:*value=engine->harmony.hint_contrast;break;
+    case THY_ROW_HARMONY_PATTERN:*value=engine->harmony.pattern;break;
+    case THY_ROW_HARMONY_HIGHLIGHTS:*value=engine->harmony.highlights;break;
+    case THY_ROW_HARMONY_MOTION:*value=engine->harmony.motion;break;
+    case THY_ROW_HARMONY_VIEW:*value=engine->harmony.view;break;
+    case THY_ROW_HARMONY_BANK:*value=engine->harmony.control_bank;break;
+    case THY_ROW_HARMONY_OCTAVETARGET:*value=engine->harmony.octave_target;break;
+    case THY_ROW_HARMONY_RIGHTMODE:*value=engine->harmony.right_mode;break;
+    case THY_ROW_HARMONY_ANALYSIS:*value=engine->harmony.analysis;break;
+    case THY_ROW_HARMONY_VOICING:*value=i->voicing_mode;break;
+    case THY_ROW_HARMONY_BASS:*value=engine->harmony.bass_root;break;
+    case THY_ROW_HARMONY_LOW:*value=engine->harmony.low_note;break;
+    case THY_ROW_HARMONY_HIGH:*value=engine->harmony.high_note;break;
+    case THY_ROW_SYSTEM_SWAPCLUSTERS:*value=i->cluster_swap;break;
+    case THY_ROW_HARMONY_FREEZE:*value=engine->harmony.pinned;break;
+    case THY_ROW_HARMONY_TARGETROOT:*value=engine->harmony.target_root;break;
+    case THY_ROW_HARMONY_TARGETSCALE:*value=engine->harmony.can_apply?engine->harmony.target_catalog:engine->scale;break;
     case THY_ROW_MIDI_REMOTERECORD: *value=engine->remote_record; break;
     case THY_ROW_MIDI_REMOTEPOSITION: *value=engine->remote_position; break;
     case THY_ROW_MIDI_REMOTECHANNEL: *value=engine->remote_channel; break;
@@ -548,7 +582,7 @@ static int read_setting(void *context, uint16_t row, uint8_t instance, int32_t *
     case THY_ROW_SENSITIVITY_CENTERRESPONSE: *value = i->center_poll_ms; break;
     case THY_ROW_LIGHTS_CHORDCOLOR: *value = i->light_chord_mode; break;
     case THY_ROW_LIGHTS_NOTECOLORS: *value = i->light_palette; break;
-    case THY_ROW_LIGHTS_KEYCONTRAST: *value = i->light_key_contrast; break;
+    case THY_ROW_PERFORMANCE_KEYCONTRAST:case THY_ROW_LIGHTS_KEYCONTRAST: *value = i->light_key_contrast; break;
     case THY_ROW_LIGHTS_KEYDIM: *value = i->light_key_contrast_percent; break;
     case THY_ROW_LIGHTS_HELDSTYLE: *value = i->light_held_style; break;
     case THY_ROW_LIGHTS_HELDFEEDBACK: *value = i->light_held_feedback; break;
@@ -669,6 +703,51 @@ static int write_setting(void *context, uint16_t row, uint8_t instance, int32_t 
         thy_engine_sequencer_usb_clear(engine); engine->remote_channel=(uint8_t)value; return THY_STATE_OK;
     case THY_ROW_ARPS_QUICKKEYS: engine->arp_quick_keys = (uint8_t)value; return THY_STATE_OK;
     case THY_ROW_ENGINES_PLAY: return thy_engine_workspace(engine, THY_PLAY_ENGINE_PLAY);
+    case THY_ROW_ENGINES_HARMONY: case THY_ROW_HARMONY_OPEN:
+        return thy_engine_workspace(engine,THY_PLAY_ENGINE_HARMONY);
+    case THY_ROW_ENGINES_SETTINGS:return thy_state_focus(&engine->state,thy_menu_rows[THY_ROW_ENGINESETTINGS_HARMONY].group,THY_STATE_NO_ROW);
+    case THY_ROW_ENGINESETTINGS_HARMONY:return thy_state_focus(&engine->state,thy_menu_rows[THY_ROW_HARMONY_VIEW].group,THY_STATE_NO_ROW);
+    case THY_ROW_ENGINESETTINGS_SEQUENCER:return thy_state_focus(&engine->state,thy_menu_rows[THY_ROW_SEQUENCER_OPEN].group,THY_STATE_NO_ROW);
+    case THY_ROW_HARMONY_DIRECTION:engine->harmony.direction=(uint8_t)value;thy_engine_harmony_invalidate(engine);break;
+    case THY_ROW_HARMONY_OUTSIDE:engine->harmony.outside=(uint8_t)value;thy_engine_harmony_invalidate(engine);break;
+    case THY_ROW_HARMONY_STAYINKEY:engine->harmony.stay_in_key=(uint8_t)value;thy_engine_harmony_invalidate(engine);break;
+    case THY_ROW_HARMONY_LOCKMAP:engine->harmony.lock_map=(uint8_t)value;thy_engine_harmony_invalidate(engine);break;
+    case THY_ROW_HARMONY_PALETTE:
+        if(engine->harmony.chord_held||engine->harmony.right_mask)return THY_STATE_BLOCKED;
+        engine->harmony.palette=(uint8_t)value;thy_engine_harmony_invalidate(engine);break;
+    case THY_ROW_HARMONY_PADMAP:
+        for(unsigned p=0;p<96u;++p)if(thy_instrument_role_pad(i,i->mapping[p])<48u &&
+            (i->sensors[p].held||i->core->owners[p].held))return THY_STATE_BLOCKED;
+        if(engine->harmony.chord_held)return THY_STATE_BLOCKED;
+        engine->harmony.pad_map=(uint8_t)value;engine->harmony.layout_signature=0u;++engine->harmony.revision;break;
+    case THY_ROW_HARMONY_CONTRAST:engine->harmony.hint_contrast=(uint8_t)value;++engine->harmony.revision;break;
+    case THY_ROW_HARMONY_PATTERN:engine->harmony.pattern=(uint8_t)value;engine->harmony.dirty=1u;++engine->harmony.revision;break;
+    case THY_ROW_HARMONY_HIGHLIGHTS:engine->harmony.highlights=(uint8_t)value;++engine->harmony.revision;break;
+    case THY_ROW_HARMONY_MOTION:engine->harmony.motion=(uint8_t)value;++engine->harmony.revision;break;
+    case THY_ROW_HARMONY_VIEW:engine->harmony.view=(uint8_t)value;++engine->harmony.revision;break;
+    case THY_ROW_HARMONY_BANK:engine->harmony.control_bank=(uint8_t)value;++engine->harmony.revision;break;
+    case THY_ROW_HARMONY_OCTAVETARGET:engine->harmony.octave_target=(uint8_t)value;++engine->harmony.revision;break;
+    case THY_ROW_HARMONY_RIGHTMODE:engine->harmony.right_mode=(uint8_t)value;++engine->harmony.revision;break;
+    case THY_ROW_HARMONY_ANALYSIS:engine->harmony.analysis=(uint8_t)value;
+        if(!engine->harmony.pinned)engine->harmony.input_mask=(uint16_t)(engine->harmony.base_mask|(value==0?engine->harmony.right_mask:0));
+        engine->harmony.ranking_mask=engine->harmony.input_mask;
+        engine->harmony.dirty=engine->harmony.discovery_dirty=1u;++engine->harmony.revision;break;
+    case THY_ROW_HARMONY_BASS:engine->harmony.bass_root=(uint8_t)value;engine->harmony.layout_signature=0u;++engine->harmony.revision;break;
+    case THY_ROW_HARMONY_LOW:if(value>engine->harmony.high_note)return THY_STATE_INVALID;engine->harmony.low_note=(uint8_t)value;engine->harmony.layout_signature=0u;++engine->harmony.revision;break;
+    case THY_ROW_HARMONY_HIGH:if(value<engine->harmony.low_note)return THY_STATE_INVALID;engine->harmony.high_note=(uint8_t)value;engine->harmony.layout_signature=0u;++engine->harmony.revision;break;
+    case THY_ROW_SYSTEM_SWAPCLUSTERS:return thy_instrument_set_cluster_swap(i,(uint8_t)value)==THY_OK?THY_STATE_OK:THY_STATE_BLOCKED;
+    case THY_ROW_HARMONY_FREEZE:return thy_engine_harmony_action(engine,THY_HARMONY_PIN_INPUT,value);
+    case THY_ROW_HARMONY_SUGGESTIONS:case THY_ROW_HARMONY_DISCOVERY:case THY_ROW_HARMONY_PREVIEW:{
+        int result=thy_engine_workspace(engine,THY_PLAY_ENGINE_HARMONY);if(result!=THY_STATE_OK)return result;
+        return thy_engine_harmony_action(engine,THY_HARMONY_PAGE,row==THY_ROW_HARMONY_SUGGESTIONS?0:row==THY_ROW_HARMONY_DISCOVERY?1:2);}
+    case THY_ROW_HARMONY_APPLY:return thy_engine_harmony_action(engine,THY_HARMONY_APPLY_KEY,1);
+    case THY_ROW_HARMONY_CAPTURE:return thy_engine_harmony_action(engine,THY_HARMONY_CAPTURE_SELECTED,0);
+    case THY_ROW_HARMONY_ADDHELD:return thy_engine_harmony_action(engine,THY_HARMONY_CAPTURE_HELD,0);
+    case THY_ROW_HARMONY_CLEAR:return thy_engine_harmony_action(engine,THY_HARMONY_CLEAR_INPUT,0);
+    case THY_ROW_HARMONY_TARGETROOT:return thy_engine_harmony_action(engine,THY_HARMONY_TARGET_ROOT,value);
+    case THY_ROW_HARMONY_TARGETSCALE:{int family=thy_guidance_catalog_family((unsigned)value);
+        return family<0?THY_STATE_INVALID:thy_engine_harmony_action(engine,THY_HARMONY_TARGET_FAMILY,family);}
+    case THY_ROW_HARMONY_MANUAL:return thy_engine_guidance_open(engine);
     case THY_ROW_ENGINES_SHORTCUT: engine->shortcut_target = (uint8_t)value; return THY_STATE_OK;
     case THY_ROW_ENGINES_SCALE:
     case THY_ROW_PERFORMANCE_SCALE:
@@ -689,12 +768,12 @@ static int write_setting(void *context, uint16_t row, uint8_t instance, int32_t 
     case THY_ROW_PERFORMANCE_MELODYLAYOUT:
         if (value < 0 || value >= THY_LAYOUT_COUNT) return THY_STATE_INVALID;
         i->performance.melody_layout = layout_from_menu[value];
-        i->engine_kind = THY_PLAY_ENGINE_PLAY;
+        if(i->engine_kind!=THY_PLAY_ENGINE_HARMONY)i->engine_kind = THY_PLAY_ENGINE_PLAY;
         engine->session.playing_mode = i->engine_kind; ++i->layout_revision; break;
     case THY_ROW_PERFORMANCE_GUITARWINDOW:
         i->performance.guitar_window = (uint8_t)value; ++i->layout_revision; break;
     case THY_ROW_PERFORMANCE_GUITARSHORTCUT:
-        i->performance.melody_layout = THY_LAYOUT_GUITAR; i->engine_kind = THY_PLAY_ENGINE_PLAY; engine->session.playing_mode = i->engine_kind;
+        i->performance.melody_layout = THY_LAYOUT_GUITAR; if(i->engine_kind!=THY_PLAY_ENGINE_HARMONY)i->engine_kind = THY_PLAY_ENGINE_PLAY; engine->session.playing_mode = i->engine_kind;
         ++i->layout_revision; break;
     case THY_ROW_PERFORMANCE_PADOVERLAYS:
         return thy_instrument_set_context_controls(i, (uint8_t)value) == THY_OK ? THY_STATE_OK : THY_STATE_BLOCKED;
@@ -736,7 +815,7 @@ static int write_setting(void *context, uint16_t row, uint8_t instance, int32_t 
     case THY_ROW_CHORDS_EDITSCALES:return thy_engine_library_open(engine,THY_LIBRARY_UI_SCALE,0u);
     case THY_ROW_CHORDS_EDITCHORDS:return thy_engine_library_open(engine,THY_LIBRARY_UI_CHORD,0u);
     case THY_ROW_CHORDS_EDITSIX:return thy_engine_library_open(engine,THY_LIBRARY_UI_SIX,0u);
-    case THY_ROW_CHORDS_VOICINGMODE:i->voicing_mode=(uint8_t)value;i->voicing_previous_mask=0u;break;
+    case THY_ROW_HARMONY_VOICING:case THY_ROW_CHORDS_VOICINGMODE:i->voicing_mode=(uint8_t)value;i->voicing_previous_mask=0u;break;
     case THY_ROW_CHORDS_DROP2:case THY_ROW_CHORDS_DROP3:case THY_ROW_CHORDS_DROP4:{
         uint8_t bit=(uint8_t)(1u<<(row-THY_ROW_CHORDS_DROP2));
         i->drop_mask=value?(uint8_t)(i->drop_mask|bit):(uint8_t)(i->drop_mask&~bit);break;}
@@ -748,7 +827,7 @@ static int write_setting(void *context, uint16_t row, uint8_t instance, int32_t 
     case THY_ROW_SENSITIVITY_CENTERRESPONSE: i->center_poll_ms = (uint8_t)value; break;
     case THY_ROW_LIGHTS_CHORDCOLOR: i->light_chord_mode = (uint8_t)value; break;
     case THY_ROW_LIGHTS_NOTECOLORS: i->light_palette = (uint8_t)value; break;
-    case THY_ROW_LIGHTS_KEYCONTRAST: i->light_key_contrast = (uint8_t)value; break;
+    case THY_ROW_PERFORMANCE_KEYCONTRAST:case THY_ROW_LIGHTS_KEYCONTRAST: i->light_key_contrast = (uint8_t)value; break;
     case THY_ROW_LIGHTS_KEYDIM: i->light_key_contrast_percent = (uint8_t)value; break;
     case THY_ROW_LIGHTS_HELDSTYLE: i->light_held_style = (uint8_t)value; break;
     case THY_ROW_LIGHTS_HELDFEEDBACK: i->light_held_feedback = (uint8_t)value; break;
@@ -778,6 +857,122 @@ static int write_setting(void *context, uint16_t row, uint8_t instance, int32_t 
     return THY_STATE_OK;
 }
 
+static int reset_quiet(const thy_engine *e)
+{
+    if(!e||!e->instrument||!e->instrument->core||!thy_engine_library_quiet(e)||
+       e->instrument->library_editor.open||e->instrument->guidance.open||e->sensitivity_pick||
+       e->sequencer.transaction_open||e->sequencer_ui.gesture_active)return 0;
+    const thy_instrument *i=e->instrument;const thy_core *c=i->core;
+    if(c->queue_count)return 0;
+    /* Permit the RIGHT edge used to confirm, but no other held control. */
+    if((i->control_masks[0]&~(1u<<THY_STATE_RIGHT))||i->control_masks[1]||i->control_masks[2]||i->control_masks[3])return 0;
+    for(unsigned p=0;p<96u;++p)if(i->mapping[p]>=96u||i->sensors[p].blocked||
+        i->sensors[p].attack_count||i->sensors[p].strike_ready||e->sequencer_ui.pads[p].held||
+        e->arps[0].inputs[p].held||e->arps[1].inputs[p].held)return 0;
+    return 1;
+}
+int thy_engine_reset_options(thy_engine *e,uint8_t group,const uint8_t targets[9],uint8_t track)
+{
+    if(!e||!targets||group>=THY_MENU_GROUP_COUNT)return THY_STATE_INVALID;
+    if(!reset_quiet(e))return THY_STATE_BLOCKED;
+    thy_instrument *i=e->instrument;
+    if(track!=UINT8_MAX){
+        if(group!=thy_menu_rows[THY_ROW_SEQUENCER_OPEN].group||track>=THY_SEQ_TRACKS||
+           !e->sequencer_ui.options_open||e->sequencer_ui.options_track!=track||
+           !thy_sequencer_track_exists(&e->sequencer,track))return THY_STATE_BLOCKED;
+        thy_seq_track t=e->sequencer.tracks[track];
+        if(e->rhythm_transport.tracks[track].generation==UINT32_MAX)return THY_STATE_BLOCKED;
+        if(t.content_end<3840u)t.content_end=3840u;
+        t.loop_start=0u;t.loop_end=3840u;t.grid_ticks=240u;t.channel=(uint8_t)(track%16u);
+        t.destinations=THY_ROUTE_USB0|THY_ROUTE_DIN;t.velocity=t.muted=t.processor=t.record_source=t.record_policy=0u;
+        t.flags=THY_SEQ_FLAG_CREATED;
+        /* Full candidate validation precedes either publication. Events and
+         * their identity/timing are deliberately not part of this reset. */
+        if(t.content_end>THY_SEQ_MAX_TICK)return THY_STATE_INVALID;
+        if(thy_transport_set_loop(&e->rhythm_transport,track,0u,3840u)!=THY_TIME_OK)return THY_STATE_BLOCKED;
+        (void)thy_engine_sequencer_track_configure(e,track,&t);
+        e->sequencer_ui.input_layout=THY_SEQ_INPUT_NOTES;e->sequencer_ui.grid_ticks=240u;
+        e->sequencer_ui.window_tick=0u;e->sequencer_ui.region_enabled=0u;e->sequencer_ui.region_start=0u;
+        e->sequencer_ui.region_end=3840u;e->sequencer_ui.overdub=0u;++e->sequencer_ui.revision;
+        (void)thy_sequencer_ui_configure(&e->sequencer_ui,THY_SEQ_UI_SELECTED_STEP,e->sequencer_ui.selected_step);
+        return THY_STATE_OK;
+    }
+    if(group==thy_menu_rows[THY_ROW_PERFORMANCE_VELOCITY].group){
+        uint8_t side=targets[THY_MENU_SIDE],route=targets[THY_MENU_ROUTE];
+        if(side>2u||route>=THY_INSTRUMENT_ROUTE_TARGETS)return THY_STATE_INVALID;
+        thy_mpe_config mpe=e->expression_config;mpe.enabled=0u;
+        if(thy_engine_expression_can_configure(e,&mpe)!=THY_OK)return THY_STATE_BLOCKED;
+        if(write_velocity_mode(e,side,THY_VELOCITY_FIXED)!=THY_STATE_OK)return THY_STATE_BLOCKED;
+        (void)thy_engine_expression_configure(e,&mpe);
+        i->fixed_velocity=96u;i->context_controls=0u;i->context_location=0u;i->context_mask=63u;
+        e->channel_routes[route]=(thy_engine_channel_config){1u,0u,2u};i->route_pressure[route]=1u;
+    }else if(group==thy_menu_rows[THY_ROW_CHORDS_LAYOUT].group){
+        thy_instrument_key_changed(i);e->scale=e->state.scale_count>21u?21u:0u;i->performance.root=0u;
+        i->user_scale=i->chord_layout=i->chord_quality=i->six_bank=i->voicing_mode=i->drop_mask=0u;
+        i->performance.melody_layout=i->performance.guitar_window=0u;
+        i->performance.inversion=i->performance.spread=i->performance.strum=i->performance.strum_order=0u;
+        i->performance.chord_octave=i->performance.melody_octave=0;i->performance.upper_octaves=0u;
+        i->performance.strum_ms=24u;i->transpose[0]=i->transpose[1]=0;i->bass_octave=0;
+        i->keep_transpose=i->live_lock_scale=1u;i->live_update=i->live_mute_chord=0u;i->light_key_contrast=1u;
+        ++i->layout_revision;
+    }else if(group==thy_menu_rows[THY_ROW_ARPS_OPEN].group){
+        unsigned arp=targets[THY_MENU_ARP];if(arp>=2u)return THY_STATE_INVALID;
+        thy_arp_config config;thy_arp_default_config(&config);
+        if(thy_engine_arp_configure(e,(uint8_t)arp,&config)!=THY_OK)return THY_STATE_BLOCKED;
+        e->arp_quick_keys=1u;
+    }else if(group==thy_menu_rows[THY_ROW_EXPRESSION_ENABLED].group){
+        thy_mpe_config config;thy_mpe_defaults(&config);
+        if(thy_engine_expression_configure(e,&config)!=THY_OK)return THY_STATE_BLOCKED;
+    }else if(group==thy_menu_rows[THY_ROW_MIDI_ROUTINGPROFILE].group){
+        unsigned route=targets[THY_MENU_ROUTE];if(route>=THY_INSTRUMENT_ROUTE_TARGETS)return THY_STATE_INVALID;
+        if(thy_engine_clock_configure(e,THY_CLOCK_DEFAULT_TEMPO,THY_CLOCK_SOURCE_INTERNAL,4u,4u,
+            e->rhythm_transport.launch_quantize)!=THY_OK)return THY_STATE_BLOCKED;
+        i->routing_profile=THY_ROUTING_SPLIT;e->route_target=1u;
+        uint8_t channel=(uint8_t)(route==2u||route>=6u?1u:0u);
+        i->route_channels[route]=channel;i->route_destinations[route]=THY_ROUTE_USB0|THY_ROUTE_DIN;
+        i->route_velocity[route]=96u;i->route_pressure[route]=1u;
+        if(route==1u||route==2u){i->channels[route-1u]=channel;i->destinations[route-1u]=THY_ROUTE_USB0|THY_ROUTE_DIN;}
+        e->channel_routes[route]=(thy_engine_channel_config){1u,0u,2u};
+        thy_engine_sequencer_usb_clear(e);e->remote_record=e->remote_position=e->remote_channel=0u;
+    }else if(group==thy_menu_rows[THY_ROW_SENSITIVITY_TARGET].group){
+        uint8_t pad=targets[THY_MENU_PAD];if(pad>97u)return THY_STATE_INVALID;
+        uint8_t cluster=pad==97u?1u:pad>=96u?0u:(uint8_t)(pad/48u);
+        /* Existing cluster reset preflights and preserves every individual
+         * override, calibration table and learned guard. */
+        if(write_pad_setting(e,THY_ROW_SENSITIVITY_RESET,(uint8_t)(cluster?97u:96u),1)!=THY_STATE_OK)return THY_STATE_BLOCKED;
+        i->center_poll_ms=8u;
+    }else if(group==thy_menu_rows[THY_ROW_LIGHTS_ENABLED].group){
+        thy_lighting_config config;thy_lighting_defaults(&config);
+        i->lights_enabled=config.enabled;i->light_idle=config.idle_brightness;i->light_held=config.held_brightness;
+        i->light_fade_ms=config.fade_ms;i->light_chord_mode=config.chord_color_mode;i->light_palette=config.palette;
+        i->light_key_contrast=config.key_contrast;i->light_key_contrast_percent=config.key_dim_percent;
+        i->light_held_style=config.held_style;i->light_held_feedback=config.held_feedback;i->center_brightness=8u;
+    }else if(group==thy_menu_rows[THY_ROW_LIGHTS_VIEW].group){
+        unsigned view=targets[THY_MENU_VIEW];if(view>=THY_VIEW_COUNT)return THY_STATE_INVALID;
+        thy_view_config configs[THY_VIEW_COUNT];thy_views_defaults(configs);i->display_config[view]=configs[view];
+        i->animations_enabled=1u;
+    }else if(group==thy_menu_rows[THY_ROW_CONTROLS_LEFT].group){
+        uint8_t shortcut=targets[THY_MENU_SHORTCUT];if(shortcut>=THY_SCALE_SHORTCUT_COUNT)return THY_STATE_INVALID;
+        i->scale_shortcuts[shortcut]=thy_instrument_default_scale_shortcut(shortcut);
+        i->play_nav[0]=THY_PLAY_ENGINES;i->play_nav[1]=THY_PLAY_VIEWS;
+        i->play_nav[2]=THY_PLAY_PERFORMANCE;i->play_nav[3]=THY_PLAY_CHORDS;
+        i->lower_mode=THY_LOWER_OCTAVE_LAYERS;i->slot_scope=THY_SLOTS_LEFT_SIDE;
+    }else if(group==thy_menu_rows[THY_ROW_SYSTEM_SWAPCLUSTERS].group){
+        if(thy_instrument_set_cluster_swap(i,0u)!=THY_OK)return THY_STATE_BLOCKED;
+    }else if(group==thy_menu_rows[THY_ROW_HARMONY_OPEN].group){
+        thy_harmony_workspace *h=&e->harmony;
+        h->pattern=h->highlights=h->motion=h->octave_target=1u;
+        h->direction=h->pad_map=0u;h->hint_contrast=85u;h->view=1u;h->control_bank=h->right_mode=h->analysis=h->bass_root=h->low_note=h->pinned=0u;h->high_note=127u;
+        h->input_mask=h->base_mask;h->layout_signature=0u;h->dirty=h->discovery_dirty=1u;++h->revision;
+        i->voicing_mode=0u;i->voicing_previous_mask=0u;
+    }else if(group==thy_menu_rows[THY_ROW_SEQUENCER_OPEN].group){
+        if(thy_engine_clock_configure(e,THY_CLOCK_DEFAULT_TEMPO,e->musical_clock.source,e->musical_clock.numerator,
+            e->musical_clock.denominator,THY_TRANSPORT_BAR)!=THY_OK)return THY_STATE_BLOCKED;
+    }
+    /* Profiles currently has presentation/options only; no reset action ever
+     * deletes or replaces its songs, musical library or calibration data. */
+    ++i->revision;return THY_STATE_OK;
+}
 static const char *setting_label(void *context, uint16_t row, int32_t value)
 {
     const thy_engine *e=context;
@@ -809,6 +1004,9 @@ void thy_engine_init(thy_engine *engine, thy_instrument *instrument,
     engine->route_target = instrument && instrument->routing_profile == THY_ROUTING_WHOLE ? 0u :
         instrument && instrument->routing_profile == THY_ROUTING_ZONES ? 3u : 1u;
     engine->scale = scale < scale_count ? scale : 0u;
+    engine->harmony.pattern=engine->harmony.highlights=engine->harmony.motion=1u;
+    engine->harmony.octave_target=1u;engine->harmony.high_note=127u;engine->harmony.view=1u;engine->harmony.hint_contrast=65u;engine->harmony.outside=35u;
+    thy_engine_harmony_reset(engine);
     const thy_state_callbacks callbacks = {read_setting, write_setting, setting_label};
     thy_state_init(&engine->state, &callbacks, engine);
     engine->state.instrument = instrument;
@@ -961,9 +1159,11 @@ int thy_engine_arp_quick_close(thy_engine *engine)
 int thy_engine_control(thy_engine *engine, uint8_t bank, uint8_t index, int pressed)
 {
     if (!engine || !engine->instrument) return 0;
+    if(engine->state.reset_open&&bank!=0u)return 1;
     if(engine->calibration_open && bank!=0u)return 1;
     if (bank == 0u) thy_engine_repeat_cancel(engine);
     if (thy_sequencer_ui_control(&engine->sequencer_ui, bank, index, pressed)) return 1;
+    if(thy_engine_harmony_control(engine,bank,index,pressed))return 1;
     if (!engine->arp_quick_open || engine->state.level != THY_STATE_PLAY ||
         !engine->arp_quick_keys || bank != 3u || index < 2u || index > 8u) {
         if (pressed && bank == 3u && index < THY_SCALE_SHORTCUT_COUNT) {
@@ -1042,6 +1242,15 @@ int thy_engine_navigate(thy_engine *engine, uint8_t action)
     if (engine == NULL || engine->instrument == NULL || action > THY_STATE_RIGHT)
         return THY_STATE_INVALID;
     thy_engine_repeat_cancel(engine);
+    if(engine->state.reset_open){
+        if(action==THY_STATE_SELECT){
+            (void)thy_state_reset_resolve(&engine->state,engine->state.reset_epoch,0);
+            if(engine->sequencer_ui.options_open)return thy_engine_sequencer_options_close(engine);
+            if(engine->arp_quick_open)return thy_engine_arp_quick_close(engine);
+            thy_state_play(&engine->state);return THY_STATE_OK;
+        }
+        return thy_state_navigate(&engine->state,action);
+    }
     if(engine->instrument->guidance.open)return guidance_navigate(engine,action);
     if(engine->instrument->library_editor.open)return thy_engine_library_navigate(engine,action);
     if(engine->calibration_open)return thy_engine_calibration_navigate(engine,action);
@@ -1050,8 +1259,12 @@ int thy_engine_navigate(thy_engine *engine, uint8_t action)
         if(action==THY_STATE_LEFT){engine->state.notice=THY_NOTICE_CANCELLED;return THY_STATE_OK;}
     }
     if(engine->song_status>1u) engine->song_status=0u;
-    if (engine->sequencer_ui.open && action == THY_STATE_SELECT)
-        return thy_engine_sequencer_close(engine);
+    if(engine->sequencer_ui.open && action==THY_STATE_SELECT) {
+        if(engine->sequencer_ui.options_open)return thy_engine_sequencer_options_close(engine);
+        if(engine->state.level==THY_STATE_PLAY)thy_state_open(&engine->state);
+        else thy_state_play(&engine->state);
+        return THY_STATE_OK;
+    }
     if (engine->sequencer_ui.options_open) {
         if(action==THY_STATE_LEFT && !engine->state.editing && !engine->state.info_open)
             return thy_engine_sequencer_options_close(engine);
@@ -1076,9 +1289,12 @@ int thy_engine_navigate(thy_engine *engine, uint8_t action)
         engine->state.notice = THY_NOTICE_NONE;
         return THY_STATE_OK;
     }
+    if(thy_engine_harmony_active(engine)&&engine->state.level==THY_STATE_PLAY&&action==THY_STATE_SELECT)
+        return thy_engine_harmony_navigate(engine,action);
     if (engine->state.level != THY_STATE_PLAY || engine->state.about_open ||
         action == THY_STATE_SELECT)
         return thy_state_navigate(&engine->state, action);
+    if(thy_engine_harmony_active(engine))return thy_engine_harmony_navigate(engine,action);
     int index = shortcut_index(action);
     uint8_t shortcut = index >= 0 ? engine->instrument->play_nav[index] : THY_PLAY_HIDDEN;
     static const uint16_t rows[] = {
@@ -1125,7 +1341,12 @@ void thy_engine_center_levels(const thy_engine *engine,
             uint8_t bit = (uint8_t)(1u << (n - 7u));
             active = !!(lower_active & bit);
         }
-        levels[5u + n] = active ? 4095u : 256u;
+        if(n>=7u&&thy_engine_harmony_active(engine)&&!engine->arp_quick_open){
+            unsigned key=n-7u;
+            active=engine->harmony.control_bank?!!(i->octave_layers&(1u<<key)):
+                (key<engine->harmony.count&&engine->harmony.selected_suggestion==key);
+            levels[5u+n]=active?4095u:engine->harmony.control_bank||key<engine->harmony.count?768u:0u;
+        }else levels[5u + n] = active ? 4095u : 256u;
         if (i->control_masks[1] & (1u << n)) levels[5u + n] = 4095u;
     }
     for (unsigned n = 0u; n < THY_INSTRUMENT_CENTER_LIGHTS; ++n)

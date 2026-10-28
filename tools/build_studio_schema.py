@@ -34,6 +34,8 @@ def oled_label(value):
 
 
 def family(row):
+    if row["id"] == "sequencer.resetTrack":
+        return "track"
     if row["id"] == "sensitivity.velocityMode":
         return "side"
     if row["id"] in PAD_FIELDS:
@@ -110,7 +112,7 @@ def projection():
     for gi, group in enumerate(menu["groups"]):
         advanced = [row.get("advanced") for row in group["rows"]]
         if (any(type(value) is not bool for value in advanced) or
-                advanced != sorted(advanced) or not any(advanced) or all(advanced)):
+                advanced != sorted(advanced) or (group['id'] not in ('engines','engineSettings') and (not any(advanced) or all(advanced)))):
             raise ValueError(f"{group['id']}: basic options must precede a contiguous advanced section")
         groups.append({**group, "first_row": len(rows)})
         for original in group["rows"]:
@@ -133,7 +135,7 @@ def projection():
                 item["text_offset"] = text_count
                 text_count += COUNTS[item["family"]]
             rows.append(item)
-    if len(rows) != 298 or len(groups) != 13:
+    if len(rows) != 347 or len(groups) != 15:
         raise ValueError("Menu cardinality changed; review stable C row IDs and shared-contract tests.")
     if len({row["id"] for row in rows}) != len(rows):
         raise ValueError("Duplicate row IDs")

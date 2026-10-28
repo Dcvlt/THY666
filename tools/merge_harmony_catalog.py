@@ -94,7 +94,14 @@ def header(model):
            'static const struct {const char *name;uint16_t mask;} guidance_scales[]={']
     for row in model['scales']:
         lines.append('    {'+json.dumps(row['name'],ensure_ascii=True)+f",0x{row['mask']:03x}u"+'},')
-    lines+=['};','static const uint16_t guidance_chords[]={',
+    lines+=['};','static const uint8_t guidance_catalog_families[]={']
+    projection=model['original_projection'];records=projection['pad_records'];catalog=[]
+    for group in projection['groups']:
+        variant=next(s for s in projection['scales'] if s['group_index']==group['index'] and s['root_label']=='C')
+        mask=sum(1<<n for n in {note['midi']%12 for ref in variant['pads'][48:] if ref is not None for note in records[ref[1]]['notes']})
+        catalog.append(next(n for n,row in enumerate(model['scales']) if row['mask']==mask))
+    if len(catalog)!=70: raise ValueError('Expected the frozen 70-family playable catalog')
+    lines+=['    '+','.join(str(n)+'u' for n in catalog),'};','static const uint16_t guidance_chords[]={',
             '    '+','.join(f'0x{m:03x}u' for m in model['chord_masks']),'};',
             '_Static_assert(sizeof guidance_scales/sizeof guidance_scales[0]<=255u,"advisory family IDs");','']
     return '\n'.join(lines)

@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {CURRENT_SETTINGS_VERSION} from './current-settings-fixture.mjs';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createCore} from '../../web/core.js';
@@ -122,7 +123,7 @@ test('fold and guitar register are persisted optional modes with frozen held rel
     assert.ok(e.release(0).ok);
     assert.deepEqual(e.drain().filter(x=>(x.status&0xf0)===0x80).map(x=>x.data1),[60,64,67]);
     const saved=e.settings.encode(),cold=await setup();
-    assert.equal(e.settings.version,15);assert.ok(cold.settings.apply(saved));
+    assert.equal(e.settings.version,CURRENT_SETTINGS_VERSION);assert.ok(cold.settings.apply(saved));
     assert.equal(cold.firmware.state().voicingMode,mode);
     assert.deepEqual(cold.firmware.previewPad(0).notes,notes);
   }

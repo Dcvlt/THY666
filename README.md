@@ -22,7 +22,8 @@ See the features, screen previews and roadmap, then choose your next step:
 ## What it brings to the board
 
 - **Musical control:** chords and scales, inversions, strum, voice leading,
-  octave folding, guitar voicings and on-board harmonic guidance.
+  octave folding, guitar voicings and a live Harmony workspace with playable
+  suggestions, melody context, dedicated views and explicit key previews.
 - **Expression:** strike velocity, sensitivity and calibration, aftertouch,
   pressure bend and optional MPE.
 - **Rhythm and routing:** two Arps, a 21-track sequencer, DIN and USB MIDI,
@@ -37,14 +38,39 @@ surface; screen pads inspect its state.
 
 **Hardware alpha. v0.2.0 is a prerelease for board testing.** Existing playing,
 MIDI, display, storage and Windows update paths have device evidence. The latest
-musical additions have passed software checks; their physical qualification is
-still pending. macOS/Linux USB, interrupted-update recovery and broader restore
+musical additions have passed software checks and focused board tests, including
+Harmony exploration, held-note stability and saved preferences after power-off.
+macOS/Linux USB, interrupted-update recovery and broader restore
 coverage remain unqualified. See the [board test checklist](docs/v0.2-board-checklist.md).
 
 Back up your configuration before updating. A settings export is not a complete
 device image, and configuration preservation or automatic rollback is not
 promised. Follow the [installation guide](docs/installation.md) and the notes
 attached to the exact release you choose.
+
+The development build uses settings V18. Harmony offers a full 48-pad chord
+surface, fixed root columns, adaptive or locked qualities and contextual in/out-key
+suggestions in one Fifths view. Exploration, readable pad guidance, clean DIN
+releases and cold-boot persistence have been exercised on a board; broader
+policy and load tests remain. **System → Swap clusters** exchanges musical roles;
+sensor calibration stays on its physical pads. See [Harmony](docs/harmony.md).
+
+The development menus also provide confirmed, scoped **Reset options** actions.
+They retain saved musical material and physical calibration. Auto leading is
+anchored to its base register, and the shared Key contrast switch covers
+Chromatic, All notes and Harmony lighting.
+
+Engines opens Play, Harmony, Sequencer, Arp or the planned Drums description.
+The active workspace is retained when leaving settings. Harmony and Sequencer
+settings are under Engines → Settings. Root and Scale live in Chords; upper-button
+scale assignments live in Controls. System stays last in global Settings.
+
+When restoring a compatible older backup, the Client uses an isolated shared C
+codec to migrate it before upload,
+keeps the original file, and verifies the complete saved payload afterward.
+V13-to-V15 restoration of the captured Windows configuration passed saved
+readback and a full power-off check. V14 migration and broader saved-material
+coverage still need physical qualification.
 
 ## Build or contribute
 

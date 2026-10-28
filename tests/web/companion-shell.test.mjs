@@ -105,7 +105,7 @@ class Node {
   getContext() { return { createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData:()=>{this.writes.canvas++;} }; }
 }
 
-function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, hash = '', runtime=null, projectSite=false } = {}) {
+function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, hash = '', runtime=null, projectSite=false,harmonySupport=false,resetSupport=false } = {}) {
   const document = { hidden: false, listeners: new Map(), activeElement: null,
     createElement(tag) { return new Node(this, tag); },
     createElementNS(namespace,tag) { return new Node(this,tag); },
@@ -143,6 +143,7 @@ function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, h
   const calls = [], applies = [], previewBytes = Uint8Array.of(9, 8, 7);
   const identity = { uid: UID, build: BUILD, schema: SCHEMA };
   const client = { connected: false, compatible: true, busy: false, identity,
+    harmonySupported:harmonySupport,harmonyRevision:0,harmonyActive:false,menuLevel:0,resetSupported:resetSupport,resetOpen:false,resetEpoch:0,resetChoice:0,resetApplications:0,
     backupIdentity: { ...identity, settings: '13', target: '1043', compatibility: '65537' },
     get status() { return { connected: this.connected, compatible: this.compatible, busy: this.busy, connecting: false, identity: this.connected ? identity : null }; },
     async connect() { calls.push(['connect']); this.connected = true; stateChange(this.status); return identity; },
@@ -150,11 +151,27 @@ function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, h
     async downloadBackup() { calls.push(['backup']); return backup(); },
     async telemetry(command) { calls.push(['telemetry', command]); return updateHealthReports[command]; },
     async restoreBackup() { throw new Error('Unexpected restore'); },
-    async snapshot() { calls.push(['snapshot']); const bytes=snapshot();new DataView(bytes.buffer).setUint32(1654,this.savedGeneration??20,true);return { bytes, generation: 7 }; },
+    async snapshot() { calls.push(['snapshot']); const bytes=snapshot();const view=new DataView(bytes.buffer);view.setUint32(1654,this.savedGeneration??20,true);view.setUint32(1668,this.harmonyRevision,true);
+      bytes[1582]=this.menuLevel;bytes[1588]=Number(Boolean(this.arpQuick));bytes[1662]=this.harmonyActive?6:0;
+      bytes[1672]=Number(this.resetOpen);bytes[1673]=this.resetChoice;bytes[1674]=this.resetGroup??0;bytes[1675]=this.resetTrack??255;view.setUint32(1676,this.resetEpoch,true);return { bytes, generation: 7 }; },
+    async harmonySnapshot(){
+      calls.push(['harmonySnapshot']);const bytes=new Uint8Array(800),view=new DataView(bytes.buffer);
+      bytes.set(encoder.encode('THYHRM1'));view.setUint16(8,4,true);view.setUint16(10,800,true);
+      bytes.set(encoder.encode(BUILD),32);bytes.set(encoder.encode(UID),48);bytes.set(encoder.encode(SCHEMA),72);
+      view.setUint32(136,this.harmonyRevision,true);bytes[164]=2;bytes[165]=255;bytes[168]=255;bytes[169]=255;bytes[171]=255;
+      bytes[156]=Number(this.harmonyActive);
+      bytes[523]=127;bytes[571]=255;
+      bytes.set(encoder.encode('C Major'),224);bytes.set(encoder.encode('G Major'),256);return {bytes,generation:8};
+    },
+    async harmonyAction(code,value){calls.push(['harmonyAction',code,value]);if(code===0)this.harmonyActive=Boolean(value);this.harmonyRevision++;},
+    async harmonyControl(bank,index){calls.push(['harmonyControl',bank,index]);if(this.menuLevel||this.arpQuick)throw new Error('COMPANION/1 ERR harmony-context');this.harmonyRevision++;},
+    async confirmReset(epoch,confirmed){calls.push(['confirmReset',epoch,confirmed]);if(!this.resetOpen||this.resetEpoch!==epoch)throw new Error('COMPANION/1 ERR reset-context');
+      if(this.resetBlocked&&confirmed)throw new Error('The device could not complete this reset: release controls.');
+      this.resetOpen=false;if(confirmed)this.resetApplications++;},
     async inspectPad(n) { calls.push(['inspect', n]); },
     async control(bank, index) { calls.push(['control', bank, index]); },
     async navigate(action) { calls.push(['navigate', action]); },
-    async action(row, instance) { calls.push(['action', row, instance]); },
+    async action(row, instance) { calls.push(['action', row, instance]);if(MENU_ROWS[row]?.id.endsWith('.resetOptions')){this.resetOpen=true;this.resetEpoch++;this.resetGroup=STUDIO_MENU.groups.findIndex(group=>group.id===MENU_ROWS[row].group);}},
     async set(row, instance, raw) { if (!this.compatible) throw new Error('read-only'); calls.push(['set', row, instance, raw]); },
     async read(row, instance=255) { calls.push(['read', row, instance]); return this.readOverride?.(row,instance)??{ row, instance: 1, value: 0 }; },
   };
@@ -242,7 +259,7 @@ test('shell starts offline with one visible page and routes Documentation indepe
   f.shell.showPage('parameters');
   assert.equal(f.document.querySelector('#companion-board').hidden, false);
   assert.equal(f.document.querySelector('#companion-parameters').hidden, true);
-  for(const id of ['parameters','library','backups','diagnostics']){
+  for(const id of ['parameters','harmony','library','backups','diagnostics']){
     assert.equal(f.document.querySelector(`[data-page="${id}"]`).disabled,true);
     f.shell.showPage(id);assert.equal(f.document.querySelector(`#companion-${id}`).hidden,true);
   }
@@ -473,6 +490,110 @@ test('an unexpected physical disconnect restores the pre-connect Preview rather 
   assert.equal(f.document.querySelector('[data-page="parameters"]').disabled,true);
 });
 
+test('Harmony requires a connection, including direct links and an unexpected disconnect', async t => {
+  const f=fixture(t,{hash:'#client/harmony'}),nav=f.document.querySelector('[data-page="harmony"]');
+  assert.equal(nav.disabled,true);
+  assert.equal(f.document.querySelector('#companion-harmony').hidden,true);
+  assert.equal(f.document.querySelector('#companion-board').hidden,false);
+  assert.deepEqual(f.calls,[],'An offline Harmony link never opens a device.');
+  f.fire(f.byText('Connect board'),'click');await flush();
+  assert.equal(nav.disabled,false);
+  f.shell.showPage('harmony');
+  assert.equal(f.document.querySelector('#companion-harmony').hidden,false);
+  assert.equal(f.calls.some(call=>['set','action'].includes(call[0])),false,'Harmony advice sends no setting or musical actions.');
+  await f.client.disconnect();await flush();
+  assert.equal(nav.disabled,true);
+  assert.equal(f.document.querySelector('#companion-harmony').hidden,true);
+  assert.equal(f.document.querySelector('#companion-board').hidden,false);
+});
+
+test('live Harmony reads only while visible and changed; actions refresh authoritative state',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock,harmonySupport:true});
+  f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);
+  assert.equal(f.calls.some(c=>c[0]==='harmonySnapshot'),false);
+  f.shell.showPage('harmony');await flush();
+  assert.equal(f.calls.filter(c=>c[0]==='harmonySnapshot').length,1);
+  await clock.advance(300);assert.equal(f.calls.filter(c=>c[0]==='harmonySnapshot').length,1);
+  f.client.harmonyRevision=2;await clock.advance(100);
+  assert.equal(f.calls.filter(c=>c[0]==='harmonySnapshot').length,2);
+  f.fire(f.byText('Enter Harmony'),'click');await flush();
+  assert.ok(f.calls.some(c=>c[0]==='harmonyAction'&&c[1]===0&&c[2]===1));
+  assert.equal(f.calls.filter(c=>c[0]==='harmonySnapshot').length,3);
+  f.shell.showPage('board');f.client.harmonyRevision=4;await clock.advance(200);
+  assert.equal(f.calls.filter(c=>c[0]==='harmonySnapshot').length,3);
+  f.shell.showPage('harmony');await flush();assert.equal(f.calls.filter(c=>c[0]==='harmonySnapshot').length,4);
+});
+
+test('cluster swap metadata never swaps physical RGB, held pads or inspection a second time',async t=>{
+  const f=fixture(t);
+  f.client.snapshot=async()=>{
+    const bytes=snapshot();bytes[1663]=1;bytes.set([8,0,0],1160);bytes.set([0,0,8],1160+48*3);bytes[1467]=1;bytes[1632]=0;
+    return {bytes,generation:7};
+  };
+  f.fire(f.byText('Connect board'),'click');await flush();
+  assert.equal(f.shell.snapshot.clusterSwapped,true);
+  assert.equal(f.pad.style['--note-light'],'255 0 0');assert.equal(f.rightPad.style['--note-light'],'0 0 255');
+  assert.equal(f.pad.getAttribute('aria-pressed'),'true');assert.equal(f.rightPad.getAttribute('aria-pressed'),'false');
+  f.fire(f.pad,'click');await flush();assert.ok(f.calls.some(call=>call[0]==='inspect'&&call[1]===0));
+});
+
+test('Harmony virtual shortcuts track physical UI context even without a Harmony revision change',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock,harmonySupport:true});f.client.harmonyActive=true;
+  f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);f.shell.showPage('harmony');await flush();
+  const pane=f.document.querySelector('#companion-harmony'),root=pane.querySelectorAll('button').find(node=>node.textContent==='D');
+  assert.equal(root.disabled,false);f.fire(root,'click');await flush();
+  assert.ok(f.calls.some(c=>c[0]==='harmonyControl'&&c[1]===2&&c[2]===2));
+  assert.equal(f.calls.some(c=>c[0]==='control'),false);
+  const reads=f.calls.filter(c=>c[0]==='harmonySnapshot').length;
+  f.client.menuLevel=2;await clock.advance(100);assert.equal(root.disabled,true);
+  assert.equal(f.calls.filter(c=>c[0]==='harmonySnapshot').length,reads,'Base context updates do not need another analysis transfer.');
+  f.client.menuLevel=0;await clock.advance(100);assert.equal(root.disabled,false);
+  // The device can change after the last displayed frame. Its scoped command,
+  // not an ordinary root/scale fallback, owns that last-moment decision.
+  f.client.menuLevel=2;f.fire(root,'click');await flush();
+  assert.match(pane.querySelector('[role="alert"]').textContent,/harmony-context/);
+  assert.equal(f.calls.some(c=>c[0]==='control'),false);
+});
+
+test('Reset opens a C-sourced global Client modal and physical choice never becomes Client consent',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock,resetSupport:true});
+  f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);
+  f.selectContext('lights','lights.resetOptions');await f.bridge().action('lights.resetOptions',0);await flush();
+  const overlay=f.document.querySelector('.companion-reset-overlay'),dialog=f.document.querySelector('.companion-reset-dialog');
+  const buttons=dialog.querySelectorAll('button'),cancel=buttons.find(n=>n.textContent==='Cancel'),apply=buttons.find(n=>n.textContent==='Reset options');
+  assert.equal(overlay.hidden,false);assert.equal(f.document.activeElement,cancel);assert.ok(dialog.querySelector('svg'));
+  assert.equal(f.client.resetApplications,0);const epoch=f.client.resetEpoch;
+  f.client.resetChoice=1;await clock.advance(100);
+  assert.equal(f.document.activeElement,cancel);assert.equal(f.calls.some(c=>c[0]==='confirmReset'),false);
+  f.fire(f.document.body,'keydown',{key:'ArrowRight'});await flush();assert.equal(f.calls.some(c=>c[0]==='navigate'),false);
+  f.fire(apply,'click');await flush();
+  assert.ok(f.calls.some(c=>c[0]==='confirmReset'&&c[1]===epoch&&c[2]===true));
+  assert.equal(f.client.resetApplications,1);assert.equal(overlay.hidden,true);
+});
+
+test('stale and blocked reset choices remain visible without retrying or affecting a replacement request',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock,resetSupport:true});f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);
+  f.client.resetOpen=true;f.client.resetEpoch=1;await clock.advance(100);
+  const dialog=f.document.querySelector('.companion-reset-dialog'),apply=dialog.querySelectorAll('button').find(n=>n.textContent==='Reset options');
+  f.client.resetEpoch=2;f.fire(apply,'click');await flush();
+  assert.equal(f.client.resetApplications,0);assert.match(dialog.querySelector('[role="alert"]').textContent,/reset-context/);
+  await clock.advance(100);f.client.resetBlocked=true;f.fire(apply,'click');await flush();
+  assert.match(dialog.querySelector('[role="alert"]').textContent,/release controls/);assert.equal(f.client.resetApplications,0);
+  const attempts=f.calls.filter(c=>c[0]==='confirmReset').length;f.client.resetBlocked=false;await clock.advance(300);
+  assert.equal(f.calls.filter(c=>c[0]==='confirmReset').length,attempts,'Becoming quiet never supplies a missing confirmation.');
+  f.fire(dialog.querySelectorAll('button').find(n=>n.textContent==='Cancel'),'click');await flush();
+  assert.equal(f.client.resetApplications,0);assert.equal(f.document.querySelector('.companion-reset-overlay').hidden,true);
+});
+
+test('physical reset confirmation appears on Backups without triggering a background configuration export',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock,resetSupport:true});f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);
+  f.shell.showPage('backups');const exports=f.calls.filter(c=>c[0]==='backup').length;
+  f.client.resetOpen=true;f.client.resetEpoch=3;await clock.advance(1000);
+  assert.equal(f.document.querySelector('.companion-reset-overlay').hidden,false);
+  assert.equal(f.calls.filter(c=>c[0]==='backup').length,exports);
+  await f.client.disconnect();await flush();assert.equal(f.document.querySelector('.companion-reset-overlay').hidden,true);
+});
+
 test('app settings open independently offline, change the whole-app theme and never touch the instrument',t=>{
   const f=fixture(t),gear=f.document.querySelector('.app-settings-toggle');
   assert.equal(f.document.body.dataset.theme,'red');
@@ -634,7 +755,7 @@ test('compact sidebar retains accessible page names, disabled reasons and browse
   for (const [id, label] of [['board', 'Board'], ['parameters', 'Parameters'], ['harmony', 'Harmony'], ['library', 'Songs & library'], ['backups', 'Backups'], ['diagnostics', 'Diagnostics']]) {
     const nav = f.document.querySelector(`[data-page="${id}"]`);
     assert.equal(nav.attributes['aria-label'], label); assert.equal(nav.querySelector('.rail-text').textContent, label);
-    assert.ok(nav.title.startsWith(label)); assert.equal(nav.disabled, !['board','harmony'].includes(id));
+    assert.ok(nav.title.startsWith(label)); assert.equal(nav.disabled, id!=='board');
     if (nav.disabled) assert.match(nav.title, /Connect your board/);
   }
   assert.equal(toggle.attributes['aria-label'], 'Expand sidebar'); assert.equal(toggle.title, 'Expand sidebar');
@@ -698,7 +819,12 @@ test('Diagnostics report remains clickable during background polling and locks o
   assert.deepEqual(f.calls.at(-1), ['telemetry', 'display']);
   rejectReport(Error('Report transport failed')); await flush();
   assert.equal(output.textContent, 'Read failed. Try again.');
-  assert.equal(f.document.querySelector('.companion-notice').textContent, 'Report transport failed');
+  assert.equal(f.document.querySelector('.companion-notice-text').textContent, 'Report transport failed');
+  assert.equal(f.document.querySelector('.companion-notice-icon').getAttribute('aria-hidden'),'true');
+  const dismiss=f.document.querySelector('.companion-notice-close');
+  assert.equal(dismiss.getAttribute('aria-label'),'Dismiss message');
+  f.fire(dismiss,'click');
+  assert.equal(f.document.querySelector('.companion-notice').hidden,true);
   assert.equal(read.disabled, false); assert.equal(pick.disabled, false);
   await f.client.disconnect(); await flush();
   assert.equal(read.disabled, true); assert.equal(pick.disabled, true);
@@ -751,6 +877,41 @@ test('the first snapshot establishes a saved-generation baseline and later physi
   assert.equal(f.applies.length,2,'A changed hardware save generation reloads applied device configuration.');
   assert.equal(f.calls.filter(call=>call[0]==='backup').length,2);
   f.fire(f.nav,'click');await flush();assert.equal(f.applies.length,2,'An unchanged generation does not repeatedly reload settings.');
+});
+
+test('a busy automatic configuration refresh keeps its generation pending while snapshots continue',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock});f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);
+  f.calls.length=0;let reads=0;
+  f.client.downloadBackup=async()=>{f.calls.push(['backup']);if(++reads===1)throw Error('ERR backup-busy');return backup();};
+  f.client.savedGeneration=21;
+  await clock.advance(100);
+  assert.equal(reads,1);assert.equal(f.applies.length,1);
+  assert.doesNotMatch(f.document.body.textContent,/ERR backup-busy/);
+  await clock.advance(800);assert.equal(reads,1,'backoff prevents a full export on every display poll');
+  assert.ok(f.calls.filter(call=>call[0]==='snapshot').length>=8,'busy staging does not pause screen sampling');
+  f.client.savedGeneration=22;
+  await clock.advance(200);
+  assert.equal(reads,2);assert.equal(f.applies.length,2,'a later quiet poll applies the pending newest generation');
+  await clock.advance(300);assert.equal(reads,2,'successful mirror refresh consumes the generation exactly once');
+});
+
+test('temporary backup staging at connect defers the initial mirror without losing live snapshots',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock});let reads=0;
+  f.client.downloadBackup=async()=>{f.calls.push(['backup']);if(++reads===1)throw Error('ERR backup-busy');return backup();};
+  f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);
+  assert.equal(f.client.connected,true);assert.equal(f.applies.length,0);
+  assert.ok(f.calls.some(call=>call[0]==='snapshot'));assert.doesNotMatch(f.document.body.textContent,/ERR backup-busy/);
+  await clock.advance(1000);
+  assert.equal(reads,2);assert.equal(f.applies.length,1);
+  await clock.advance(200);assert.equal(reads,2);
+});
+
+test('explicit backup requests still surface a busy device instead of claiming a saved file',async t=>{
+  const f=fixture(t);f.fire(f.byText('Connect board'),'click');await flush();
+  f.shell.showPage('backups');
+  f.client.downloadBackup=async()=>{throw Error('ERR backup-busy');};
+  f.fire(f.byText('Read backup'),'click');await flush();
+  assert.match(f.document.querySelector('.backup-notice').textContent,/Backup was not downloaded: ERR backup-busy/);
 });
 
 test('enhanced display uses the exact C frame and never invents text from untrusted snapshot metadata', t => {

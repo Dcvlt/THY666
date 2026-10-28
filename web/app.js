@@ -1159,6 +1159,8 @@ async function initializeConnectedCompanion() {
   for (let index = 0; index < 96; index++) {
     const pad = document.createElement('button');
     pad.type = 'button'; pad.className = 'pad'; pad.dataset.pad = index;
+    // Enable the RGB projection styles without assigning any local pad color.
+    pad.dataset.light = 'device';
     pad.dataset.testid = `pad-${index}`;
     pad.setAttribute('aria-label', `${index < 48 ? 'Left' : 'Right'} pad ${index % 48 + 1}`);
     pad.setAttribute('aria-description', 'Inspect this pad on the connected board.');

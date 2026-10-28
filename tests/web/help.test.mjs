@@ -169,7 +169,8 @@ test('documentation examples reproduce the current C renderer with synthetic mus
   assert.deepEqual(Object.keys(HELP_SCREEN_FRAMES), [
     'detailed', 'chladni', 'orbit', 'waves',
     'simple', 'piano', 'fifths', 'engines', 'arp', 'steps', 'track',
-    'performance', 'chords', 'chord-advice', 'scale-discovery', 'modulation-advice', 'library', 'midi', 'aftertouch', 'mpe',
+    'performance', 'chords', 'chord-advice', 'scale-discovery', 'modulation-advice',
+    'harmony-fifths', 'harmony-settings', 'reset-options', 'library', 'midi', 'aftertouch', 'mpe',
     'sensitivity', 'pick', 'calibration', 'at-stage', 'draft', 'applied',
     'tracks', 'recording', 'lights', 'storage',
   ]);
@@ -177,7 +178,7 @@ test('documentation examples reproduce the current C renderer with synthetic mus
     [fileURLToPath(new URL('../../tools/render_help_examples.mjs', import.meta.url)), '--check'],
     { cwd: fileURLToPath(new URL('../../', import.meta.url)), encoding: 'utf8' });
   assert.equal(checked.status, 0, checked.stderr);
-  assert.match(checked.stdout, /30 shared C documentation screenshots verified/);
+  assert.match(checked.stdout, /33 shared C documentation screenshots verified/);
 });
 
 test('instruction diagrams preserve physical counts and distinguish step selection from input', () => {
@@ -245,7 +246,8 @@ test('illustrations render as labeled read-only figures and option sets use tabl
   assert.equal(images.length, 1); assert.equal(images[0].width, 128); assert.equal(images[0].height, 64);
   assert.ok(f.all().some(node => node.tagName === 'FIGCAPTION' && /Example/.test(node.textContent)));
   const engines = getHelpTopic('engines').sections.find(part => part.table);
-  assert.equal(engines.table.rows.length, 6);
+  assert.deepEqual(engines.table.rows.map(row => row[0]), ['Play', 'Harmony', 'Sequencer', 'Arp', 'Drums']);
+  assert.ok(engines.table.rows.some(row => row[0] === 'Harmony'));
   assert.ok(engines.table.rows.find(row => row[0] === 'Drums').includes('Planned'));
   for (const id of ['scales-layouts', 'views', 'aftertouch']) assert.ok(getHelpTopic(id).sections.some(part => part.table), id);
   f.help.open('sequencer-editor');

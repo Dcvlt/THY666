@@ -2,7 +2,7 @@
 
 Applied instrument parameters, response calibration/overrides, routes,
 expression, views, custom musical library and the current song persist in a
-versioned journal. Current settings format is **V13**. Named profile/song
+versioned journal. The development settings format is **V18**. Named profile/song
 collections are not implemented.
 
 ## Saving
@@ -26,7 +26,7 @@ commit word programmed last. Programmed words and the complete committed record
 are read back before reporting Saved. Rotation preserves an earlier valid record
 until its successor commits.
 
-Maximum V13 record size is **13,860 bytes**, reserved across four adjacent 4 KiB
+Maximum V18 record size is **13,876 bytes**, reserved across four adjacent 4 KiB
 slots. A valid unknown future format blocks automatic rewriting. Older supported
 versions validate under their original rules before migration; corrupt or
 inconsistent input is rejected before live mutation.
@@ -40,9 +40,13 @@ geometry before writing.
 ## Byte format and lifetimes
 
 Values are encoded explicitly little-endian, never copied as raw C structures.
-V13 has a 5,013-byte parameter/library prefix followed by an independently
-versioned THYS song. Its layout matches V12; view-information/menu cursor
-migration adds no parameter bytes.
+V18 has a 5,032-byte parameter/library prefix followed by an independently
+versioned THYS song. All V1–V17 offsets remain frozen for those source versions.
+After the unchanged 740-byte library, V16 appends twelve bytes: Harmony
+progression, hints, motion, view, lower-button bank, octave target, note-pad mode,
+melody-analysis policy, bass policy, register low/high, and global cluster swap.
+Imports validate the source version's original limits before migration; legacy
+settings default to unswapped clusters and normal live Harmony additions.
 
 The 740-byte custom library contains eight 16-byte scales, twenty-four 23-byte
 chords and three 20-byte six-chord sets. Names have at most twelve printable
@@ -52,12 +56,22 @@ payload in a versioned 16-byte CRC header.
 
 Left and Right have independent response, velocity, release and expression
 defaults. Per-pad overrides and 96 learned release guards are independent.
+System → Swap clusters changes musical roles only; these physical calibration
+and per-pad override arrays are never permuted. It requires quiet ownership and
+stopped transport. The preference is restored quietly at boot.
 Migration preserves raw thresholds instead of retuning them to reproduce an old
 percentage label. Restored settings do not send receiver setup or notes.
 
 Transient state is excluded: held notes, baselines, raw learning samples,
 calibration/editor drafts, selected Live Update harmony, owners, transport
 position and running playback. Reboot restores configuration and content quietly.
+Harmony captures, held melody contributions, suggestions and destination
+previews and recent history are also transient. V17 added direction, pad map
+and contrast. V18 appends Outside key, Stay in key, Lock map and Chord bank.
+Legacy imports default to Balanced (old Adventurous becomes Travel), Adaptive,
+35% outside-key preference and unlocked assignments. Existing hint contrast is
+retained; the revised light curve keeps ordinary pads visible. Retired view and
+reserved-pad preferences migrate to the unified Fifths/full-surface design.
 
 ## Export and restoration
 

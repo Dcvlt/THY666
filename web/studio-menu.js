@@ -266,18 +266,45 @@ STUDIO_MENU.groups.push(
     select('controls.slotScope','Apply to','whole-left',[{value:'whole-left',label:'Whole left side'},{value:'selected-pad',label:'Selected chord'}],['controls.chord-functions'],'Apply the lower buttons to every left chord, or keep a separate selection for the last played left chord. Melody presses do not retarget the selection. Already held notes retain their original pitches and routes.',live('controls.slotScope')),
   ]}
 );
-STUDIO_MENU.groups.unshift({id:'engines',label:'Engines',shortLabel:'ENGINES',description:'Choose Play and configure its musical layout in Chords. Browse all 70 scales and assign the twelve scale shortcuts below.',rows:[
+STUDIO_MENU.groups.unshift({id:'engines',label:'Engines',shortLabel:'ENGINES',description:'Open a playing workspace or the Arp processor.',rows:[
   action('engines.play','Play',['playing.scales_performance'],'Play chords and melody. Chromatic, scale degrees and Guitar are layouts within this engine; changing engine does not replace the selected layout or retune held notes.',live('core.engine.play')),
+  action('engines.harmony','Harmony',['chords.harmony'],'Select Harmony for progression suggestions, Fifths and explicit key previews. All 48 chord pads offer fixed roots with adaptive or locked qualities. Arps remain processors.',live('harmony.open')),
   action('engines.arp','Arp',['arpeggiators.two_instances'],'Enable the selected Arp and open its quick page. Selecting it again keeps that Arp enabled; the other Arp and playing workspace are unchanged.',live('arps.activate')),
-  action('engines.sequencer','Sequencer',['sequencers.tracks'],'Open the track list. Create or open a track with RIGHT, then tap a left step and play notes or chords on the right. CENTER returns to Play while playback continues.',live('sequencer.open')),
+  action('engines.sequencer','Sequencer',['sequencers.tracks'],'Open the track list. Create or open a track with RIGHT, then tap a left step and play notes or chords on the right. CENTER opens global Settings; leaving settings returns to the sequencer.',live('sequencer.open')),
   info('engines.drums','Drums','In development. Drum assignments and the pad map are not implemented.',['playing.drums'],'Unavailable workspaces are named honestly rather than selectable empty engines.'),
-  info('engines.lightboard','Lightboard','In development. The independent playing map is not implemented.',['playing.lightboard'],'No silent placeholder is activated.'),
-  info('engines.user','User','Separate User engine in development.',['playing.user_mode'],'Custom scales, chords and six-chord sets already work in Play through the Chords menu and Custom library editor.'),
   select('engines.scale','Scale library',21,[],['playing.scales_performance'],'All 70 recovered scale families, applied at the selected root. This edits the same scale as Chords.',{dynamic:'scales',...live('core.scale')}),
   select('engines.root','Root',0,['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'].map((label,value)=>({value,label})),['chords.root_keys'],'Change the root for new pad attacks.',live('core.root')),
   select('engines.shortcut','Edit shortcut','5',['5','12','M1','M2','M3','M4','M5','M6','M7','U1','U2','U3'],['controls.top-shortcuts'],'Choose one of the twelve scale controls above the right grid.',live('core.shortcutTarget')),
   select('engines.assignment','Assigned scale',56,[],['controls.top-shortcuts'],'Assign any library scale, or Cycle layout. U1–U3 have useful defaults and every assignment is saved.',{dynamic:'scale-shortcuts',...live('core.shortcutAssignment')}),
 ]});
+STUDIO_MENU.groups.push({id:'harmony',label:'Harmony',shortLabel:'HARMONY',description:'Live suggestions, guided progressions and explicit key changes.',rows:[
+  action('harmony.open','Open Harmony',['chords.harmony'],'Select Harmony. LEFT cycles chord banks; UP/DOWN selects suggestions; RIGHT opens Harmony settings; CENTER opens global Settings.',live('harmony.open')),
+  select('harmony.pattern','Progression',1,[{value:0,label:'Common tones'},{value:1,label:'2-5-1'},{value:2,label:'1-4-5-1'},{value:3,label:'1-6-4-5'}],['chords.harmony'],'Prefer the next degree of a diatonic progression when its chord is available on the board. Common-tone alternatives remain visible. Seven-note scales support these degree patterns; other scales use common tones.',live('harmony.pattern')),
+  toggle('harmony.highlights','Pad hints',true,['chords.harmony'],'Highlight current and suggested chords on the chord half. Ordinary pads stay visible; held feedback and global Lights OFF take priority.',live('harmony.highlights')),
+  toggle('harmony.motion','Motion',true,['chords.harmony'],'Animate the fixed circle of fifths briefly when a new chord or suggestion is selected. Global animation preferences still apply.',live('harmony.motion')),
+  action('harmony.suggestions','Chord suggestions',['chords.harmony'],'Return to live playable chord suggestions.',live('harmony.suggestions')),
+  action('harmony.discovery','Find scales',['chords.harmony'],'Find scales containing every captured note. Selecting a match previews a destination; it does not change the key.',live('harmony.discovery')),
+  action('harmony.preview','Key preview',['chords.harmony'],'Compare shared, added and removed notes with a destination key. UP/DOWN changes the preview root only.',live('harmony.preview')),
+  action('harmony.apply','Apply key',['chords.harmony'],'Explicitly apply the preview root and scale for future notes. Only exact playable catalog matches are accepted; held notes retain their pitches and releases.',live('harmony.apply')),
+  toggle('harmony.freeze','Freeze chord',false,['chords.harmony'],'Keep the captured chord while continuing to play. OFF follows accepted LEFT attacks before Arps or strumming.',live('harmony.freeze')),
+  action('harmony.capture','Capture chord',['chords.harmony'],'Replace analysis input with the selected LEFT pad preview. Available in Harmony; captures no MIDI recording.',live('harmony.capture')),
+  action('harmony.addHeld','Add held notes',['chords.harmony'],'Accumulate physically held notes for scale discovery and freeze the input. Generated playback does not replace the captured set.',live('harmony.addHeld')),
+  action('harmony.clear','Clear input',['chords.harmony'],'Empty captured notes without releasing or changing any musical owner.',live('harmony.clear')),
+  select('harmony.targetRoot','Destination root',0,['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'].map((label,value)=>({value,label})),['chords.harmony'],'Sounding destination root for preview only. Apply key is a separate explicit action; transpose is retained.',live('harmony.targetRoot')),
+  select('harmony.targetScale','Destination scale',21,[],['chords.harmony'],'Select a playable catalog family for the key preview. Scale discovery can also compare advisory families that have no playable counterpart; these cannot be applied.',{dynamic:'scales',...live('harmony.targetScale')}),
+  action('harmony.manual','Manual tools',['chords.harmony'],'Advanced snapshot browser with explicit capture. Its analysis is transient and never changes the playing key.',live('harmony.manual')),
+  select('harmony.view','View',0,[{value:0,label:'Focus'},{value:1,label:'Fifths'},{value:2,label:'Suggestions'},{value:3,label:'Details'}],['chords.harmony'],'Choose the dedicated Harmony screen. Key previews and scale discovery open as temporary pages.',live('harmony.view')),
+  select('harmony.bank','Lower buttons',0,[{value:0,label:'Suggestions'},{value:1,label:'Octaves'}],['chords.harmony'],'5 switches the seven lower controls between silent suggestion selection and whole-chord octave layers.',live('harmony.bank')),
+  select('harmony.octaveTarget','Octave target',1,[{value:0,label:'Chords'},{value:1,label:'Notes'}],['chords.harmony'],'U3 chooses the musical role shifted by U1/U2. Cluster inversion changes its physical side.',live('harmony.octaveTarget')),
+  select('harmony.rightMode','Note pads',0,[{value:0,label:'Chromatic'},{value:1,label:'Chord tones'}],['chords.harmony'],'Chromatic keeps every semitone available. Chord tones follows the last chord; before a chord is selected it uses the playing key. Held notes keep their original pitches.',live('harmony.rightMode')),
+  select('harmony.analysis','Melody input',0,[{value:0,label:'Live additions'},{value:1,label:'Melody only'},{value:2,label:'Manual capture'}],['chords.harmony'],'Live additions temporarily combines held notes with the retained chord. Melody only leaves guidance on that chord. Manual capture adds notes only with Add held notes. Melody never changes the voice-leading reference.',live('harmony.analysis')),
+  select('harmony.voicing','Voicing',0,[{value:0,label:'Inversions'},{value:1,label:'Drop voices'},{value:2,label:'Auto leading'},{value:3,label:'Octave fold'},{value:4,label:'Guitar register'}],['chords.harmony'],'The same voicing policy as Chords. Auto leading minimizes movement from the last accepted chord. These choices affect future attacks only.',live('harmony.voicing')),
+  select('harmony.bass','Leading bass',0,[{value:0,label:'Smooth'},{value:1,label:'Root bass'}],['chords.harmony'],'Auto leading can require the actual root as the lowest voice. Rootless or impossible constrained voicings retain the authored chord; no note is added or removed.',live('harmony.bass')),
+  number('harmony.low','Register low',0,0,127,1,['chords.harmony'],'Inclusive pre-transpose MIDI-note bound for Harmony Auto leading. An impossible range keeps the authored voicing.',live('harmony.low')),
+  number('harmony.high','Register high',127,0,127,1,['chords.harmony'],'Inclusive upper register bound. Octave, bass, spread and transpose settings remain separate musical shaping.',live('harmony.high')),
+]});
+STUDIO_MENU.groups.find(group=>group.id==='system').rows.unshift(
+  toggle('system.swapClusters','Swap clusters',false,['playing.scales_performance'],'Exchange chord/editor and note/input roles for left-handed playing. Physical calibration and sensor overrides stay on their original sensors. Release all notes and stop transport before changing.',live('system.swapClusters')));
 const performanceRows = STUDIO_MENU.groups.find(group => group.id === 'performance').rows;
 performanceRows.push(
   select('performance.contextLocation','Pad position','upper-right',[{value:'upper-right',label:'Upper right'},{value:'lower-left',label:'Lower left'}],['playing.control_overlays'],'Position of the optional context controls on each half; relocation waits for all pads to be released. Stored upper/lower preferences keep their ordinal and move to the corrected corner.',live('core.contextLocation')),
@@ -428,10 +455,23 @@ STUDIO_MENU.groups.splice(STUDIO_MENU.groups.findIndex(group=>group.id==='midi')
 // Keep logical IDs/bindings stable while grouping all musical setup together.
 // Numeric internal row IDs regenerate with the shared C/web schema; the
 // explicit persisted codec does not serialize this presentation ordering.
-const musicalSetup = ['root','scale','melodyLayout','guitarWindow','guitarShortcut',
+performanceRows.push(toggle('performance.keyContrast','Key contrast',true,['lights.note-palette'],
+  'Dim black-key pitch classes on the note pads. This is the same option as Lights → Black-key contrast.',live('lighting.keyContrast')));
+const musicalSetup = ['root','scale','melodyLayout','keyContrast','guitarWindow','guitarShortcut',
   'transpose','chordOctave','melodyOctave','bassOctave','keepTranspose',
   'liveUpdate','liveUpdateLockScale','liveUpdateMuteChord','liveUpdateNoteColor'];
 const chordGroup = STUDIO_MENU.groups.find(group => group.id === 'chords');
+const engineGroup = STUDIO_MENU.groups.find(group => group.id === 'engines');
+const controlGroup = STUDIO_MENU.groups.find(group => group.id === 'controls');
+for (const id of ['engines.scale','engines.root','engines.shortcut','engines.assignment']) {
+  const index = engineGroup.rows.findIndex(item => item.id === id);
+  const item = engineGroup.rows.splice(index,1)[0];
+  if (id === 'engines.scale' || id === 'engines.root') {
+    // Keep legacy scalar aliases for schema consumers; Chords already exposes these settings.
+    item.retired = true; chordGroup.rows.push(item);
+  } else controlGroup.rows.push(item);
+}
+engineGroup.rows.sort((a,b)=>['engines.play','engines.harmony','engines.sequencer','engines.arp','engines.drums'].indexOf(a.id)-['engines.play','engines.harmony','engines.sequencer','engines.arp','engines.drums'].indexOf(b.id));
 const movedSetup = musicalSetup.map(id => {
   const index = performanceRows.findIndex(item => item.id === `performance.${id}`);
   if (index < 0) throw new Error(`Missing musical setup row: ${id}`);
@@ -459,10 +499,39 @@ performanceRows.splice(performanceRows.findIndex(item=>item.id==='performance.ve
   responseMode,
   select('performance.pressureBend','Bend','off',[{value:'off',label:'Off'},{value:'up',label:'Up'},{value:'down',label:'Down'}],['midi.pressure-pitchbend'],'Ordinary MIDI pressure bend for Response for. Same Off/Up/Down policy as MIDI; held notes keep their captured response. With MPE ON, the separate MPE pressure-glide settings apply instead.',live('midi.pressureBend')));
 
+const engineRows = STUDIO_MENU.groups.find(g=>g.id==='engines').rows;
+engineRows.push(action('engines.settings','Settings',['chords.harmony','sequencers.tracks'],'Settings for each engine.',live('engines.settings')));
+STUDIO_MENU.groups.push({id:'engineSettings',label:'Engine settings',shortLabel:'ENGINE SETTINGS',nested:true,rows:[
+  action('engineSettings.harmony','Harmony',['chords.harmony'],'Configure Harmony without changing the active engine.',live('engineSettings.harmony')),
+  action('engineSettings.sequencer','Sequencer',['sequencers.tracks'],'Configure global sequencer options.',live('engineSettings.sequencer')),
+]});
+const harmonyRows=STUDIO_MENU.groups.find(g=>g.id==='harmony').rows;
+for(const row of harmonyRows)if(['open','pattern','suggestions','discovery','preview','manual','bank','octaveTarget','view'].includes(row.id.split('.')[1]))row.retired=true;
+harmonyRows.push(
+  select('harmony.direction','Direction',0,[{value:0,label:'Balanced'},{value:1,label:'Resolve'},{value:2,label:'Colour'},{value:3,label:'Travel'}],['chords.harmony'],'Choose a musical intention. Suggestions use the played harmony and recent progression.',live('harmony.direction')),
+  select('harmony.padMap','Legacy pad map',0,[{value:0,label:'Unified'},{value:1,label:'Unified'}],['chords.harmony'],'Retired: Harmony uses the complete chord surface.',live('harmony.padMap')),
+  number('harmony.outside','Outside key',35,0,100,1,['chords.harmony'],'How readily chromatic chords enter the advice. Home key stays unchanged.',live('harmony.outside')),
+  toggle('harmony.stayInKey','Stay in key',false,['chords.harmony'],'Restrict recommendations to the home scale. Other playable chords remain available.',live('harmony.stayInKey')),
+  toggle('harmony.lockMap','Lock map',false,['chords.harmony'],'Keep current chord assignments while advice follows playing. Explicit bank changes remain available.',live('harmony.lockMap')),
+  select('harmony.palette','Chord bank',0,[{value:0,label:'Adaptive'},{value:1,label:'Basic'},{value:2,label:'Suspended'},{value:3,label:'Colour'},{value:4,label:'Extended'}],['chords.harmony'],'All twelve columns keep roots C to B. Each bank offers four qualities per root. LEFT cycles banks; release all pads first.',live('harmony.palette')),
+  number('harmony.contrast','Hint contrast',65,0,100,1,['chords.harmony'],'Dims ordinary chord pads relative to the suggested choices. Held pads keep their normal feedback.',live('harmony.contrast'))
+);
+harmonyRows.find(r=>r.id==='harmony.padMap').retired=true;
+const harmonyOrder=['direction','outside','stayInKey','lockMap','palette','rightMode','analysis','voicing','view','highlights','contrast','motion','bass','low','high','targetRoot','targetScale','apply','freeze','capture','addHeld','clear'];
+harmonyRows.sort((a,b)=>(harmonyOrder.indexOf(a.id.split('.')[1])<0?99:harmonyOrder.indexOf(a.id.split('.')[1]))-(harmonyOrder.indexOf(b.id.split('.')[1])<0?99:harmonyOrder.indexOf(b.id.split('.')[1])));
+const harmonyView=harmonyRows.find(r=>r.id==='harmony.view');harmonyView.default=1;
+harmonyRows.find(r=>r.id==='harmony.targetRoot').label='Dest root';
+harmonyRows.find(r=>r.id==='harmony.targetScale').label='Dest scale';
+harmonyRows.find(r=>r.id==='harmony.voicing').label='Voice leading';
+const rootOrder=['engines','performance','chords','arps','expression','sensitivity','midi','lights','views','controls','storage','system','engineSettings','harmony','sequencer'];
+STUDIO_MENU.groups.sort((a,b)=>rootOrder.indexOf(a.id)-rootOrder.indexOf(b.id));
+for(const g of STUDIO_MENU.groups)if(['harmony','sequencer','engineSettings'].includes(g.id))g.nested=true;
 const BASIC_ROWS = {
-  engines: ['play', 'arp', 'sequencer', 'drums', 'lightboard', 'user'],
+  engines: ['play', 'harmony', 'sequencer', 'arp', 'drums'],
   performance: ['velocityTarget', 'mpe', 'velocity', 'routeTarget', 'pressureMode', 'pressureBend', 'padOverlays'],
-  chords: ['guidance','layout','quality','userScale','sixBank','voicingMode','editScales','editChords','editSix', 'inversion', 'spread', 'strum', 'strumDirection', 'strummerTarget', 'continuous', 'strumLatch'],
+  harmony: ['direction','outside','stayInKey','lockMap','palette','rightMode','analysis','voicing','highlights'],
+  engineSettings: ['harmony','sequencer'],
+  chords: ['layout','quality','userScale','sixBank','voicingMode','editScales','editChords','editSix', 'inversion', 'spread', 'strum', 'strumDirection', 'strummerTarget', 'continuous', 'strumLatch'],
   arps: ['open', 'target', 'enabled', 'type', 'grouping', 'noteValue', 'pattern', 'gate', 'swing', 'clear'],
   sequencer: ['open', 'help', 'tempo', 'length', 'grid', 'input', 'launch'],
   midi: ['routingProfile', 'routeTarget', 'channel', 'destinations', 'velocity', 'pressure', 'clock', 'tempo', 'receiveTransport', 'sendClock', 'remoteRecord', 'remotePosition', 'assignmentKind', 'pedalEnabled', 'pedalAction'],
@@ -470,7 +539,7 @@ const BASIC_ROWS = {
   sensitivity: ['target', 'pick', 'amount', 'profileEnabled', 'profileSplit', 'calibrate', 'centerResponse'],
   lights: ['enabled', 'idle', 'held', 'chordColor', 'noteColors', 'keyContrast', 'heldStyle', 'heldFeedback', 'center', 'exploder'],
   storage: ['profileName', 'saveProfile', 'loadProfile', 'exportProfile', 'importProfile'],
-  system: ['startupView', 'startupAnimation', 'sleep', 'shutdown', 'storage', 'about'],
+  system: ['swapClusters','startupView', 'startupAnimation', 'sleep', 'shutdown', 'storage', 'about'],
   views: ['slot1', 'slot2', 'header', 'motion'],
   controls: ['left', 'up', 'down', 'right', 'lowerMode'],
 };
@@ -479,10 +548,16 @@ for (const group of STUDIO_MENU.groups) {
   // The View picker retains its original lights.view identity after relocation.
   if (group.id === 'views') basic.add('lights.view');
   if (group.id === 'performance') basic.add('sensitivity.velocityMode');
-  if (group.id === 'chords') for (const id of ['root','scale','melodyLayout','guitarShortcut',
+  if (group.id === 'chords') for (const id of ['root','scale','melodyLayout','keyContrast','guitarShortcut',
     'transpose','chordOctave','melodyOctave','liveUpdate']) basic.add(`performance.${id}`);
   for (const item of group.rows) item.advanced = !basic.has(item.id);
   group.rows = [...group.rows.filter(item => !item.advanced), ...group.rows.filter(item => item.advanced)];
+  if(group.id==='sequencer') group.rows.push(action('sequencer.resetTrack','Reset options',['storage.reset-settings'],
+    'Restore only the selected track’s configuration. Notes, recorded material and all other tracks are kept. Opens a confirmation with Cancel selected.',
+    {icon:'reset',advanced:true,instance:'track',...live('menu.resetTrack')}));
+  if(group.id!=='engines'&&group.id!=='engineSettings') group.rows.push(action(`${group.id}.resetOptions`,'Reset options',['storage.reset-settings'],
+    'Restore this menu’s settings and selected editing scope to defaults. Songs, the custom library, calibration and individual pad overrides are retained. Opens a confirmation with Cancel selected.',
+    {icon:'reset',advanced:true,...live('menu.reset')}));
 }
 
 export const MENU_ROWS = STUDIO_MENU.groups.flatMap(group => group.rows.map(item => ({ ...item, group: group.id })));

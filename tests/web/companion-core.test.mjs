@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createCore } from '../../web/core.js';
 import { MENU_ROWS, STUDIO_MENU } from '../../web/studio-menu.js';
+import { decodeCompanionSnapshot } from '../../web/companion-protocol.js';
 
 const bytes = await readFile(new URL('../../web/generated/core.wasm', import.meta.url));
 const row = id => {
@@ -136,4 +137,43 @@ test('offline companion uses C sequencer pad colors while preserving its editor 
   assert.deepEqual(engine.sequencer.exportBytes(), song);
   assert.deepEqual(engine.sequencer.snapshot(), state);
   assert.deepEqual(engine.drain(), []);
+});
+
+test('actual C reset confirmation projects its frozen scope and nonce without treating a highlighted choice as consent', async () => {
+  const engine = await fresh(), center = row('lights.center');
+  const original = engine.state.get(center), custom = original === 4 ? 5 : 4;
+  okay(engine.state.set(center, custom));
+  const configured = engine.settings.encode();
+  const capture = now => {
+    engine.state.frame({ now, animations: false });
+    return decodeCompanionSnapshot(engine.state.companionSnapshot(now));
+  };
+  const before = capture(10);
+  assert.equal(before.resetOpen, false);
+  okay(engine.state.begin(row('lights.resetOptions')));
+  const pending = capture(11);
+  assert.equal(pending.resetOpen, true);
+  assert.equal(pending.resetChoice, 0);
+  assert.equal(pending.resetGroup, STUDIO_MENU.groups.findIndex(group => group.id === 'lights'));
+  assert.equal(pending.resetTrack, 255);
+  assert.ok(pending.resetEpoch > before.resetEpoch);
+  assert.deepEqual(engine.settings.encode(), configured, 'Opening a C confirmation changes no persisted option.');
+  okay(engine.state.navigate('down'));
+  const selected = capture(12);
+  assert.equal(selected.resetChoice, 1);
+  assert.equal(selected.resetEpoch, pending.resetEpoch);
+  assert.deepEqual(engine.settings.encode(), configured, 'Physical selection alone is not confirmation.');
+  assert.equal(engine.state.set(center, original).ok, false, 'The frozen confirmation blocks competing writes.');
+  okay(engine.state.navigate('left'));
+  const cancelled = capture(13);
+  assert.equal(cancelled.resetOpen, false);
+  assert.equal(engine.state.get(center), custom);
+  okay(engine.state.begin(row('lights.resetOptions')));
+  const replacement = capture(14);
+  assert.ok(replacement.resetEpoch > pending.resetEpoch, 'A new C confirmation receives a new transaction identity.');
+  okay(engine.state.navigate('down'));
+  okay(engine.state.navigate('right'));
+  assert.equal(capture(15).resetOpen, false);
+  assert.equal(engine.state.get(center), original);
+  assert.deepEqual(engine.drain(), [], 'Inspection and menu reset never audition notes.');
 });

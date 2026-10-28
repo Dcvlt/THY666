@@ -76,7 +76,7 @@ keeps the keyboard anchored to C; explicit transpose/octave changes still apply.
 **Chords → Custom scale** selects one of eight saved scales; **Built-in** returns
 to the retained catalog selection. Custom degrees drive generated chords and
 scale-based right layouts. Classic remains the lossless catalog layout.
-Assign custom scales to the upper controls through **Engines → Scale shortcuts**;
+Assign custom scales to the upper controls through **Controls → Edit shortcut / Assigned scale**;
 the existing Cycle layout assignment remains available. A scale must be saved
 before it can be selected or assigned.
 
@@ -115,12 +115,13 @@ Independent repeating/gated/routed strummer engines remain later work.
 Select **Chords → Voicing → Auto leading**. The first successful left chord
 keeps its source register. Subsequent chords choose octave placements near the
 previous successful source voicing. This is optional and defaults to Inversions.
-It is available in the shared core; device timing and musical feel still need
-hardware qualification.
 
 For example, C–E–G at 60–64–67 followed by F–A–C at 65–69–72 becomes
 65–69–60. The common C stays at 60, while the other voices move by one and two
 semitones. Held notes keep their original pitches and release destinations.
+This pair has passed a board check: USB emitted C4/E4/G4 followed by F4/A4/C4,
+with balanced releases, and DIN playing/release was confirmed. History resets,
+mode changes while held and worst-case timing still need physical checks.
 
 The bounded search compares ascending unique voices across cyclic inversions,
 minimizing total movement; ties favor the authored register. Different chord
@@ -165,52 +166,37 @@ release routes remain unchanged, and Live Update follows the resolved chord.
 Settings v15 stores the selection in the existing policy byte. It accepts older
 v1–v14 data with their original limits; older firmware cannot import v15 exports.
 
-## Harmony guidance in the Client
+With neutral octave, Spread and Strum settings and the Chromatic/Major layout,
+these examples have passed USB note and clean DIN release checks:
 
-Open **Client → Harmony** in the browser or desktop app. This page also works
-without a board or the private musical archive. Its input is a local sketch,
-initially C major with C–E–G selected; it does not listen to the board or infer
-its current key. It neither plays notes nor changes device settings. The C core
-performs the analysis; JavaScript renders results and holds the unsaved sketch.
+| Mode and LEFT pad | Observed notes |
+| --- | --- |
+| Octave fold: third row, first column | C4/E4/G4/B4/D4; the source D5 folds down to D4. Display agreed. |
+| Guitar register: top row, first column | C4/E2/G3, stable through I/II/III taps. |
 
-1. Choose a **working key** and select the pitch classes you want to explore.
-2. **Chord suggestions** lists supported in-key chords, excluding
-   the exact selected set. Familiar triads/sevenths rank before extended shapes;
-   within each tier shared-tone count ranks first, and tonic and fifth-root
-   options break ties. Click a chord to replace the sketch notes and explore
-   another move. This is common-tone guidance, not a functional-harmony model
-   or a claim that the highest-ranked chord is musically best.
-3. **Scale discovery** finds collections containing every selected note. It
-   searches 99 merged families in all twelve roots, showing up to 24 matches
-   ranked by fewest extra notes and reporting the total. The families include
-   the seven major modes, harmonic and ascending melodic minor, major/minor
-   pentatonic, blues, whole tone, both diminished collections and chromatic.
-   The merged interval vocabulary combines the original collection with the
-   extended scale/chord collection; exact duplicate interval sets share one
-   family and aliases remain in the local model. The board's existing 70-family
-   playable catalog and its saved IDs/layouts remain unchanged. Modes with identical notes remain separate possibilities; sparse
-   input cannot establish an intended tonal center. Silence produces no match.
-4. Select a match to compare it in **Modulation**, or choose a destination
-   directly. The comparison identifies common, introduced and removed notes,
-   whether the sketch fits both collections, and a possible shared major,
-   minor or diminished triad. No pivot is invented when none fits. The pivot
-   is a common-tone option, not a guarantee of a convincing modulation.
-5. **Use destination as working key** changes this local sketch only. Change
-   the board through Parameters separately when desired. Sketches are not
-   saved or included in backups.
+These examples do not qualify the seven-pitch-class fallback, mode changes
+while a chord is held, every modifier combination or worst-case device timing.
 
-For C major → G major, the comparison retains C–D–E–G–A–B, introduces F♯,
-and leaves F behind. C major is one possible shared chord. C major → A natural
-minor keeps the same notes but changes the tonal center, so the guidance calls
-out that distinction. Pitches use sharp spellings for compact presentation;
-octave/register information is deliberately absent from this pitch-class tool.
+## Harmony workspace and Client
 
-These tools have native C and browser regressions. The Client sketch remains
-independent of the board's Harmony menu; neither automatically transforms music.
+Select **Engines → Harmony** for retained chord input, a circle of fifths and up
+to nine next-chord choices. All 48 chord pads use fixed C–B root columns with
+four qualities per root. Adaptive assignments update after release; Lock map or
+an explicit bank retains a predictable playing surface.
 
-## Harmony guidance on the board
+UP/DOWN selects silently, LEFT cycles banks, RIGHT opens Harmony settings and
+CENTER opens global Settings. Leaving settings returns to the active engine.
+The connected Client projects the same C state. Key changes require explicit
+**Apply key**; browsing suggestions never plays notes or applies a key.
 
-Open **Chords → Harmony guidance**. The source key is a snapshot of the
+See [Harmony](harmony.md) for pad maps, controls, note input, voice leading and
+current qualification limits.
+
+## Manual Harmony tools
+
+The earlier snapshot browser remains an internal implementation reference; its
+separate menu entry is retired. Use the live Harmony workspace and the Client
+Scale discovery/Key comparison controls instead. In the earlier browser, the source key is a snapshot of the
 configured root and effective scale (including a custom scale), taken on entry.
 Reopen the menu after changing the key. Live Update's temporary right-hand pool
 does not replace this source key. Captured notes start empty on every entry.
@@ -220,7 +206,7 @@ does not replace this source key. Captured notes start empty on every entry.
 | UP / DOWN | Move through tools or results; in destination editing, change the value. No hold-repeat. |
 | RIGHT | Open a tool, capture notes, or enter/finish destination editing. Selecting a discovered scale opens its modulation comparison. |
 | LEFT | Leave destination editing, return to the tool list, then return to Settings. |
-| CENTER | Immediately return to Play from every guidance screen. |
+| CENTER | Immediately return to the current playing workspace from every guidance screen. |
 | Add held notes | Add the pitch classes of currently held physical owners and held Arp inputs. Repeat across chords to discover scales for a progression. |
 | Use selected chord | Replace the captured set with the last selected left pad's current resolved preview, including voicing/transpose. This also works with direct chords muted; it is a preview, not a capture of a previous sounding attack. |
 | Clear captured notes | Empty the analysis input without affecting sounding notes. |
@@ -238,14 +224,20 @@ lets you edit the destination root and family, inspect common/introduced/removed
 notes, and inspect a shared pivot triad. Browsing or selecting advice does not
 apply a root, scale, chord mapping, voice-leading history, library record or MIDI
 message. Apply musical changes separately through the existing controls/settings.
-The 16 advisory families are not interchangeable with archival catalog IDs.
+The 99 advisory families are not interchangeable with archival catalog IDs.
 
 Calibration, library editing and sequencer editor entry cannot overlap this
 browser. An open Arp quick page closes when guidance opens, but Arps keep playing.
 Settings restore closes guidance and clears its transient snapshot. Nothing from
 this browser is saved or included in backups. Native control/navigation and
-ownership regressions pass locally; board timing and hardware qualification
-remain pending.
+ownership regressions pass locally. An earlier manual-browser board session confirmed C/E/G capture,
+suggestion/discovery browsing with pads still playable and no notes caused by
+browsing. The mirrored device frame showed the C-major → G-major common notes,
+introduced F-sharp, removed F and C-major pivot correctly. Clear returned scale
+discovery to **Capture notes first**, and exit left the board in Major C.
+Dense inputs, every advisory family, generated-input exclusions and mixed-load
+timing remain separate physical checks. These results do not qualify the new
+live Harmony workspace, its automatic input, pad hints or explicit key apply.
 
 
 ## Editing the custom library
@@ -306,7 +298,7 @@ sixteen bytes, producing a fixed **756-byte file**. Unused records are zeroed;
 active chords retain all seven note literals and their explicit validity mask.
 
 Applied records and ten chord-policy bytes use the layout introduced in **V12**,
-retained by current **V13**. Its
+retained by current **V15**. Its
 5,013 parameter bytes include the frozen 4,263-byte V11 prefix, ten policy bytes
 and the streamed 740-byte library. Maximum aligned payload/record sizes are
 13,828 / 13,860 bytes, within the existing four-slot journal reservation.
@@ -315,6 +307,13 @@ Record editing uses a **52-byte** caller-owned UI workspace.
 
 No heap is introduced. Review fresh build output against the
 [resource budget](firmware-budget.md) when changing capacities or workspaces.
+
+A physical cold-boot check retained Auto leading and a nonempty, step-entered
+C4/E4/G4 sequencer track. The complete configuration export was byte-identical
+before and after boot, and independent current-C codec validation/re-encoding
+and the song export agreed. The second created track was empty in that saved
+snapshot after further edits. This does not qualify recorded-take persistence,
+nonempty custom libraries, calibrated overrides or maximum-capacity operation.
 
 Named song/profile collections, arbitrary custom pad assignment engines and
 external-NOR allocation remain separate future work. Full applied-state backup

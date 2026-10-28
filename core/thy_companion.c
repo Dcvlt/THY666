@@ -2,6 +2,10 @@
 #include "thy_companion.h"
 #include "thy_studio_ui.h"
 #include "thy_views.h"
+#include "thy_harmony_workspace.h"
+
+_Static_assert(THY_GUIDANCE_LIMIT<=24u,"Harmony scale rows must fit the640-byte wire snapshot");
+_Static_assert(THY_HARMONY_WORKSPACE_CHOICES<=24u,"Harmony chord choices must fit the shared recommendation area");
 
 typedef struct {char *p;size_t used,cap;} writer;
 static void add(writer *w,const char *p){while(*p && w->used+1u<w->cap)w->p[w->used++]=*p++;}
@@ -25,16 +29,91 @@ void thy_companion_init(thy_companion *s,uint8_t *buffer,size_t cap,const thy_co
 int thy_companion_expire(thy_companion *s,uint32_t now)
 {if(s && s->active && ((uint32_t)(now-s->last_ms)>=THY_COMPANION_IDLE_MS || (uint32_t)(now-s->captured_ms)>=THY_COMPANION_MAX_AGE_MS)){s->active=0u;return 1;}return 0;}
 
+static void snapshot_header(thy_companion *s,uint32_t now,const char *magic,uint16_t bytes)
+{
+    uint8_t *p=s->buffer;for(unsigned n=0;n<bytes;++n)p[n]=0u;
+    text(p,0,8,magic);u16(p,8,1u);u16(p,10,bytes);u32(p,12,s->sequence+1u);u32(p,16,now);
+    text(p,32,16,s->identity.build);text(p,48,24,s->identity.uid);text(p,72,64,THY_MENU_SCHEMA_SHA256);
+}
+static void snapshot_finish(thy_companion *s,uint32_t now,uint16_t bytes)
+{
+    s->captured_bytes=bytes;s->crc=crc32(s->buffer,bytes);++s->sequence;
+    s->active=1u;s->captured_ms=s->last_ms=now;
+}
+
+static int harmony_snapshot(thy_companion *s,const thy_engine *e,uint32_t now)
+{
+    if(!s->buffer||s->capacity<THY_COMPANION_HARMONY_BYTES||s->sequence==UINT32_MAX)return 0;
+    snapshot_header(s,now,"THYHRM1",THY_COMPANION_HARMONY_BYTES);
+    uint8_t *p=s->buffer;const thy_harmony_workspace *h=&e->harmony;
+    u16(p,8,THY_COMPANION_HARMONY_VERSION);
+    p[27]=h->direction;p[28]=h->pad_map;p[29]=h->hint_contrast;p[30]=h->view_picker;
+    u32(p,136,h->revision);u16(p,140,h->key_mask);u16(p,142,h->input_mask);u16(p,144,h->target_mask);
+    u16(p,146,h->comparison.common);u16(p,148,h->comparison.added);u16(p,150,h->comparison.removed);
+    u16(p,152,h->comparison.pivot);u16(p,154,h->scale_total);
+    p[156]=(uint8_t)!!thy_engine_harmony_active(e);p[157]=h->page;p[158]=h->source_root;p[159]=h->source_family;
+    p[160]=h->target_root;p[161]=h->target_family;p[162]=h->cursor;
+    p[163]=h->page==THY_HARMONY_SCALES?h->scale_count:h->page==THY_HARMONY_CHORDS?h->count:0u;
+    p[164]=(uint8_t)(!!h->pinned|(h->cache_ready?2u:0u));p[165]=h->comparison.pivot_root;p[166]=h->comparison.current_fits;
+    p[167]=!!h->can_apply;p[168]=h->current_pad;p[169]=h->selected_suggestion;p[170]=h->target_catalog;p[171]=h->current_root;
+    for(unsigned n=0;n<48u;++n){unsigned role=h->pad_roles[n];
+        if(role==THY_HARMONY_CURRENT)bit(p,172,n);
+        else if(role==THY_HARMONY_SELECTED)bit(p,178,n);
+        else if(role==THY_HARMONY_SUGGESTED)bit(p,184,n);}
+    p[190]=h->pattern;p[191]=(uint8_t)(!!h->highlights|(h->motion?2u:0u));
+    thy_engine_harmony_label(h->input_mask,h->current_root,(char *)p+192);
+    thy_engine_harmony_key_label(e,0,(char *)p+224);thy_engine_harmony_key_label(e,1,(char *)p+256);
+    if(h->page==THY_HARMONY_CHORDS){
+        unsigned count=h->count<THY_HARMONY_WORKSPACE_CHOICES?h->count:THY_HARMONY_WORKSPACE_CHOICES;p[163]=(uint8_t)count;
+        if(h->cursor<count)thy_engine_harmony_label(h->choices[h->cursor].mask,h->choices[h->cursor].root,(char *)p+288);
+        for(unsigned n=0;n<count;++n){const thy_harmony_choice *c=&h->choices[n];unsigned at=320u+n*8u;
+            u16(p,at,c->mask);p[at+2u]=c->root;p[at+3u]=c->shared;p[at+4u]=c->degree;
+            p[at+5u]=c->reason;p[at+6u]=c->pad;p[at+7u]=1u;}
+    }else if(h->page==THY_HARMONY_SCALES){
+        unsigned count=h->scale_count<THY_GUIDANCE_LIMIT?h->scale_count:THY_GUIDANCE_LIMIT;p[163]=(uint8_t)count;
+        if(h->cursor<count){const thy_scale_match *m=&h->scales[h->cursor];char root[32]={0};
+            if(m->root<12u)thy_guidance_notes_text((uint16_t)(1u<<m->root),root);
+            writer label={(char *)p+288,0,32};add(&label,root);add(&label," ");
+            const char *name=thy_guidance_scale_name(m->family);add(&label,name?name:"");label.p[label.used]=0;}
+        for(unsigned n=0;n<count;++n){const thy_scale_match *m=&h->scales[n];unsigned at=320u+n*8u;
+            u16(p,at,m->mask);p[at+2u]=m->root;p[at+3u]=m->family;p[at+4u]=m->extra;
+            p[at+5u]=p[at+6u]=UINT8_MAX;p[at+7u]=1u;}
+    }
+    u16(p,512,h->base_mask);u16(p,514,h->right_mask);
+    p[516]=h->view;p[517]=h->control_bank;p[518]=h->octave_target;p[519]=h->right_mode;
+    p[520]=h->analysis;p[521]=h->bass_root;p[522]=h->low_note;p[523]=h->high_note;
+    p[524]=!!e->instrument->cluster_swap;
+    p[525]=e->instrument->octave_layers;
+    int octave=e->instrument->performance.melody_octave;
+    p[526]=octave>=-3&&octave<=3?(uint8_t)(1u<<(unsigned)(octave+3)):0u;
+    for(unsigned n=0;n<48u;++n){unsigned physical=thy_instrument_physical_pad(e->instrument,(uint8_t)n);
+        unsigned role=h->pad_roles[n];
+        if(role==THY_HARMONY_CURRENT)bit(p,528,physical);
+        else if(role==THY_HARMONY_SELECTED)bit(p,540,physical);
+        else if(role==THY_HARMONY_SUGGESTED)bit(p,552,physical);
+    }
+    for(unsigned n=0;n<7u;++n)p[564+n]=thy_instrument_scale_shortcut(e->instrument,(uint8_t)(2u+n));
+    p[571]=h->preview_scale;
+    p[572]=e->instrument->voicing_mode;
+    p[573]=h->count;p[574]=(uint8_t)e->instrument->performance.chord_octave;
+    p[575]=(uint8_t)e->instrument->performance.melody_octave;
+    thy_engine_harmony_label(h->base_mask,h->current_root,(char *)p+576);
+    thy_engine_harmony_melody_label(e,(char *)p+608);
+    for(unsigned n=0;n<48u;++n)u16(p,640u+n*2u,h->pad_masks[n]);
+    for(unsigned n=0;n<4u;++n){u16(p,736u+n*2u,h->history[n]);p[744u+n]=h->history_roots[n];}
+    p[748]=h->history_count;p[749]=h->outside;p[750]=h->stay_in_key;p[751]=h->lock_map;p[752]=h->palette;p[753]=h->dirty;
+    thy_engine_harmony_reason(e,h->selected_suggestion,(char *)p+768);
+    snapshot_finish(s,now,THY_COMPANION_HARMONY_BYTES);return 1;
+}
+
 static int snapshot(thy_companion *s,const thy_engine *e,uint32_t now)
 {
     if(!s->buffer || s->capacity<THY_COMPANION_SNAPSHOT_BYTES || !s->visual || s->sequence==UINT32_MAX)return 0;
-    uint8_t *p=s->buffer;for(unsigned n=0;n<THY_COMPANION_SNAPSHOT_BYTES;++n)p[n]=0u;
+    snapshot_header(s,now,"THYCMP1",THY_COMPANION_SNAPSHOT_BYTES);uint8_t *p=s->buffer;
     uint32_t frame_ms=0;uint8_t visible=0;
     if(!s->visual(s->context,p+THY_COMPANION_OLED,p+THY_COMPANION_RGB,p+THY_COMPANION_CENTER,&frame_ms,&visible))return 0;
     const thy_instrument *i=e->instrument;const thy_state *state=&e->state;const thy_core *core=i->core;
-    text(p,0,8,"THYCMP1");u16(p,8,1u);u16(p,10,THY_COMPANION_SNAPSHOT_BYTES);u32(p,12,s->sequence+1u);
     u32(p,16,now);u32(p,20,frame_ms);u32(p,24,i->revision);u32(p,28,state->revision);
-    text(p,32,16,s->identity.build);text(p,48,24,s->identity.uid);text(p,72,64,THY_MENU_SCHEMA_SHA256);
     for(unsigned n=0;n<THY_KEY_COUNT;++n)if(core->refs[n]||thy_core_deferred(core,(uint16_t)n))bit(p,THY_COMPANION_NOTES,n%128u);
     uint64_t pool[2]={0,0};
     for(unsigned a=0;a<2u;++a)if(e->arps[a].config.enabled)for(unsigned n=0;n<THY_ARP_INPUTS;++n)if(e->arps[a].inputs[n].held){
@@ -77,8 +156,13 @@ static int snapshot(thy_companion *s,const thy_engine *e,uint32_t now)
     u32(p,1650,i->layout_revision);u32(p,1654,s->identity.saved_generation?*s->identity.saved_generation:0u);p[1658]=!!visible;
     p[1659]=state->group_index<THY_MENU_GROUP_COUNT?state->cursors[state->group_index]:0u;
     p[1660]=e->sequencer.selected_track;p[1661]=i->display_view;p[1662]=i->engine_kind;
+    p[THY_COMPANION_CLUSTER_SWAP]=!!i->cluster_swap;
     int32_t current=INT32_MIN;if(row<THY_MENU_ROW_COUNT)(void)thy_state_get(state,row,&current);u32(p,1664,(uint32_t)current);
-    s->crc=crc32(p,THY_COMPANION_SNAPSHOT_BYTES);++s->sequence;s->active=s->captured=1u;s->captured_ms=s->last_ms=now;return 1;
+    u32(p,THY_COMPANION_HARMONY_REVISION,e->harmony.revision);
+    p[THY_COMPANION_RESET_OPEN]=!!state->reset_open;p[THY_COMPANION_RESET_CHOICE]=!!state->reset_confirm;
+    p[THY_COMPANION_RESET_GROUP]=state->reset_group;p[THY_COMPANION_RESET_TRACK]=state->reset_track;
+    u32(p,THY_COMPANION_RESET_EPOCH,state->reset_epoch);
+    snapshot_finish(s,now,THY_COMPANION_SNAPSHOT_BYTES);s->captured=1u;s->last_visual_ms=now;return 1;
 }
 
 size_t thy_companion_command(thy_companion *s,thy_engine *e,int available,uint32_t now,const char *line,char *response,size_t capacity)
@@ -89,20 +173,48 @@ size_t thy_companion_command(thy_companion *s,thy_engine *e,int available,uint32
     if(same(line,"companion caps")){
         add(&w,"CAPS build=");add(&w,s->identity.build?s->identity.build:"unknown");add(&w," uid=");add(&w,s->identity.uid?s->identity.uid:"unknown");
         add(&w," schema=");add(&w,THY_MENU_SCHEMA_SHA256);field(&w," bytes=",THY_COMPANION_SNAPSHOT_BYTES);field(&w," chunk=",THY_COMPANION_CHUNK_BYTES);field(&w," rows=",THY_MENU_ROW_COUNT);field(&w," writable=",!!available);
-        add(&w," role=instrument backup=1 song=1 companion=1");
+        add(&w," role=instrument backup=1 song=1 companion=1 harmony=1 harmony_bytes=");dec(&w,THY_COMPANION_HARMONY_BYTES);add(&w," reset=1");
     }else if(same(line,"companion status")){field(&w,"STATUS active=",s->active);field(&w," seq=",s->sequence);field(&w," selected=",s->selected_pad);field(&w," available=",!!available);}
     else if(prefix(&p,"companion release ")&&number(&p,&first)&&!*p){
         if(first!=s->sequence)add(&w,"ERR generation");else{s->active=0u;add(&w,"RELEASED");}
     }else if(!available)add(&w,"ERR busy");
     else if(same(line,"companion snapshot")){
         if(s->active)add(&w,"ERR snapshot-active");
-        else if(s->captured&&(uint32_t)(now-s->captured_ms)<THY_COMPANION_MIN_CAPTURE_MS)add(&w,"ERR rate");
+        else if(s->captured&&(uint32_t)(now-s->last_visual_ms)<THY_COMPANION_MIN_CAPTURE_MS)add(&w,"ERR rate");
         else if(!snapshot(s,e,now))add(&w,"ERR snapshot-unavailable");
         else{field(&w,"SNAPSHOT seq=",s->sequence);field(&w," bytes=",THY_COMPANION_SNAPSHOT_BYTES);add(&w," crc32=");hex(&w,s->crc,8u);}
+    }else if(same(line,"companion harmony snapshot")){
+        if(s->active)add(&w,"ERR snapshot-active");
+        else if(!harmony_snapshot(s,e,now))add(&w,"ERR snapshot-unavailable");
+        else{field(&w,"HARMONY seq=",s->sequence);field(&w," bytes=",THY_COMPANION_HARMONY_BYTES);add(&w," crc32=");hex(&w,s->crc,8u);}
     }else if((p=line,prefix(&p,"companion get "))&&number(&p,&first)&&space(&p)&&number(&p,&second)&&space(&p)&&number(&p,&third)&&!*p){
         if(!s->active||first!=s->sequence)add(&w,"ERR generation");
-        else if(!third||third>THY_COMPANION_CHUNK_BYTES||second>THY_COMPANION_SNAPSHOT_BYTES||third>THY_COMPANION_SNAPSHOT_BYTES-second)add(&w,"ERR offset");
+        else if(!third||third>THY_COMPANION_CHUNK_BYTES||second>s->captured_bytes||third>s->captured_bytes-second)add(&w,"ERR offset");
         else{s->last_ms=now;field(&w,"DATA seq=",first);field(&w," offset=",second);add(&w," hex=");for(unsigned n=0;n<third;++n)hex(&w,s->buffer[second+n],2u);}
+    }else if((p=line,prefix(&p,"companion harmony "))&&schema(&p)&&number(&p,&first)&&space(&p)&&integer(&p,&value)&&!*p){
+        if(first>THY_HARMONY_COMPARE_SCALE)add(&w,"ERR action");
+        else if(e->state.reset_open)add(&w,"ERR reset-active");
+        else if(e->state.editing)add(&w,"ERR draft-active");
+        else{int result=thy_engine_harmony_action(e,(uint8_t)first,value);add(&w,"HARMONY result=");signed_dec(&w,result);
+            field(&w," action=",first);add(&w," value=");signed_dec(&w,value);}
+    }else if((p=line,prefix(&p,"companion harmony-control "))&&schema(&p)&&number(&p,&first)&&space(&p)&&number(&p,&second)&&!*p){
+        if(!((first==1u&&second>=7u&&second<14u)||((first==2u||first==3u)&&second<12u)))add(&w,"ERR harmony-control");
+        /* A preview must never fall through to the ordinary root/scale or Arp
+         * handlers if the physical UI changed after the browser's last frame. */
+        else if(!e->instrument->control_filter||!thy_engine_harmony_active(e)||e->state.level!=THY_STATE_PLAY||e->state.reset_open||e->state.editing||e->state.info_open||e->state.about_open||
+            e->arp_quick_open||e->calibration_open||e->sequencer_ui.open||e->instrument->library_editor.open||e->instrument->guidance.open)
+            add(&w,"ERR harmony-context");
+        else if(e->instrument->control_masks[first]&(1u<<second))add(&w,"ERR control-held");
+        else{int result=thy_instrument_control(e->instrument,(uint8_t)first,(uint8_t)second,1);
+            int released=thy_instrument_control(e->instrument,(uint8_t)first,(uint8_t)second,0);
+            add(&w,"HCONTROL result=");signed_dec(&w,result!=THY_OK?result:released);
+            field(&w," bank=",first);field(&w," index=",second);}
+    }else if((p=line,prefix(&p,"companion reset-confirm "))&&schema(&p)&&number(&p,&first)&&space(&p)&&number(&p,&second)&&!*p){
+        if(second>1u)add(&w,"ERR reset-confirm");
+        else if(!first||!e->state.reset_open||first!=e->state.reset_epoch)add(&w,"ERR reset-context");
+        else if(second&&(e->instrument->control_masks[0]||e->instrument->control_masks[1]||e->instrument->control_masks[2]||e->instrument->control_masks[3]))add(&w,"ERR control-held");
+        else{int result=thy_state_reset_resolve(&e->state,first,(int)second);
+            add(&w,"RESET result=");signed_dec(&w,result);field(&w," epoch=",first);field(&w," confirmed=",second);}
     }else if((p=line,prefix(&p,"companion pad "))&&number(&p,&first)&&!*p){
         if(first>=96u)add(&w,"ERR pad");else{s->selected_pad=(uint8_t)first;field(&w,"PAD selected=",first);}
     }else if((p=line,prefix(&p,"companion read "))&&schema(&p)&&number(&p,&first)&&space(&p)&&number(&p,&second)&&!*p){
@@ -115,10 +227,12 @@ size_t thy_companion_command(thy_companion *s,thy_engine *e,int available,uint32
         else if(e->state.editing)add(&w,"ERR draft-active");
         else{int result=thy_state_set_instance(&e->state,(uint16_t)first,(uint8_t)second,value);add(&w,"SET result=");signed_dec(&w,result);field(&w," row=",first);field(&w," instance=",second);}
     }else if((p=line,prefix(&p,"companion nav "))&&schema(&p)&&number(&p,&first)&&!*p){
-        if(first>THY_STATE_RIGHT)add(&w,"ERR action");else{int result=thy_engine_navigate(e,(uint8_t)first);add(&w,"NAV result=");signed_dec(&w,result);}
+        if(first>THY_STATE_RIGHT)add(&w,"ERR action");else if(e->state.reset_open)add(&w,"ERR reset-active");
+        else{int result=thy_engine_navigate(e,(uint8_t)first);add(&w,"NAV result=");signed_dec(&w,result);}
     }else if((p=line,prefix(&p,"companion control "))&&schema(&p)&&number(&p,&first)&&space(&p)&&number(&p,&second)&&!*p){
         static const uint8_t counts[]={5u,14u,12u,12u};
         if(first>=4u||second>=counts[first])add(&w,"ERR control");
+        else if(e->state.reset_open)add(&w,"ERR reset-active");
         else if(e->instrument->control_masks[first]&(1u<<second))add(&w,"ERR control-held");
         else{int result=thy_instrument_control(e->instrument,(uint8_t)first,(uint8_t)second,1);
             int released=thy_instrument_control(e->instrument,(uint8_t)first,(uint8_t)second,0);
