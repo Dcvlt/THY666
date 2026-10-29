@@ -28,7 +28,7 @@ limits.
 
 ## Release history
 
-- **v0.2.1 (in preparation):** Client navigation, backups, Harmony controls and
+- **v0.2.1:** Client navigation, backups, Harmony controls and
   live diagnostics are refined; CPU, RAM, stack and flash resources are exposed
   in the Client and device menu. Shared OLED styling and a three-part Quick start
   guide complete this milestone. Focused display, resources and Arp timing
