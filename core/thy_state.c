@@ -137,6 +137,7 @@ void thy_state_init(thy_state *state, const thy_state_callbacks *callbacks, void
     state->design_editing = 1u;
     state->scale_count = THY_MENU_DEFAULT_SCALE_COUNT;
     state->edit_row = THY_STATE_NO_ROW;
+    state->reset_track = UINT8_MAX;
     for (row = 0; row < THY_MENU_ROW_COUNT; ++row) {
         const thy_menu_row *definition = &thy_menu_rows[row];
         uint8_t instance;
@@ -149,18 +150,27 @@ void thy_state_init(thy_state *state, const thy_state_callbacks *callbacks, void
 
 int thy_state_track_row(uint16_t row) {
     if(row>=THY_MENU_ROW_COUNT || thy_menu_rows[row].group!=thy_menu_rows[THY_ROW_SEQUENCER_OPEN].group)return 0;
-    return thy_menu_rows[row].instance_kind==THY_MENU_TRACK ||
+    return row==THY_ROW_SEQUENCER_RESETTRACK || thy_menu_rows[row].instance_kind==THY_MENU_TRACK ||
         row==THY_ROW_SEQUENCER_INPUT || row==THY_ROW_SEQUENCER_CLEARTRACK ||
         row==THY_ROW_SEQUENCER_DUPLICATE || row==THY_ROW_SEQUENCER_TRIM ||
         row==THY_ROW_SEQUENCER_STEPLENGTH || row==THY_ROW_SEQUENCER_STEPVELOCITY;
 }
 
+int thy_state_group_visible(uint8_t group) {
+    return group<THY_MENU_GROUP_COUNT && group!=thy_menu_rows[THY_ROW_HARMONY_VIEW].group &&
+        group!=thy_menu_rows[THY_ROW_SEQUENCER_OPEN].group && group!=thy_menu_rows[THY_ROW_ENGINESETTINGS_HARMONY].group;
+}
 int thy_state_row_visible(const thy_state *state, uint16_t row) {
     int32_t view = 0;
     if (!state || row >= THY_MENU_ROW_COUNT) return 0;
     /* Old workflow rows keep their storage identities, but are never exposed
      * as competing control schemes, including in the web design preview. */
     switch(row) {
+    case THY_ROW_HARMONY_OPEN:case THY_ROW_HARMONY_PATTERN:case THY_ROW_HARMONY_SUGGESTIONS:
+    case THY_ROW_HARMONY_DISCOVERY:case THY_ROW_HARMONY_PREVIEW:case THY_ROW_HARMONY_MANUAL:
+    case THY_ROW_HARMONY_BANK:case THY_ROW_HARMONY_OCTAVETARGET:
+    case THY_ROW_CHORDS_GUIDANCE: /* Retired location; Harmony owns exploration. */
+        return 0;
     case THY_ROW_PERFORMANCE_AFTERTOUCH:
     case THY_ROW_PERFORMANCE_VELOCITYSOURCE:
     case THY_ROW_SENSITIVITY_VELOCITYPRESET:
@@ -405,6 +415,7 @@ static int set_scalar_at(thy_state *state, uint16_t row, uint8_t instance, int32
     const thy_menu_row *definition;
     if(!state || row>=THY_MENU_ROW_COUNT || instance>=thy_state_instance_count(row))
         return fail(state,THY_STATE_INVALID,THY_NOTICE_INVALID);
+    if(state->reset_open)return fail(state,THY_STATE_BLOCKED,THY_NOTICE_RELEASE);
     int result = validate_scalar(state, row, instance, value);
     if (result != THY_STATE_OK) return result;
     if (instance >= thy_state_instance_count(row)) return fail(state, THY_STATE_INVALID, THY_NOTICE_INVALID);
@@ -439,6 +450,7 @@ int thy_state_set_instance(thy_state *state, uint16_t row, uint8_t instance, int
 }
 
 static int set_text_at(thy_state *state, uint16_t row, uint8_t instance, const char *text) {
+    if(state&&state->reset_open)return fail(state,THY_STATE_BLOCKED,THY_NOTICE_RELEASE);
     int result = validate_text(state, row, text);
     if (result != THY_STATE_OK) return result;
     if (instance >= thy_state_instance_count(row)) return fail(state, THY_STATE_INVALID, THY_NOTICE_INVALID);
@@ -453,10 +465,59 @@ int thy_state_set_text(thy_state *state, uint16_t row, const char *text) {
     return set_text_at(state, row, current_instance(state, row), text);
 }
 
+int thy_state_reset_row(uint16_t row)
+{
+    return row<THY_MENU_ROW_COUNT&&(equal(thy_menu_rows[row].binding,"menu.reset")||
+        equal(thy_menu_rows[row].binding,"menu.resetTrack"));
+}
+int thy_state_reset_begin(thy_state *state,uint16_t row)
+{
+    if(!state||!thy_state_reset_row(row))return THY_STATE_INVALID;
+    if(state->reset_open||state->editing||state->info_open||state->about_open)return THY_STATE_BLOCKED;
+    if(!state->engine)return THY_STATE_UNAVAILABLE;
+    state->reset_group=thy_menu_rows[row].group;state->reset_track=UINT8_MAX;
+    for(unsigned kind=0;kind<9u;++kind)state->reset_targets[kind]=0u;
+    for(unsigned r=0;r<THY_MENU_ROW_COUNT;++r){unsigned kind=thy_menu_rows[r].instance_kind;
+        if(kind&&kind<9u)state->reset_targets[kind]=current_instance(state,(uint16_t)r);}
+    if(row==THY_ROW_SEQUENCER_RESETTRACK){
+        if(!state->engine->sequencer_ui.options_open)return THY_STATE_BLOCKED;
+        state->reset_track=state->engine->sequencer_ui.options_track;
+    }
+    if(state->reset_epoch==UINT32_MAX)return THY_STATE_BLOCKED;
+    ++state->reset_epoch;state->reset_open=1u;state->reset_confirm=0u;state->notice=THY_NOTICE_NONE;
+    state->transition_direction=-1;if(++state->transition_revision==0u)state->transition_revision=1u;
+    return THY_STATE_OK;
+}
+int thy_state_reset_resolve(thy_state *state,uint32_t epoch,int confirmed)
+{
+    if(!state||!state->reset_open||epoch!=state->reset_epoch||(confirmed!=0&&confirmed!=1))return THY_STATE_BLOCKED;
+    if(confirmed){
+        int result=thy_engine_reset_options((thy_engine *)state->engine,state->reset_group,state->reset_targets,state->reset_track);
+        if(result!=THY_STATE_OK)return fail(state,result,result==THY_STATE_BLOCKED?THY_NOTICE_RELEASE:THY_NOTICE_ADAPTER);
+        uint16_t row=state->reset_track<THY_SEQ_TRACKS?THY_ROW_SEQUENCER_RESETTRACK:
+            (uint16_t)(thy_menu_groups[state->reset_group].first_row+thy_menu_groups[state->reset_group].row_count-1u);
+        /* Reset only the selected design/text scope, never action rows. */
+        const thy_menu_group *group=&thy_menu_groups[state->reset_group];
+        for(unsigned n=0;n<group->row_count;++n){unsigned r=group->first_row+n;const thy_menu_row *d=&thy_menu_rows[r];
+            if(state->reset_track<THY_SEQ_TRACKS&&!thy_state_track_row((uint16_t)r))continue;
+            if(state->reset_track==UINT8_MAX&&thy_state_track_row((uint16_t)r))continue;
+            unsigned instance=state->reset_targets[d->instance_kind];
+            if(instance>=thy_state_instance_count((uint16_t)r))continue;
+            if(d->storage_offset!=UINT16_MAX)state->values[d->storage_offset+instance]=default_scalar((uint16_t)r,(uint8_t)instance);
+            if(d->text_offset!=UINT16_MAX)default_text((uint16_t)r,(uint8_t)instance,state->texts[d->text_offset+instance]);
+        }
+        record(state,THY_STATE_SETTING_APPLIED,row,0u,1,NULL);state->notice=THY_NOTICE_APPLIED;
+    }else state->notice=THY_NOTICE_CANCELLED;
+    state->reset_open=state->reset_confirm=0u;state->reset_track=UINT8_MAX;
+    state->transition_direction=1;if(++state->transition_revision==0u)state->transition_revision=1u;
+    return THY_STATE_OK;
+}
 int thy_state_begin_edit(thy_state *state, uint16_t row) {
     if(state && state->engine)thy_engine_repeat_cancel((thy_engine *)state->engine);
     const thy_menu_row *definition;
     if (!state || row >= THY_MENU_ROW_COUNT) return fail(state, THY_STATE_INVALID, THY_NOTICE_INVALID);
+    if(state->reset_open)return fail(state,THY_STATE_BLOCKED,THY_NOTICE_RELEASE);
+    if(thy_state_reset_row(row))return thy_state_reset_begin(state,row);
     definition = &thy_menu_rows[row];
     if (definition->status == THY_MENU_DESIGN && !state->design_editing &&
         !(definition->type == THY_MENU_INFO && definition->group == thy_menu_rows[THY_ROW_ENGINES_PLAY].group))
@@ -649,8 +710,9 @@ static void hierarchy(thy_state *state, uint8_t level, uint8_t group) {
 
 int thy_state_focus(thy_state *state, uint8_t group, uint16_t row) {
     if (!state || group >= THY_MENU_GROUP_COUNT || (row != THY_STATE_NO_ROW && (row >= THY_MENU_ROW_COUNT || thy_menu_rows[row].group != group))) return THY_STATE_INVALID;
+    if(state->reset_open)return THY_STATE_BLOCKED;
     if(state->engine && state->engine->sequencer_ui.options_open &&
-        group!=thy_menu_rows[THY_ROW_SEQUENCER_OPEN].group)return THY_STATE_BLOCKED;
+        group!=thy_menu_rows[THY_ROW_SEQUENCER_OPEN].group && state->engine->sequencer_ui.options_open)return THY_STATE_BLOCKED;
     if (row != THY_STATE_NO_ROW && !thy_state_row_visible(state, row))
         return fail(state, THY_STATE_UNAVAILABLE, THY_NOTICE_UNAVAILABLE);
     if (state->editing) (void)thy_state_cancel(state);
@@ -666,14 +728,16 @@ void thy_state_open(thy_state *state) {
     if (!state) return;
     state->about_open = 0u;
     state->info_open = 0u;
+    state->reset_open=state->reset_confirm=0u;state->reset_track=UINT8_MAX;
     if (state->editing) (void)thy_state_cancel(state);
-    hierarchy(state, THY_STATE_GROUPS, state->group_index);
+    hierarchy(state, THY_STATE_GROUPS, thy_state_group_visible(state->group_index)?state->group_index:thy_menu_rows[THY_ROW_ENGINES_PLAY].group);
 }
 
 void thy_state_play(thy_state *state) {
     if (!state) return;
     state->about_open = 0u;
     state->info_open = 0u;
+    state->reset_open=state->reset_confirm=0u;state->reset_track=UINT8_MAX;
     if (state->editing) (void)thy_state_cancel(state);
     hierarchy(state, THY_STATE_PLAY, state->group_index);
 }
@@ -689,6 +753,12 @@ uint16_t thy_state_current_row(const thy_state *state) {
 int thy_state_navigate(thy_state *state, uint8_t action) {
     const thy_menu_group *group;
     if (!state || action > THY_STATE_RIGHT) return THY_STATE_INVALID;
+    if(state->reset_open){
+        if(action==THY_STATE_SELECT){thy_state_play(state);return THY_STATE_OK;}
+        if(action==THY_STATE_LEFT)return thy_state_reset_resolve(state,state->reset_epoch,0);
+        if(action==THY_STATE_UP||action==THY_STATE_DOWN){state->reset_confirm^=1u;state->notice=THY_NOTICE_NONE;return THY_STATE_OK;}
+        return thy_state_reset_resolve(state,state->reset_epoch,state->reset_confirm);
+    }
     if (action == THY_STATE_SELECT) {
         if (state->level == THY_STATE_PLAY && !state->about_open) thy_state_open(state);
         else thy_state_play(state);
@@ -717,10 +787,20 @@ int thy_state_navigate(thy_state *state, uint8_t action) {
         return thy_state_adjust(state, action == THY_STATE_UP ? 1 : -1);
     }
     group = &thy_menu_groups[state->group_index];
-    if (action == THY_STATE_LEFT) hierarchy(state, state->level == THY_STATE_ROWS ? THY_STATE_GROUPS : THY_STATE_PLAY, state->group_index);
+    if (action == THY_STATE_LEFT) {
+        if(state->level==THY_STATE_ROWS && !thy_state_group_visible(state->group_index)) {
+            uint16_t back=state->group_index==thy_menu_rows[THY_ROW_ENGINESETTINGS_HARMONY].group?THY_ROW_ENGINES_SETTINGS:
+                state->group_index==thy_menu_rows[THY_ROW_HARMONY_VIEW].group?THY_ROW_ENGINESETTINGS_HARMONY:THY_ROW_ENGINESETTINGS_SEQUENCER;
+            return thy_state_focus(state,thy_menu_rows[back].group,back);
+        }
+        hierarchy(state, state->level == THY_STATE_ROWS ? THY_STATE_GROUPS : THY_STATE_PLAY, state->group_index);
+    }
     else if (action == THY_STATE_UP || action == THY_STATE_DOWN) {
         int delta = action == THY_STATE_UP ? -1 : 1;
-        if (state->level == THY_STATE_GROUPS) state->group_index = (uint8_t)((state->group_index + delta + THY_MENU_GROUP_COUNT) % THY_MENU_GROUP_COUNT);
+        if (state->level == THY_STATE_GROUPS) {
+            do {state->group_index=(uint8_t)((state->group_index+delta+THY_MENU_GROUP_COUNT)%THY_MENU_GROUP_COUNT);}
+            while(!thy_state_group_visible(state->group_index));
+        }
         else {
             unsigned cursor = state->cursors[state->group_index];
             if (cursor >= group->row_count) cursor = 0u;
@@ -753,16 +833,19 @@ int thy_state_format(const thy_state *state, uint16_t row, int use_edit, char *o
     editing = use_edit && state->editing && state->edit_row == row;
     if (definition->type == THY_MENU_ACTION) {
         const char *label = definition->status == THY_MENU_LIVE ? "Run" : "Planned";
-        if (row == THY_ROW_ENGINES_PLAY && state->instrument)
-            label = state->instrument->engine_kind == THY_PLAY_ENGINE_PLAY ? "Active" : "Select";
-        if (row == THY_ROW_ENGINES_ARP) label = state->engine &&
-            state->engine->arps[state->engine->arp_target < 2u ? state->engine->arp_target : 0u].config.enabled ?
-                "ON/OPEN" : "Enable";
-        if (row == THY_ROW_ENGINES_SEQUENCER && state->instrument)
-            label = state->instrument->engine_kind == THY_PLAY_ENGINE_SEQUENCER ? "Active" : "Open";
+        if (definition->group == thy_menu_rows[THY_ROW_ENGINES_PLAY].group) {
+            label="Open";
+            int engine=row==THY_ROW_ENGINES_PLAY?THY_PLAY_ENGINE_PLAY:row==THY_ROW_ENGINES_HARMONY?THY_PLAY_ENGINE_HARMONY:row==THY_ROW_ENGINES_SEQUENCER?THY_PLAY_ENGINE_SEQUENCER:-1;
+            if(engine>=0)label=state->instrument&&state->instrument->engine_kind==engine?"Active":"Select";
+        }else if(definition->group==thy_menu_rows[THY_ROW_ENGINESETTINGS_HARMONY].group)label="Open";
+        else if(row==THY_ROW_HARMONY_APPLY)label="Apply";
+        else if(row==THY_ROW_ARPS_OPEN||row==THY_ROW_SEQUENCER_OPEN||row==THY_ROW_SEQUENCER_HELP)label="Open";
         copy_text(out, capacity, label); return THY_STATE_OK;
     }
     if (definition->type == THY_MENU_TEXT || definition->type == THY_MENU_INFO) {
+        if (definition->type == THY_MENU_INFO && definition->group == thy_menu_rows[THY_ROW_ENGINES_PLAY].group) {
+            copy_text(out, capacity, "Open"); return THY_STATE_OK;
+        }
         copy_text(out, capacity, editing ? state->edit_text : thy_state_get_text(state, row)); return THY_STATE_OK;
     }
     if (editing) value = state->edit_value;

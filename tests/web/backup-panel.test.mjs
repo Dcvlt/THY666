@@ -80,9 +80,10 @@ test('Backups mounts without connecting or reading, clearly separates preview an
   const f = fixture();
   assert.deepEqual(f.calls, []); assert.equal(f.engineReads(), 0);
   assert.equal(f.find('backupAction', 'read').disabled, true); assert.equal(f.find('backupAction', 'restore').disabled, true);
-  assert.match(f.mount.textContent, /Connect to back up the physical device/);
-  assert.match(f.mount.textContent, /Browser files are separate from device backups/);
-  assert.match(f.mount.textContent, /Excludes firmware, bootloader, raw flash and unsaved drafts/);
+  assert.match(f.mount.textContent, /Connect your board to save or restore a backup/);
+  assert.match(f.mount.textContent, /Restore requires the same board/);
+  assert.match(f.mount.textContent, /not firmware, the bootloader or unsaved edits/);
+  assert.equal(f.find('backupReadout', 'notice').hidden, true);
   assert.equal(f.find('backupAction', 'help').dataset.help, 'backup');
   f.client.connected = true; f.panel.refresh(); assert.equal(f.find('backupAction', 'read').disabled, false);
   f.client.busy = true; f.panel.refresh(); assert.equal(f.find('backupAction', 'read').disabled, true);
@@ -139,8 +140,7 @@ test('confirmed restore supplies exact bytes and calls onApplied only after save
   f.fire(f.find('backupAction', 'restore')); f.fire(f.find('backupAction', 'confirm')); await flush();
   assert.equal(f.calls.length, 1); assert.equal(f.calls[0][0], 'restore'); assert.deepEqual(f.calls[0][1], f.bytes);
   assert.deepEqual(f.applied, [{ verified: true, generation: 20 }]);
-  assert.match(f.find('backupReadout', 'notice').textContent, /Saved and read back verified/);
-  assert.match(f.find('backupReadout', 'notice').textContent, /cold reboot is a separate check/);
+  assert.equal(f.find('backupReadout', 'notice').textContent, 'Restore complete. Settings saved and verified.');
 });
 
 test('applied-but-unverified or save-error results preserve the selected file and never claim success', async () => {
@@ -169,4 +169,51 @@ test('destroy removes listeners and ignores an already pending read without down
   assert.equal(f.mount.children.length, 0); assert.deepEqual(f.downloads, []); assert.deepEqual(f.applied, []);
   assert.equal(f.document.listeners.get('click').length, 0); assert.equal(f.document.listeners.get('keydown').length, 0);
   assert.equal(f.panel.refresh(), null); f.panel.destroy();
+});
+
+test('Backup and Restore choices reveal only their own flow without device access', () => {
+  const f=fixture({connected:true});
+  const save=f.find('backupAction','choose-save'),restore=f.find('backupAction','choose-restore');
+  assert.equal(save.attributes['aria-expanded'],'false');assert.equal(restore.attributes['aria-expanded'],'false');
+  f.fire(save);assert.equal(save.attributes['aria-expanded'],'true');assert.equal(restore.attributes['aria-expanded'],'false');
+  f.fire(restore);assert.equal(save.attributes['aria-expanded'],'false');assert.equal(restore.attributes['aria-expanded'],'true');
+  assert.deepEqual(f.calls,[]);f.panel.destroy();
+});
+
+
+test('choosing another restore file clears the previous completed journey', async () => {
+  const f=fixture({connected:true});f.fire(f.find('backupAction','choose-restore'));
+  f.select();await flush();f.fire(f.find('backupAction','restore'));
+  f.fire(f.find('backupAction','confirm'));await flush();
+  const current=()=>f.all().find(n=>n.attributes['aria-current']==='step')?.textContent;
+  assert.equal(current(),'3 · Verified');
+  f.select(f.bytes,'next.thyb');await flush();assert.equal(current(),'2 · Review & restore');
+  f.panel.destroy();
+});
+
+
+test('flow choices stay enabled through background polls but lock during a backup', async () => {
+  let finish;
+  const f = fixture({ connected: true, read: () => new Promise(resolve => { finish = resolve; }) });
+  const save = f.find('backupAction', 'choose-save');
+  const restore = f.find('backupAction', 'choose-restore');
+  for (const busy of [true, false, true, false]) {
+    f.client.busy = busy; f.panel.refresh();
+    assert.equal(save.disabled, false);
+    assert.equal(restore.disabled, false);
+    f.fire(restore);
+    assert.equal(restore.attributes['aria-expanded'], 'true');
+    f.fire(save);
+    assert.equal(save.attributes['aria-expanded'], 'true');
+  }
+  assert.deepEqual(f.calls, []);
+  f.fire(f.find('backupAction', 'read'));
+  assert.equal(save.disabled, true);
+  assert.equal(restore.disabled, true);
+  f.fire(restore);
+  assert.equal(save.attributes['aria-expanded'], 'true');
+  finish(f.bytes); await flush();
+  assert.equal(save.disabled, false);
+  assert.equal(restore.disabled, false);
+  f.panel.destroy();
 });

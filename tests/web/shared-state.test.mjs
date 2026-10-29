@@ -27,7 +27,7 @@ const layout = Array.from({ length: 96 }, (_, pad) => ({
 test('WASM exposes the full bounded C menu state with typed committed values', async () => {
   const { state } = await fresh();
   assert.equal(state.rowCount, MENU_ROWS.length);
-  assert.equal(STUDIO_MENU.groups.length, 13);
+  assert.equal(STUDIO_MENU.groups.length, 15);
   assert.equal(STUDIO_MENU.groups[0].id, 'engines');
   assert.ok(state.info().stateBytes > 0 && state.info().stateBytes <= 8192);
   assert.equal(get(state, 'performance.root'), 0);
@@ -78,8 +78,8 @@ test('the engine hub exposes real workspaces and unavailable engines without cha
   assert.equal(engine.sequencer.snapshot().open,true);
   assert.deepEqual(engine.owner(0),owner);
   assert.ok(state.navigate('select').ok);
-  assert.equal(state.session().mode,1);
-  for (const id of ['engines.drums','engines.lightboard','engines.user']) {
+  assert.equal(state.session().mode,2);
+  for (const id of ['engines.drums']) {
     assert.equal(MENU_ROWS[index(id)].type,'info');
     assert.ok(state.begin(index(id)).ok,id);
     assert.equal(state.info().editing,0);
@@ -183,6 +183,7 @@ test('all visible information rows require explicit entry in the shared C frameb
       assert.equal(state.info().level, 0);
       assert.ok(state.navigate('select').ok);
       assert.ok(state.navigate('right').ok);
+      if (STUDIO_MENU.groups[group].nested) assert.ok(state.focus(group, row).ok);
       assert.equal(state.cursor(group), cursor, definition.id);
       assert.deepEqual(state.frame({ animations: false }), list, definition.id);
       assert.equal(state.info().revision, focused.revision, definition.id);
@@ -195,7 +196,7 @@ test('all visible information rows require explicit entry in the shared C frameb
     assert.ok(engine.release(0).ok);
     assert.equal(engine.drain().filter(event => event.destination === 2 && event.status === 0x83).length, 3);
   }
-  const liveInformationIds = ['engines.drums','engines.lightboard','engines.user','arps.trigger','expression.help','sensitivity.scope','sensitivity.customCurve','system.storage'];
+  const liveInformationIds = ['engines.drums','arps.trigger','expression.help','sensitivity.scope','sensitivity.customCurve','system.storage','system.resources'];
   assert.deepEqual(information.filter(row => row.status === 'live' || row.group === 'engines').map(row => row.id).sort(), [...liveInformationIds].sort());
   assert.equal(counts[0], liveInformationIds.length);
   assert.equal(counts[1], information.length);

@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "../../core/thy_lighting.h"
+#include "../../core/thy_harmony_workspace.h"
 
 static thy_core core, core_before;
 static thy_instrument instrument;
@@ -303,7 +304,12 @@ static void chromatic_contrast_and_distinct_palette(void)
     config.key_contrast = 1u;
     instrument.performance.melody_layout = 8u;
     render(6u);
-    assert(frame[60] == frame[64]); /* All-lit explicitly disables key dimming. */
+    assert(frame[60] == 0x020200u && frame[64] == 0x030300u);
+    /* All notes stays chromatic and honors the same saved contrast switch. */
+    config.key_contrast = 0u;
+    render(7u);
+    assert(frame[60] == frame[64]);
+    config.key_contrast = 1u;
     config.held_style = 2u;
     assert(!thy_lighting_config_valid(&config));
     config.held_style = 0u; config.held_feedback = 2u;
@@ -385,6 +391,74 @@ static void true_bass_and_unrelated_explicit_owner(void)
     puts("lighting actual bass survives inversion/strum and unrelated explicit owners reject catalog metadata passed");
 }
 
+static unsigned harmony_overlay_calls;
+static int harmony_test_overlay(void *context, uint8_t logical, uint16_t grb[3])
+{
+    (void)context;
+    if (logical != 0u) return 0;
+    ++harmony_overlay_calls;
+    return thy_lighting_harmony_color(thy_lighting_note_color(60u),
+        THY_HARMONY_SELECTED, grb);
+}
+
+static void harmony_roles_preserve_hues_and_off_guards(void)
+{
+    static const uint8_t roles[] = {THY_HARMONY_OTHER, THY_HARMONY_CURRENT,
+        THY_HARMONY_SUGGESTED, THY_HARMONY_SELECTED};
+    /* Resting pads remain visible; advice and selection rise above that floor. */
+    static const unsigned peaks[] = {3u, 4u, 6u, 8u};
+    uint16_t grb[3], previous[3] = {0u};
+    for (unsigned palette = 0u; palette < 2u; ++palette)
+        for (unsigned pc = 0u; pc < 12u; ++pc) {
+            uint32_t color = thy_lighting_note_color_palette((uint8_t)pc, (uint8_t)palette);
+            for (unsigned role = 0u; role < 4u; ++role) {
+                assert(thy_lighting_harmony_color(color, roles[role], grb));
+                unsigned peak = 0u;
+                for (unsigned c = 0u; c < 3u; ++c) {
+                    unsigned wire = (grb[c] + 255u) / 512u;
+                    assert(grb[c] <= 4095u);
+                    if (wire > peak) peak = wire;
+                    if (!((color >> (16u - c * 8u)) & 255u)) assert(grb[c] == 0u);
+                    if (role) assert(grb[c] >= previous[c]);
+                }
+                assert(peak == peaks[role]);
+                memcpy(previous, grb, sizeof grb);
+            }
+        }
+    assert(thy_lighting_harmony_color(0xffffffu, THY_HARMONY_CURRENT, grb));
+    assert(grb[0] == 2304u && grb[1] == 2304u && grb[2] == 2304u);
+    assert(thy_lighting_harmony_color(0u, THY_HARMONY_OTHER, grb));
+    assert(grb[0] == 0u && grb[1] == 0u && grb[2] == 0u);
+    grb[0] = 123u; grb[1] = 456u; grb[2] = 789u;
+    memcpy(previous, grb, sizeof grb);
+    assert(!thy_lighting_harmony_color(0x1000000u, THY_HARMONY_CURRENT, grb));
+    assert(!memcmp(previous, grb, sizeof grb));
+    assert(!thy_lighting_harmony_color(0xffffffu, 4u, grb));
+    assert(!memcmp(previous, grb, sizeof grb));
+    assert(!thy_lighting_harmony_color(0xffffffu, THY_HARMONY_CURRENT, NULL));
+
+    setup();
+    instrument.light_overlay = harmony_test_overlay;
+    harmony_overlay_calls = 0u;
+    render(0u);
+    assert(frame[0] == 0x000800u && harmony_overlay_calls == 1u);
+    config.enabled = 0u;
+    render(1u);
+    assert(frame[0] == 0u && harmony_overlay_calls == 1u);
+    config.enabled = 1u;
+    instrument.input_enabled = 0u;
+    render(2u);
+    assert(frame[0] == 0u && harmony_overlay_calls == 1u);
+    instrument.input_enabled = 1u;
+    instrument.sensors[0].blocked = 1u;
+    render(3u);
+    assert(frame[0] == 0u && harmony_overlay_calls == 1u);
+    instrument.sensors[0].blocked = 0u;
+    render(4u);
+    assert(frame[0] == 0x000800u && harmony_overlay_calls == 2u);
+    puts("lighting Harmony roles retain note hues, distinct wire amplitudes and global OFF/input/blocked guards passed");
+}
+
 int main(void)
 {
     idle_notes_metadata_and_ranges();
@@ -396,6 +470,7 @@ int main(void)
     chromatic_contrast_and_distinct_palette();
     explicit_context_control_colors();
     true_bass_and_unrelated_explicit_owner();
-    puts("9 shared note lighting regression tests passed");
+    harmony_roles_preserve_hues_and_off_guards();
+    puts("10 shared note lighting regression tests passed");
     return 0;
 }

@@ -308,6 +308,7 @@ int main(void)
     board_boot_stage(5u);
     if (board_pads_request(1) != DIAG_SUCCESS) acquisition_failed = true;
     for (;;) {
+        board_resources_task(board_millis());
         thy_diag_usb_task();
         thy_instrument_din_task(board_millis());
         const thy_diag_usb_stats *usb = thy_diag_usb_status();

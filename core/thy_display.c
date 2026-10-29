@@ -181,7 +181,10 @@ int thy_display_submit_scene(thy_display *display,
  * headers or footers. Each group's cursor rotates under constant churn. */
 static unsigned group_offset(unsigned index, unsigned priority)
 {
-    static const uint8_t other_pages[5] = {0u, 1u, 5u, 6u, 7u};
+    /* Five-note layouts also occupy pages 1 and 5. Within the regular
+     * share, service those before the title; group sizes and fairness stay
+     * unchanged, including under dense full-screen churn. */
+    static const uint8_t other_pages[5] = {1u, 5u, 0u, 6u, 7u};
     unsigned page = priority ? 2u + index / 128u : other_pages[index / 128u];
     return page * 128u + index % 128u;
 }

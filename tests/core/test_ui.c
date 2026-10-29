@@ -38,6 +38,38 @@ static int matches_footer(const uint8_t *actual, const char *label)
     return 1;
 }
 
+static int test_content_rules(void)
+{
+    struct { uint8_t before[16], pixels[1024], after[16]; } g;
+    CHECK(thy_ui_text_width("C MAJ",26)==24u);
+    CHECK(thy_ui_text_width("C MAJ",1)==4u);
+    CHECK(thy_ui_text_width(NULL,26)==0u);
+    for(unsigned below=0;below<2;below++) {
+        memset(&g,0xa5,sizeof g);
+        memcpy(other,g.pixels,sizeof other);
+        thy_ui_draw_rule(g.pixels,9,108,12,"C MAJ",26,(int)below);
+        for(unsigned y=0;y<64;y++)for(unsigned x=0;x<128;x++) {
+            if(y<8||y>10||x>=108)CHECK(pixel_at(g.pixels,x,y)==pixel_at(other,x,y));
+        }
+        for(unsigned x=0;x<108;x++) {
+            unsigned depth=x>=10&&x<=38?0:(x==9||x==39?1:2);
+            unsigned expected=below?10-depth:8+depth;
+            for(unsigned y=8;y<=10;y++)CHECK(pixel_at(g.pixels,x,y)==(y==expected));
+        }
+        for(unsigned n=0;n<16;n++)CHECK(g.before[n]==0xa5&&g.after[n]==0xa5);
+    }
+    memset(frame,0,sizeof frame);
+    thy_ui_draw_rule(frame,9,128,0,NULL,26,0);
+    for(unsigned x=0;x<128;x++)CHECK(pixel_at(frame,x,10));
+    thy_ui_draw_rule(frame,9,999,127,"LONG TITLE",999,0);
+    thy_ui_draw_rule(NULL,9,128,2,"C",1,0);
+    memcpy(other,frame,sizeof frame);
+    thy_ui_draw_rule(frame,0,128,2,"C",1,0);
+    thy_ui_draw_rule(frame,63,128,2,"C",1,0);
+    CHECK(memcmp(frame,other,sizeof frame)==0);
+    return 1;
+}
+
 static int test_pitch_names(void)
 {
     static const struct { int midi; const char *name; } cases[] = {
@@ -71,7 +103,7 @@ static int test_font_clipping_and_page_geometry(void)
         for (unsigned y = 0; y < 5u; ++y)
             CHECK(pixel_at(guarded.pixels, x + 2u, y + 1u) == !!(c[x] & (1u << y)));
     for (unsigned y = 0; y < 5u; ++y) CHECK(!pixel_at(guarded.pixels, 126, y + 1u));
-    for (unsigned x = 0; x < 128u; ++x) CHECK(pixel_at(guarded.pixels, x, 9));
+    for (unsigned x = 0; x < 128u; ++x) CHECK(pixel_at(guarded.pixels,x,8)+pixel_at(guarded.pixels,x,9)+pixel_at(guarded.pixels,x,10)==1);
     thy_ui_render(&comparison, &instrument,
         "CCCCCCCCCCCCCCCCCCCCCCCCC", 1, 1, 5000, other);
     CHECK(memcmp(guarded.pixels, other, sizeof other) == 0);
@@ -183,10 +215,10 @@ static int test_bounded_animation_wrap_and_reduce_motion(void)
 
 int main(void)
 {
-    if (!test_pitch_names() || !test_font_clipping_and_page_geometry() ||
+    if (!test_content_rules() || !test_pitch_names() || !test_font_clipping_and_page_geometry() ||
         !test_shared_live_note_rendering_and_routes() ||
         !test_menu_navigation_values_and_notice() ||
         !test_bounded_animation_wrap_and_reduce_motion()) return 1;
-    printf("5 shared UI scenarios passed (%u assertions)\n", assertions);
+    printf("6 shared UI scenarios passed (%u assertions)\n", assertions);
     return 0;
 }

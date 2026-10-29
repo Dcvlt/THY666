@@ -10,6 +10,7 @@ MEMORY {
 }
 __stack_top__ = ORIGIN(SRAM) + LENGTH(SRAM);
 __stack_limit__ = __stack_top__ - 8K;
+__flash_used_end__ = LOADADDR(.data) + SIZEOF(.data);
 __settings_start__ = ORIGIN(SETTINGS);
 __settings_end__ = ORIGIN(SETTINGS) + LENGTH(SETTINGS);
 SECTIONS {

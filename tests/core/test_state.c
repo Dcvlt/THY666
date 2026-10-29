@@ -397,7 +397,7 @@ static int test_invalid_inputs_and_bounded_storage(void)
 static int test_information_descriptions_require_explicit_entry(void)
 {
     static const char *const engines[] = {
-        "engines.arp", "engines.sequencer", "engines.drums", "engines.lightboard", "engines.user"
+        "engines.harmony", "engines.sequencer", "engines.arp", "engines.drums"
     };
     initialize();
     CHECK(thy_state_set_design_mode(S, 0u) == THY_STATE_OK);
@@ -407,6 +407,9 @@ static int test_information_descriptions_require_explicit_entry(void)
     for (unsigned index = 0u; index < sizeof engines / sizeof engines[0]; ++index) {
         CHECK(thy_state_navigate(S, THY_STATE_DOWN) == THY_STATE_OK);
         CHECK(thy_state_current_row(S) == row(engines[index]));
+        char label[16];
+        CHECK(thy_state_format(S,row(engines[index]),0,label,sizeof label)==THY_STATE_OK);
+        CHECK(strcmp(label,index < 2u ? "Select" : "Open")==0);
         CHECK(!S->info_open && !S->editing && !S->about_open);
         CHECK(S->transition_revision == initial_transition); /* Highlighting stays in the list. */
     }
@@ -459,6 +462,8 @@ static int test_information_descriptions_require_explicit_entry(void)
             CHECK(S->level == THY_STATE_PLAY && !S->info_open);
             CHECK(thy_state_navigate(S, THY_STATE_SELECT) == THY_STATE_OK);
             CHECK(thy_state_navigate(S, THY_STATE_RIGHT) == THY_STATE_OK);
+            if (!thy_state_group_visible(definition->group))
+                CHECK(thy_state_focus(S, definition->group, selected) == THY_STATE_OK);
             CHECK(thy_state_current_row(S) == selected && !S->info_open);
             CHECK(thy_state_begin_edit(S, selected) == THY_STATE_OK);
             CHECK(S->info_open);

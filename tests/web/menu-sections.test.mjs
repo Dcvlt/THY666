@@ -3,15 +3,19 @@ import assert from 'node:assert/strict';
 import { STUDIO_MENU, MENU_ROWS } from '../../web/studio-menu.js';
 
 test('all categories put basic controls before one advanced section without selectable separator rows', () => {
-  assert.equal(STUDIO_MENU.groups.length, 13);
-  assert.equal(MENU_ROWS.length, 298);
+  assert.equal(STUDIO_MENU.groups.length, 15);
+  assert.equal(MENU_ROWS.length, 348);
   for (const group of STUDIO_MENU.groups) {
     assert.ok(group.rows.some(row => !row.advanced), group.id);
-    assert.ok(group.rows.some(row => row.advanced), group.id);
+    if(!['engines','engineSettings'].includes(group.id)) assert.ok(group.rows.some(row => row.advanced), group.id);
     const flags = group.rows.map(row => row.advanced);
     assert.ok(flags.every(value => typeof value === 'boolean'), group.id);
     assert.deepEqual(flags, [...flags].sort(), group.id);
     assert.ok(group.rows.every(row => row.type !== 'separator' && !row.id.includes('separator')), group.id);
+    if(!['engines','engineSettings'].includes(group.id)) {
+      assert.equal(group.rows.at(-1).id, `${group.id}.resetOptions`, group.id);
+      assert.equal(group.rows.at(-1).icon, 'reset', group.id);
+    }
   }
 });
 
@@ -127,8 +131,9 @@ test('one Play engine retains layout options and Circle of fifths uses its reser
   assert.equal(engines.id, 'engines');
   assert.equal(engines.rows[0].id, 'engines.play');
   assert.equal(engines.rows[0].binding, 'core.engine.play');
-  assert.deepEqual(engines.rows.filter(row => row.type === 'action').map(row => row.id), ['engines.play', 'engines.arp', 'engines.sequencer']);
-  assert.deepEqual(engines.rows.slice(0,3).map(row => row.binding), ['core.engine.play','arps.activate','sequencer.open']);
+  assert.deepEqual(engines.rows.map(row => row.id), ['engines.play', 'engines.harmony', 'engines.sequencer', 'engines.arp', 'engines.drums', 'engines.settings']);
+  assert.deepEqual(engines.rows.slice(0,4).map(row => row.binding), ['core.engine.play','harmony.open','sequencer.open','arps.activate']);
+  for(const id of ['engines.shortcut','engines.assignment']) assert.equal(MENU_ROWS.find(row=>row.id===id).group,'controls');
   assert.equal(MENU_ROWS.some(row => row.id === 'engines.scales' || row.id === 'engines.chromatic'), false);
   const layouts = MENU_ROWS.find(row => row.id === 'performance.melodyLayout').options;
   assert.equal(layouts.find(option => option.value === 'condensed').label, 'Scale degrees');

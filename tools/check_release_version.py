@@ -1,5 +1,6 @@
 """Check exact release-tag and package version agreement; never modifies files."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -24,6 +25,10 @@ def check(tag: str | None = None) -> str:
                 raise ValueError(f'{folder}/Cargo.lock version mismatch')
     if json.loads((ROOT / 'desktop/tauri.conf.json').read_text())['version'] != version:
         raise ValueError('Tauri version mismatch')
+    updater_lock = (ROOT / 'updater/Cargo.lock').read_bytes()
+    identity = hashlib.sha256(updater_lock).hexdigest()
+    if f'Cargo.lock SHA-256: {identity}\n'.encode() not in (ROOT / 'updater/THIRD_PARTY_LICENSES.txt').read_bytes():
+        raise ValueError('Updater dependency notices must match the release Cargo.lock')
     return version
 
 

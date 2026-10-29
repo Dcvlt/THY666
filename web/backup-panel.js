@@ -8,7 +8,8 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
     throw new TypeError('Backups require a DOM mount and the shared device client.');
   const doc = mount.ownerDocument, prefix = `thy-backup-${++panelSequence}`, listeners = [];
   let disposed = false, working = false, selection = null, fileTicket = 0, dialog = null, returnFocus = null;
-  let notice = 'Connect to back up the physical device. No backup file is downloaded or restored automatically.';
+  let notice = '',flow='',completed=false;
+  const journey=doc.createElement('ol');journey.className='backup-journey';journey.setAttribute('aria-label','Backup steps');
   const el = (tag, className = '', text) => {
     const node = doc.createElement(tag); if (className) node.className = className;
     if (text !== undefined) node.textContent = String(text); return node;
@@ -21,10 +22,18 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
     const node = el('button', 'button', text); node.type = 'button'; node.dataset.backupAction = action; return node;
   };
   const root = el('section', 'panel backup-panel'); root.setAttribute('aria-labelledby', `${prefix}-title`);
-  const heading = el('div', 'panel-heading'), title = el('h2', '', 'Backups'); title.id = `${prefix}-title`;
+  const heading = el('div', 'panel-heading'), title = el('h2', '', 'Save or restore'); title.id = `${prefix}-title`;
   const help = button('?', 'help'); help.dataset.help = 'backup'; help.setAttribute('aria-label', 'Help with backups');
   heading.append(title, help);
-  const coverage = el('p', 'panel-copy', 'Complete applied configuration: settings, per-pad overrides, custom library and current song. Excludes firmware, bootloader, raw flash and unsaved drafts.');
+  const coverage = el('p', 'panel-copy', 'Save your settings, pad adjustments, custom library and current song.');
+  const flows = el('div', 'backup-flow-choices');
+  const saveChoice = button('', 'choose-save'), restoreChoice = button('', 'choose-restore');
+  for (const [choice, icon, label, copy] of [[saveChoice, '↓', 'Back up', 'Save a copy on this computer.'], [restoreChoice, '↑', 'Restore', 'Apply a previously saved backup.']]) {
+    choice.className = 'backup-flow-choice';
+    const glyph = el('span', 'backup-flow-icon', icon); glyph.setAttribute('aria-hidden', 'true');
+    choice.append(glyph, el('strong', '', label), el('span', '', copy));
+    choice.setAttribute('aria-expanded', 'false'); flows.append(choice);
+  }
   const body = el('div', 'pad-inspector backup-body');
   const identity = el('p', 'backup-identity'); identity.dataset.backupReadout = 'identity';
   const actions = el('div', 'backup-actions');
@@ -37,8 +46,23 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
   const restore = button('Restore backup', 'restore');
   const status = el('p', 'library-notice backup-notice'); status.dataset.backupReadout = 'notice';
   status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
-  const preview = el('p', 'inspector-notice', 'Browser files are separate from device backups. This panel only restores verified backups from this board.');
-  body.append(identity, actions, choose, fileSummary, restore, status, preview); root.append(heading, coverage, body);
+  const preview = el('details', 'backup-limits');
+  preview.append(el('summary', '', 'Backup limits'), el('p', 'inspector-notice', 'Backups contain saved configuration, not firmware, the bootloader or unsaved edits. Restore requires the same board.'));
+  const saveFlow = el('section', 'backup-flow'), restoreFlow = el('section', 'backup-flow');
+  saveFlow.id = `${prefix}-save`; restoreFlow.id = `${prefix}-restore`;
+  saveChoice.setAttribute('aria-controls', saveFlow.id); restoreChoice.setAttribute('aria-controls', restoreFlow.id);
+  saveFlow.append(el('h3', '', 'Save your board'), el('p', '', 'Release all pads, then read and download your backup.'), actions);
+  restoreFlow.append(el('h3', '', 'Choose your backup'), choose, fileSummary, restore);
+  saveFlow.hidden = restoreFlow.hidden = true;
+  function showFlow(kind) {
+    if (working) return;flow=kind;completed=false;notice='';
+    saveFlow.hidden = kind !== 'save'; restoreFlow.hidden = kind !== 'restore';
+    saveChoice.setAttribute('aria-expanded', String(kind === 'save'));
+    restoreChoice.setAttribute('aria-expanded', String(kind === 'restore'));refresh();
+  }
+  listen(saveChoice, 'click', () => showFlow('save'));
+  listen(restoreChoice, 'click', () => showFlow('restore'));
+  body.append(identity, flows, journey, saveFlow, restoreFlow, status, preview); root.append(heading, coverage, body);
   mount.replaceChildren(root);
 
   function selectionStatus() {
@@ -53,8 +77,15 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
     if (disposed) return null;
     const connected = Boolean(client.connected), busy = working || Boolean(client.busy), current = selectionStatus();
     const board = client.identity;
-    identity.textContent = connected && board ? `Connected board ${board.uid} · build ${board.build}` : 'No physical device connected';
+    journey.hidden=!flow;journey.replaceChildren();
+    const labels=flow==='restore'?['Choose file','Review & restore','Verified']:['Read board','Download','Keep your backup'];
+    labels.forEach((label,index)=>{const item=el('li','',`${index+1} · ${label}`);if(index===(completed?2:working||flow==='restore'&&selection?1:0))item.setAttribute('aria-current','step');journey.append(item);});
+    root.setAttribute('aria-busy',String(working));
+    identity.textContent = connected && board ? '' : 'Connect your board to save or restore a backup.';
+    identity.hidden = connected && Boolean(board);
     read.disabled = !connected || busy || !client.backupIdentity;
+    // Choosing a flow is local navigation. Routine USB polling must not dim it.
+    saveChoice.disabled = restoreChoice.disabled = working;
     input.disabled = busy;
     restore.disabled = !connected || busy || !current.valid;
     fileSummary.replaceChildren();
@@ -62,12 +93,16 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
       fileSummary.append(el('h3', '', selection.name));
       if (current.info) {
         const info = current.info;
-        fileSummary.append(el('p', '', `THYB ${info.fileVersion} · settings V${info.settingsVersion} · ${info.bytes} bytes · board ${info.uid}`));
-        fileSummary.append(el('p', '', `Source build ${info.build} · settings, per-pad overrides, custom library and current song`));
-        fileSummary.append(el('p', '', current.error || (connected ? 'Header, payload checksums and connected-board identity verified.' : 'Header and payload checksums verified. Connect the matching board before restoring.')));
+        fileSummary.append(el('p', '', current.error || (connected ? 'Verified backup for this board.' : 'Valid backup. Connect the matching board to restore.')));
+        const details = el('details', 'backup-file-details');
+        details.append(el('summary', '', 'File details'),
+          el('p', '', `THYB ${info.fileVersion} · settings V${info.settingsVersion} · ${info.bytes} bytes`),
+          el('p', '', `Board ${info.uid} · source build ${info.build}`));
+        fileSummary.append(details);
       } else fileSummary.append(el('p', '', current.error || 'File rejected. Choose a complete THY666 backup.'));
-    } else fileSummary.append(el('p', 'inspector-notice', 'No restore file selected. Choosing a file only inspects it.'));
+    } else fileSummary.append(el('p', 'inspector-notice', 'Choose a backup to restore.'));
     status.textContent = working && client.status?.message ? client.status.message : notice;
+    status.hidden = !status.textContent;
     if (!connected && dialog) closeConfirmation();
     return { connected, busy, selected: selection?.name || null, canRestore: !restore.disabled, confirmationOpen: Boolean(dialog), notice: status.textContent };
   }
@@ -97,12 +132,12 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
       const info = inspectDeviceBackup(bytes, board);
       const name = `THY666-${info.uid}-${info.build}.thyb`;
       await download(bytes, name);
-      say('Backup downloaded · checksums and board identity verified. Keep this file.', 'success');
+      completed=true;say('Backup downloaded. Keep the .thyb file somewhere safe.', 'success');
     } catch (error) { say(`Backup was not downloaded: ${error.message}`, 'error'); }
     finally { working = false; refresh(); }
   }
   async function selectFile() {
-    const ticket = ++fileTicket, file = input.files?.[0]; selection = null;
+    const ticket = ++fileTicket, file = input.files?.[0]; selection = null; completed = false;
     if (!file) { refresh(); return; }
     const name = String(file.name || 'Selected backup');
     if (!Number.isInteger(file.size) || file.size < BACKUP_HEADER_BYTES + 1 || file.size > BACKUP_MAX_BYTES) {
@@ -115,7 +150,7 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
       const info = inspectDeviceBackup(bytes);
       selection = { name, bytes, info };
       const checked = selectionStatus();
-      say(checked.error || 'Backup file inspected. Restore requires a separate confirmation.', checked.error ? 'error' : 'info');
+      say(checked.error || '', checked.error ? 'error' : 'info');
     } catch (error) {
       if (!disposed && ticket === fileTicket) say(`File rejected: ${error.message}`, 'error');
     } finally { if (!disposed && ticket === fileTicket) { input.value = ''; refresh(); } }
@@ -151,7 +186,7 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
       const result = await client.restoreBackup(bytes);
       if (disposed) return;
       if (result?.verified !== true) throw new Error('Saved readback verification was not confirmed. Keep the backup file.');
-      say('Restore complete · Saved and read back verified. Keep the backup file; cold reboot is a separate check.', 'success');
+      completed=true;say('Restore complete. Settings saved and verified.', 'success');
       try { await onApplied(result); } catch (error) { say(`Restore saved and verified; refreshing the view failed: ${error.message}`, 'error'); }
     } catch (error) { say(`Restore not verified: ${error.message} Keep the backup file and inspect device state before retrying.`, 'error'); }
     finally { working = false; refresh(); if (!disposed) restore.focus(); }

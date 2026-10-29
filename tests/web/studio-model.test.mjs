@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {CURRENT_SETTINGS_VERSION,CURRENT_EMPTY_SETTINGS_BYTES} from './current-settings-fixture.mjs';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { StudioModel } from '../../web/studio-model.js';
@@ -76,20 +77,20 @@ test('track settings are a scoped C menu with a direct return and no global rows
   assert.equal(engine.sequencer.snapshot().selectedStep, 7);
   assert.equal(state.info().level, 0);
   assert.ok(model.navigate('select'));
-  assert.equal(engine.sequencer.snapshot().open, false);
+  assert.equal(engine.sequencer.snapshot().open, true);
   assert.ok(model.focus('sequencer', 'sequencer.open'));
   assert.deepEqual(model.visibleRows(sequencer).map(row => row.id), globalRows);
   assert.ok(engine.sequencer.open('steps').ok);
   assert.ok(engine.sequencer.action('trackOptions').ok);
   model.play();
   assert.equal(model.snapshot().level, 'play');
-  assert.equal(engine.sequencer.snapshot().open, false);
+  assert.equal(engine.sequencer.snapshot().open, true);
   assert.equal(model.snapshot().trackOptionsOpen, false);
   assert.ok(engine.sequencer.open('steps').ok);
   assert.ok(engine.sequencer.action('trackOptions').ok);
   model.open();
   assert.equal(model.snapshot().level, 'groups');
-  assert.equal(engine.sequencer.snapshot().open, false);
+  assert.equal(engine.sequencer.snapshot().open, true);
   assert.equal(model.snapshot().trackOptionsOpen, false);
 });
 
@@ -359,8 +360,8 @@ test('Performance response aliases restore through the existing V15 route codec 
     assert.ok(source.model.set('performance.bendRange', range).ok);
   }
   const payload = source.engine.settings.encode();
-  assert.equal(source.engine.settings.payloadVersion(payload), 15);
-  assert.equal(payload.length, 5633);
+  assert.equal(source.engine.settings.payloadVersion(payload), CURRENT_SETTINGS_VERSION);
+  assert.equal(payload.length, CURRENT_EMPTY_SETTINGS_BYTES);
   const cold = await harness();
   assert.equal(cold.engine.settings.apply(payload), true);
   for (const [target, pressure, bend, range] of [
@@ -466,7 +467,7 @@ test('planned actions stay unavailable while information rows are read-only thro
     assert.equal(model.edit, null, row.id);
     if (row.type === 'info') {
       assert.equal(model.format(row), row.default, row.id);
-      assert.equal(model.compact(row), row.group === 'engines' ? 'Planned' : 'INFO', row.id);
+      assert.equal(model.compact(row), row.group === 'engines' ? 'Open' : 'INFO', row.id);
       assert.equal(model.snapshot().notice, '', row.id);
     }
     assert.equal(model.set(row.id, true).ok, false, row.id);
@@ -499,7 +500,7 @@ test('future visibility filters presentation without changing canonical C row in
           assert.equal(state.info().cursor, group.rows.indexOf(row));
         }
       }
-      assert.deepEqual(model.visibleRows(views).map(row => row.id), viewRows);
+      assert.deepEqual(model.visibleRows(views).map(row => row.id), [...viewRows, 'views.resetOptions']);
     }
   }
   assert.ok(model.set('lights.view', 'notes').ok);
@@ -693,13 +694,22 @@ test('menu metadata has unique identities and only approved feature references',
   }
 });
 
-test('compact OLED labels remain unique and destination combinations remain distinguishable', async () => {
-  const { model } = await harness();
+test('compact OLED labels remain unique in their displayed scope and destination combinations remain distinguishable', async () => {
+  const { model, engine, state } = await harness();
   const oledLabel = row => (row.shortLabel || row.label).normalize('NFKD').replace(/[^\x20-\x7e]/g, '').toUpperCase().slice(0, 15);
   for (const group of STUDIO_MENU.groups) {
-    const labels = group.rows.map(oledLabel);
+    const labels = group.rows.filter(row => !row.retired && row.id !== 'sequencer.resetTrack').map(oledLabel);
     assert.equal(new Set(labels).size, labels.length, group.id);
   }
+  const sequencer = STUDIO_MENU.groups.find(group => group.id === 'sequencer');
+  const resetRows = () => sequencer.rows.filter(row => row.binding?.startsWith('menu.reset') && state.visible(index(row.id))).map(row => row.id);
+  assert.deepEqual(resetRows(), ['sequencer.resetOptions']);
+  assert.ok(engine.sequencer.createTrack().ok);
+  assert.ok(engine.sequencer.action('trackOptions').ok);
+  assert.deepEqual(resetRows(), ['sequencer.resetTrack'], 'Identical Reset options labels never share an actual C screen.');
+  const trackLabels = model.visibleRows(sequencer).map(oledLabel);
+  assert.equal(new Set(trackLabels).size, trackLabels.length, 'track settings');
+  model.navigate('select');
   const row = rows[index('midi.destinations')], options = model.options(row);
   assert.equal(options.length, 7);
   const labels = options.map(option => {

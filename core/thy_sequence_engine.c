@@ -261,7 +261,7 @@ int thy_engine_sequencer_pad(void *context,uint8_t electrical,int pressed,int *r
     if(!good(e) || !result || electrical>=96u) return 0;
     if(thy_engine_calibration_pad(e,electrical,pressed,result))return 1;
     if(thy_engine_sensitivity_pad(e,electrical,pressed,result)) return 1;
-    uint8_t logical=e->instrument->mapping[electrical];
+    uint8_t logical=thy_instrument_role_pad(e->instrument,e->instrument->mapping[electrical]);
     if(logical>=96u) return 0;
     /* Track options keep the editor surface; global menus use Play routing.
      * Releases always retain the role acquired by their original press. */
@@ -289,7 +289,7 @@ void thy_engine_sequencer_input(thy_engine *e,uint8_t pad,const int16_t *notes,
     else { e->sequencer.capture.failed=1u; return; }
     e->input_identity[pad]=e->input_serial;
     e->input_velocity[pad]=velocity; e->input_role[pad]=role;
-    unsigned logical=e->instrument->mapping[pad];
+    unsigned logical=thy_instrument_role_pad(e->instrument,e->instrument->mapping[pad]);
     e->input_assignment[pad]=(uint8_t)thy_sequencer_ui_assign(&e->sequencer_ui,
         (uint8_t)logical,notes,count,velocity,role);
     for(size_t k=0;k<count;++k) {
@@ -500,6 +500,9 @@ int thy_engine_sequencer_color(const thy_engine *e,uint8_t logical,uint16_t rgb[
 {
     if(!good(e) || !rgb || logical>=96u || !e->sequencer_ui.open ||
        (e->state.level!=THY_STATE_PLAY && !e->sequencer_ui.options_open)) return 0;
+    uint8_t physical=logical;
+    logical=thy_instrument_role_pad(e->instrument,physical);
+    if(logical>=96u)return 0;
     if(!e->instrument->lights_enabled) { rgb[0]=rgb[1]=rgb[2]=0u; return 1; }
     if(thy_sequencer_ui_color(&e->sequencer_ui,logical,rgb)) {
         /* Step content uses the same selected pitch palette as the playing
@@ -527,7 +530,7 @@ int thy_engine_sequencer_color(const thy_engine *e,uint8_t logical,uint16_t rgb[
     uint8_t source=(uint8_t)(logical%48u+(input==1?48u:0u));
     const thy_instrument *i=e->instrument;
     unsigned electrical=0u;
-    while(electrical<96u && i->mapping[electrical]!=logical) ++electrical;
+    while(electrical<96u && i->mapping[electrical]!=physical) ++electrical;
     if(electrical>=96u) return 0;
     int held=e->input_identity[electrical]!=0u;
     int16_t notes[THY_MAX_NOTES]; size_t count=0u;

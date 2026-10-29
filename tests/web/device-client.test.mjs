@@ -12,12 +12,78 @@ const unhex = value => Uint8Array.from(value.match(/../g) || [], word => parseIn
 const crc = bytes => deviceCRC32(bytes).toString(16).padStart(8, '0');
 const backupIdentity = { uid: UID, build: BUILD, schema: SCHEMA, settings: '13', target: '1043', compatibility: '65537' };
 
-function makeBackup({ payloadBytes = 5633, uid = UID, build = BUILD, schema = SCHEMA } = {}) {
+test('optional Harmony reads release their own lease and serialize behind the visual snapshot',async t=>{
+  const e=environment(t,{harmony:true,native:true});await e.client.connect();
+  assert.equal(e.client.harmonySupported,true);
+  const [base,harmony]=await Promise.all([e.client.snapshot(),e.client.harmonySnapshot()]);
+  assert.deepEqual(base.bytes,e.server.snapshot);assert.deepEqual(harmony.bytes,e.server.harmony);
+  const freeze=e.commands.indexOf('companion harmony snapshot');
+  assert.match(e.commands[freeze-1],/^companion release /);
+  assert.match(e.commands.at(-1),/^companion release /);
+  await e.client.harmonyAction(3,7);assert.equal(e.commands.at(-1),`companion harmony ${SCHEMA} 3 7`);
+});
+test('older firmware never receives unsupported Harmony commands',async t=>{
+  const e=environment(t);await e.client.connect();assert.equal(e.client.harmonySupported,false);
+  await assert.rejects(e.client.harmonySnapshot(),/does not expose/);
+  await assert.rejects(e.client.harmonyAction(0,1),/does not expose/);
+  assert.equal(e.commands.some(c=>c.startsWith('companion harmony ')),false);
+});
+test('Harmony failures release a frozen lease and reject mismatched action acknowledgements',async t=>{
+  const e=environment(t,{harmony:true,override(command){
+    if(command.startsWith('companion get '))return 'ERR corrupt';
+    if(command.startsWith(`companion harmony ${SCHEMA}`))return 'COMPANION/1 HARMONY result=0 action=5 value=0';
+  }});await e.client.connect();
+  await assert.rejects(e.client.harmonySnapshot(),/corrupt/);assert.match(e.commands.at(-1),/^companion release /);
+  await assert.rejects(e.client.harmonyAction(3,7),/acknowledgement/);
+  await assert.rejects(e.client.harmonyAction(11,0),/Harmony action/);
+});
+
+test('Harmony controls use only the scoped namespace and never retry a changed UI context or physical hold',async t=>{
+  let failure=null;
+  const e=environment(t,{harmony:true,override(command){if(command.startsWith('companion harmony-control ')&&failure)return `COMPANION/1 ERR ${failure}`;}});
+  await e.client.connect();await e.client.harmonyControl(2,7);
+  assert.equal(e.commands.at(-1),`companion harmony-control ${SCHEMA} 2 7`);
+  for(const reason of ['harmony-context','control-held']){failure=reason;const before=e.commands.length;
+    await assert.rejects(e.client.harmonyControl(2,7),new RegExp(reason));assert.equal(e.commands.length,before+1);assert.equal(e.client.connected,true);}
+  await assert.rejects(e.client.harmonyControl(0,2),/Harmony control bank/);
+  await assert.rejects(e.client.harmonyControl(1,6),/Harmony control index/);
+  assert.equal(e.commands.some(c=>c.startsWith('companion control ')),false,'A rejected preview never falls back to an ordinary root or scale control.');
+});
+
+test('reset confirmation requires an explicit nonce-bound choice and never falls back to navigation',async t=>{
+  let failure=null;
+  const e=environment(t,{reset:true,override(command){if(command.startsWith('companion reset-confirm ')&&failure)return failure;}});
+  await e.client.connect();assert.equal(e.client.resetSupported,true);
+  await e.client.confirmReset(42,true);assert.equal(e.commands.at(-1),`companion reset-confirm ${SCHEMA} 42 1`);
+  await e.client.confirmReset(42,false);assert.equal(e.commands.at(-1),`companion reset-confirm ${SCHEMA} 42 0`);
+  for(const message of ['COMPANION/1 ERR reset-context','COMPANION/1 RESET result=-4 epoch=42 confirmed=1']){failure=message;const before=e.commands.length;
+    await assert.rejects(e.client.confirmReset(42,true),/reset-context|could not complete/);assert.equal(e.commands.length,before+1);}
+  failure='COMPANION/1 RESET result=0 epoch=43 confirmed=1';await assert.rejects(e.client.confirmReset(42,true),/acknowledgement/);
+  await assert.rejects(e.client.confirmReset(0,true),/identity/);await assert.rejects(e.client.confirmReset(42,1),/explicit/);
+  assert.equal(e.commands.some(c=>/^companion (?:nav|control) /.test(c)),false);
+  const old=environment(t);await old.client.connect();await assert.rejects(old.client.confirmReset(1,true),/does not expose/);
+  assert.equal(old.commands.some(c=>c.startsWith('companion reset-confirm ')),false);
+});
+
+test('a queued reset choice cannot cross a disconnect and reconnect to the same device',async t=>{
+  let release,started;
+  const ready=new Promise(resolve=>started=resolve);
+  const e=environment(t,{native:true,reset:true,settingsVersion:16,migrateBackupPayload:async payload=>{
+    started();return new Promise(resolve=>{release=()=>{payload[6]=16;resolve(payload);};});
+  }});await e.client.connect();
+  const restoring=e.client.restoreBackup(makeBackup({settingsVersion:15}));await ready;
+  const confirming=e.client.confirmReset(1,true);
+  await e.client.disconnect();await e.client.connect();release();
+  await assert.rejects(restoring,/connection changed/);await assert.rejects(confirming,/connection changed/);
+  assert.equal(e.commands.some(c=>c.startsWith('companion reset-confirm ')),false);
+});
+
+function makeBackup({ payloadBytes = 5633, uid = UID, build = BUILD, schema = SCHEMA, settingsVersion = 13 } = {}) {
   const bytes = new Uint8Array(BACKUP_HEADER_BYTES + payloadBytes), data = new DataView(bytes.buffer);
   bytes.set(encoder.encode('THYB')); data.setUint16(4, 1, true); data.setUint16(6, 64, true);
   for (let n = 0; n < payloadBytes; n++) bytes[64 + n] = (n * 17 + 3) & 255;
   data.setUint32(8, payloadBytes, true); data.setUint32(12, deviceCRC32(bytes.subarray(64)), true);
-  data.setUint16(16, 13, true); data.setUint16(18, 0x413, true); data.setUint32(20, 0x10001, true);
+  data.setUint16(16, settingsVersion, true); data.setUint16(18, 0x413, true); data.setUint32(20, 0x10001, true);
   bytes.set(unhex(uid), 24); bytes.set(unhex(build), 36); bytes.set(unhex(schema.slice(0, 16)), 44);
   data.setUint32(52, 1, true); data.setUint32(60, deviceCRC32(bytes.subarray(0, 60)), true);
   return bytes;
@@ -30,11 +96,12 @@ function reseal(bytes) {
 }
 
 function environment(t, { override, writable = '1', schema = SCHEMA, expectedSchema = SCHEMA, timeoutMs = 40,
-  fragment = false, statusSequence = ['applied', 'queued', 'saved-verified'], exportBytes,native=false } = {}) {
+  fragment = false, statusSequence = ['applied', 'queued', 'saved-verified'], exportBytes,native=false,
+  settingsVersion=13,migrateBackupPayload,harmony=false,reset=false } = {}) {
   let waiter = null, closed = false, time = 0;
   const queued = [], states = [], commands = [], portEvents = new Map();
-  const server = { file: makeBackup(), snapshot: Uint8Array.from({ length: 1680 }, (_, n) => n & 255),
-    generation: 7, committed: false, upload: null, statusReads: 0, received: 0 };
+  const server = { file: makeBackup({settingsVersion}), snapshot: Uint8Array.from({ length: 1680 }, (_, n) => n & 255),
+    harmony:Uint8Array.from({length:800},(_,n)=>n&255),generation: 7, committed: false, upload: null, statusReads: 0, received: 0 };
   const push = text => {
     if (closed) return;
     const bytes = encoder.encode(text);
@@ -51,12 +118,16 @@ function environment(t, { override, writable = '1', schema = SCHEMA, expectedSch
   };
   const statusLine = state => `BACKUP version=1 state=${state} bytes=${server.committed ? server.file.length : 0} received=${server.received} crc32=${crc(server.file)} payload_crc32=${crc(server.file.subarray(64))} generation=31`;
   function respond(command) {
-    if (command === 'companion caps') return `COMPANION/1 CAPS role=instrument backup=1 song=1 companion=1 uid=${UID} build=${BUILD} schema=${schema} writable=${writable} chunk=128`;
-    if (command === 'backup caps') return `BACKUP version=1 settings=13 max=${BACKUP_MAX_BYTES} chunk=32 target=1043 compatibility=65537 uid=${UID} build=${BUILD} schema=${schema}`;
-    if (command === 'companion snapshot') return `COMPANION/1 SNAPSHOT seq=${server.generation} bytes=${server.snapshot.length} crc32=${crc(server.snapshot)}`;
+    if (command === 'companion caps') return `COMPANION/1 CAPS role=instrument backup=1 song=1 companion=1 uid=${UID} build=${BUILD} schema=${schema} writable=${writable} chunk=128${harmony?' harmony=1 harmony_bytes=800':''}${reset?' reset=1':''}`;
+    if (command === 'backup caps') return `BACKUP version=1 settings=${settingsVersion} max=${BACKUP_MAX_BYTES} chunk=32 target=1043 compatibility=65537 uid=${UID} build=${BUILD} schema=${schema}`;
+    if (command === 'companion snapshot') {server.frozen=server.snapshot;return `COMPANION/1 SNAPSHOT seq=${server.generation} bytes=${server.snapshot.length} crc32=${crc(server.snapshot)}`;}
+    if (command === 'companion harmony snapshot') {server.frozen=server.harmony;return `COMPANION/1 HARMONY seq=${server.generation} bytes=800 crc32=${crc(server.harmony)}`;}
+    if (command.startsWith('companion harmony-control ')) {const words=command.split(' ');return `COMPANION/1 HCONTROL result=0 bank=${words[3]} index=${words[4]}`;}
+    if (command.startsWith('companion reset-confirm ')) {const words=command.split(' ');return `COMPANION/1 RESET result=0 epoch=${words[3]} confirmed=${words[4]}`;}
+    if (command.startsWith('companion harmony ')) {const words=command.split(' ');return `COMPANION/1 HARMONY result=0 action=${words[3]} value=${words[4]}`;}
     if (command.startsWith('companion get ')) {
       const [, , seq, offset, length] = command.split(' ').map((word, index) => index > 1 ? Number(word) : word);
-      return `COMPANION/1 DATA seq=${seq} offset=${offset} hex=${hex(server.snapshot.subarray(offset, offset + length))}`;
+      return `COMPANION/1 DATA seq=${seq} offset=${offset} hex=${hex((server.frozen||server.snapshot).subarray(offset, offset + length))}`;
     }
     if (command.startsWith('companion release ')) return `COMPANION/1 RELEASED seq=${server.generation}`;
     if (command.startsWith('companion read ')) {
@@ -74,7 +145,7 @@ function environment(t, { override, writable = '1', schema = SCHEMA, expectedSch
     if (command === 'backup export') {
       const file = exportBytes ? exportBytes(server) : server.file;
       server.download = file;
-      return `BACKUP export bytes=${file.length} crc32=${crc(file)} settings=13`;
+      return `BACKUP export bytes=${file.length} crc32=${crc(file)} settings=${settingsVersion}`;
     }
     if (command.startsWith('backup get ')) {
       const [, , offset, length] = command.split(' ').map((word, index) => index > 1 ? Number(word) : word);
@@ -123,7 +194,7 @@ function environment(t, { override, writable = '1', schema = SCHEMA, expectedSch
     port.exchange=async command=>{commands.push(command);const value=override?.(command,{server,push,reply,port,serial,respond,statusLine});return value===undefined?respond(command):value;};
     port.exchangeMany=async values=>{port.batches.push(values.slice());const lines=[];for(const command of values)lines.push(await port.exchange(command));return lines;};
   }
-  const client = createDeviceClient({ serial, timeoutMs, expectedSchema, onState: state => states.push(state),
+  const client = createDeviceClient({ serial, timeoutMs, expectedSchema, migrateBackupPayload, onState: state => states.push(state),
     now: () => time, sleep: async ms => { time += ms; } });
   t.after(() => client.disconnect());
   return { client, serial, port, commands, states, server, push, reply };
@@ -149,6 +220,99 @@ test('backup framing validates both CRCs, byte offsets, identity and provenance 
   }
   assert.throws(() => deviceFields('BACKUP bytes=1 bytes=2', 'BACKUP'), /Duplicate/);
   assert.throws(() => deviceFields('OTHER bytes=1', 'BACKUP'), /Unexpected/);
+});
+
+test('current v15 exports agree with capabilities and older source versions are only restore candidates',async t=>{
+  const e=environment(t,{settingsVersion:15});await e.client.connect();
+  const file=await e.client.downloadBackup();assert.equal(inspectDeviceBackup(file).settingsVersion,15);
+  assert.doesNotThrow(()=>inspectDeviceBackup(makeBackup(),e.client.backupIdentity));
+  assert.throws(()=>inspectDeviceBackup(makeBackup({settingsVersion:15}),backupIdentity),/belong/);
+  for(const version of [12,19])assert.throws(()=>inspectDeviceBackup(makeBackup({settingsVersion:version})),/unsupported/);
+});
+
+test('v16 exports and restoration normalize each known historical source before any upload',async t=>{
+  for(const source of [13,14,15]){
+    const original=makeBackup({settingsVersion:source}),normalized=original.subarray(64).slice();normalized[6]=16;
+    const e=environment(t,{settingsVersion:16,migrateBackupPayload:async(payload,versions)=>{
+      assert.deepEqual(versions,{sourceVersion:source,targetVersion:16});assert.deepEqual(payload,original.subarray(64));
+      assert.equal(e.commands.some(c=>c.startsWith('backup begin ')),false);return normalized;
+    }});await e.client.connect();
+    assert.equal(inspectDeviceBackup(await e.client.downloadBackup()).settingsVersion,16);
+    const receipt=await e.client.restoreBackup(original);
+    assert.equal(receipt.settingsVersion,16);assert.equal(receipt.sourceSettingsVersion,source);assert.equal(receipt.verified,true);
+  }
+});
+
+test('maximum-size V16 backup downloads and restores without rejecting the added preference bytes',async t=>{
+  const e=environment(t,{settingsVersion:16});await e.client.connect();
+  e.server.file=makeBackup({settingsVersion:16,payloadBytes:BACKUP_MAX_BYTES-BACKUP_HEADER_BYTES});
+  const file=await e.client.downloadBackup();assert.equal(file.length,13908);
+  assert.equal((await e.client.restoreBackup(file)).verified,true);assert.deepEqual(e.server.upload,file);
+});
+
+test('restore migrates before any upload, preserves original bytes and verifies the entire normalized payload',async t=>{
+  const original=makeBackup({build:'01'.repeat(8)}),preserved=original.slice();let calls=0;
+  const normalized=original.subarray(64).slice();normalized[6]=15;
+  const e=environment(t,{settingsVersion:15,migrateBackupPayload:async(payload,versions)=>{
+    calls++;assert.deepEqual(versions,{sourceVersion:13,targetVersion:15});
+    assert.deepEqual(payload,original.subarray(64));assert.equal(e.commands.some(c=>c.startsWith('backup begin ')),false);
+    return normalized;
+  }});
+  await e.client.connect();const result=await e.client.restoreBackup(original);
+  assert.equal(calls,1);assert.deepEqual(original,preserved);
+  assert.equal(inspectDeviceBackup(e.server.file).settingsVersion,15);
+  assert.equal(inspectDeviceBackup(e.server.file).build,'01'.repeat(8),'source build remains provenance');
+  assert.deepEqual(e.server.file.subarray(64),normalized);
+  assert.equal(result.verified,true);assert.equal(result.migrated,true);
+  assert.equal(result.sourcePayloadCRC,deviceCRC32(original.subarray(64)));
+  assert.equal(result.payloadCRC,deviceCRC32(normalized));assert.notEqual(result.payloadCRC,result.sourcePayloadCRC);
+});
+
+test('unsupported direction, missing/rejected migration and wrong board stop before restore commands',async t=>{
+  for(const options of [{settingsVersion:15},{settingsVersion:14,migrateBackupPayload:()=>{throw Error('must not run');}},
+    {settingsVersion:15,migrateBackupPayload:async()=>{throw Error('invalid C payload');}}]){
+    const e=environment(t,options);await e.client.connect();
+    await assert.rejects(e.client.restoreBackup(makeBackup()),/cannot migrate|invalid C payload/);
+    assert.equal(e.commands.some(c=>/^backup (?:begin|put|commit|status)/.test(c)),false);
+  }
+  const e=environment(t,{settingsVersion:15,migrateBackupPayload:()=>{throw Error('must not run');}});await e.client.connect();
+  await assert.rejects(e.client.restoreBackup(makeBackup({uid:'ff'.repeat(12)})),/belong/);
+  assert.equal(e.commands.some(c=>/^backup (?:begin|put|commit)/.test(c)),false);
+});
+
+test('an inconsistent v15 header and v13 capability is rejected on export',async t=>{
+  const e=environment(t,{exportBytes:()=>makeBackup({settingsVersion:15})});await e.client.connect();
+  await assert.rejects(e.client.downloadBackup(),/belong|version/);
+});
+
+test('v15 and16 same-version restore remain byte exact without running migration',async t=>{
+  for(const settingsVersion of [15,16]){
+    const e=environment(t,{settingsVersion,migrateBackupPayload:()=>{throw Error('same-version migration must not run');}});
+    await e.client.connect();const file=makeBackup({settingsVersion}),before=file.slice();
+    const result=await e.client.restoreBackup(file);
+    assert.equal(result.migrated,false);assert.deepEqual(e.server.upload,before);assert.deepEqual(file,before);
+  }
+});
+
+test('caller changes after preparation cannot alter the validated restore bytes',async t=>{
+  const file=makeBackup({settingsVersion:15}),original=file.slice();let changed=false;
+  const e=environment(t,{settingsVersion:15,override:command=>{
+    if(command==='backup status'&&!changed){file[100]^=255;changed=true;}
+  }});
+  await e.client.connect();const result=await e.client.restoreBackup(file);
+  assert.equal(changed,true);assert.deepEqual(e.server.upload,original);
+  assert.equal(result.payloadCRC,deviceCRC32(original.subarray(64)));assert.equal(result.verified,true);
+});
+
+test('migration cannot cross a disconnect and a changed migrated readback is not success',async t=>{
+  let e;
+  e=environment(t,{settingsVersion:15,migrateBackupPayload:async payload=>{await e.client.disconnect();return payload;}});
+  await e.client.connect();await assert.rejects(e.client.restoreBackup(makeBackup()),/connection changed/);
+  assert.equal(e.commands.some(c=>/^backup (?:begin|put|commit|status)/.test(c)),false);
+  const altered=environment(t,{settingsVersion:15,migrateBackupPayload:async payload=>{payload[6]=15;return payload;},
+    exportBytes:server=>{const copy=server.file.slice();copy[100]^=1;return reseal(copy);}});
+  await altered.client.connect();await assert.rejects(altered.client.restoreBackup(makeBackup()),/re-export differs/);
+  assert.equal(altered.server.committed,true);
 });
 
 test('native snapshots batch fourteen chunks into one bridge call and retain the exact CRC and generation checks',async t=>{
@@ -289,7 +453,8 @@ test('backup corruption and transfer timeout trigger cleanup and never return a 
 test('restore verifies upload bytes, waits beyond applied for saved-verified and re-exports the exact payload', async t => {
   const f = environment(t); await f.client.connect(); const file = makeBackup({ build: '01'.repeat(8) });
   const result = await f.client.restoreBackup(file);
-  assert.deepEqual(result, { generation: 31, payloadCRC: deviceCRC32(file.subarray(64)), verified: true });
+  assert.deepEqual(result, { generation: 31, payloadCRC: deviceCRC32(file.subarray(64)),
+    sourcePayloadCRC:deviceCRC32(file.subarray(64)),sourceSettingsVersion:13,settingsVersion:13,migrated:false,verified: true });
   assert.deepEqual(f.server.upload, file); assert.equal(f.server.statusReads, 3);
   assert.ok(f.states.some(state => /waiting for verified save/.test(state.message)));
   assert.match(f.client.status.message, /saved and read back exactly/);

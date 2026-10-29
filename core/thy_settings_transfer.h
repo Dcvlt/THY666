@@ -4,7 +4,7 @@
 #include "thy_settings.h"
 
 #define THY_BACKUP_HEADER_BYTES 64u
-#define THY_BACKUP_PAYLOAD_MAX (THY_SETTINGS_V13_PARAMETER_BYTES + THY_SEQ_SONG_MAX)
+#define THY_BACKUP_PAYLOAD_MAX (THY_SETTINGS_V18_PARAMETER_BYTES + THY_SEQ_SONG_MAX)
 #define THY_BACKUP_FILE_MAX (THY_BACKUP_HEADER_BYTES + THY_BACKUP_PAYLOAD_MAX)
 #define THY_BACKUP_COMPATIBILITY UINT32_C(0x00010001)
 enum thy_backup_state {
@@ -21,6 +21,9 @@ typedef struct thy_backup_identity {
 /* Caller performs nonmutating preflight, then atomically restores catalog,
  * settings, hardware presentation and input warmup. No notes/setup messages. */
 typedef int (*thy_backup_apply_fn)(void *,const uint8_t *,size_t);
+/* BACKUP/1 restores current-version payloads only. A client migrating an older
+ * supported backup must first apply/encode it with the shared C codec off-device
+ * and rebuild the versioned header and checksums; wire validation stays strict. */
 typedef struct thy_settings_transfer {
     uint8_t *buffer; /* Shared journal payload buffer, never another large copy. */
     size_t capacity;

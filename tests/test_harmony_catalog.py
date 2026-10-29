@@ -26,7 +26,35 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(result['chord_masks'].count(0x091),1)
         self.assertEqual(result['rootless_record_indices'],[2])
         self.assertIn(0x097,result['chord_masks'])
-        self.assertEqual(header(result),header(merge(projection,[('Major alias',0xab5),('New scale',0x097)],[(['major'],0x091),(['New chord'],0x097)])))
+        self.assertEqual(result,merge(projection,[('Major alias',0xab5),('New scale',0x097)],
+                                      [(['major'],0x091),(['New chord'],0x097)]))
+
+    def test_header_keeps_all_playable_family_ids(self):
+        # The generated device table has 70 slots. Exercise that contract with
+        # synthetic families rather than weakening it for the small merge test.
+        records=[{'name':'C','notes':[{'midi':60},{'midi':64},{'midi':67}]},
+                 {'name':'C','notes':[{'midi':60},{'midi':62},{'midi':64},{'midi':65},
+                                      {'midi':67},{'midi':69},{'midi':71}]},
+                 {'name':'C','notes':[{'midi':60},{'midi':62},{'midi':63},{'midi':65},
+                                      {'midi':67},{'midi':69},{'midi':70}]}]
+        projection={'groups':[{'index':i,'name':'Synthetic '+str(i)} for i in range(70)],
+                    'scales':[{'group_index':i,'root_label':'C',
+                               'pads':[[0,0]]+[None]*47+[[0,1+i%2]]+[None]*47}
+                              for i in range(70)],
+                    'pad_records':records}
+        before=copy.deepcopy(projection)
+        result=merge(projection,[],[])
+        generated=header(result)
+        family_rows=generated.split('guidance_catalog_families[]={\n',1)[1].split('};',1)[0]
+        self.assertEqual([int(n.strip()[:-1]) for n in family_rows.strip().split(',')],
+                         [i%2 for i in range(70)])
+        self.assertEqual(generated,header(merge(projection,[],[])))
+        self.assertEqual(projection,before)
+        self.assertEqual(result['original_projection'],before)
+        projection['groups'].pop()
+        projection['scales'].pop()
+        with self.assertRaisesRegex(ValueError,'frozen 70-family'):
+            header(merge(projection,[],[]))
 
     def test_invalid_intervals_rejected(self):
         for steps in ([],[0,12],[0,-1],[0,0],[1,2],[True,2]):

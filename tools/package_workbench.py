@@ -74,6 +74,7 @@ def package():
               web / "companion-display.js", web / "companion-display.css"]
     paths += [web / "startup.js", web / "startup.css", web / "updater-panel.js", web / "updater-client.js", web / "updater-art.js", web / "updater-checks.js", web / "updater-layout.js", web / "updater-wizard.css", web / "desktop-runtime.js", web / "desktop-chrome.js", web / "desktop-chrome.css"]
     paths += [web / "browser-hid.js", web / "browser-updater-client.js"]
+    paths += [web / "backup-migration.js"]
     paths += sorted(path for path in (web / "assets/fonts").rglob("*") if path.is_file())
     assets = {str(path.relative_to(web)).replace('\\', '/'): path.read_bytes() for path in paths}
     browser_assets = browser_core_assets()
@@ -191,6 +192,7 @@ def package():
     firmware = inline_named_module(assets["firmware.js"], "firmware.js", ("./studio-menu.js",))
     controller = re.sub(r"^export\s+", "", assets["controller.js"].decode("utf-8"), flags=re.M)
     device_client = inline_named_module(assets["device-client.js"], "device-client.js")
+    backup_migration = inline_named_module(assets["backup-migration.js"], "backup-migration.js")
     companion_protocol = inline_named_module(assets["companion-protocol.js"], "companion-protocol.js")
     help_topics = inline_named_module(assets["help-topics.js"], "help-topics.js", ("./studio-menu.js",))
     help_ui = inline_named_module(assets["help.js"], "help.js", ("./help-topics.js",))
@@ -206,13 +208,13 @@ def package():
     updater_checks = inline_named_module(assets["updater-checks.js"], "updater-checks.js")
     updater_art = inline_named_module(assets["updater-art.js"], "updater-art.js")
     updater_layout = inline_named_module(assets["updater-layout.js"], "updater-layout.js", ("./updater-art.js", "./updater-checks.js"))
-    updater_panel = inline_named_module(assets["updater-panel.js"], "updater-panel.js", ("./device-client.js", "./updater-client.js", "./updater-layout.js", "./updater-checks.js"))
+    updater_panel = inline_named_module(assets["updater-panel.js"], "updater-panel.js", ("./device-client.js", "./updater-client.js", "./updater-layout.js", "./updater-checks.js", "./updater-art.js"))
     cockpit = inline_named_module(assets["cockpit.js"], "cockpit.js", ("./companion-protocol.js",))
     companion_display = inline_named_module(assets["companion-display.js"], "companion-display.js")
     startup = inline_named_module(assets["startup.js"], "startup.js")
     harmony_guide = inline_named_module(assets["harmony-guide.js"], "harmony-guide.js")
     companion = inline_named_module(assets["companion-shell.js"], "companion-shell.js",
-        ("./studio-menu.js", "./device-client.js", "./companion-protocol.js", "./companion-display.js", "./help.js", "./backup-panel.js", "./updater-panel.js", "./browser-updater-client.js", "./app-settings.js", "./cockpit.js", "./harmony-guide.js"))
+        ("./studio-menu.js", "./device-client.js", "./core.js", "./backup-migration.js", "./companion-protocol.js", "./companion-display.js", "./help.js", "./backup-panel.js", "./updater-panel.js", "./browser-updater-client.js", "./app-settings.js", "./cockpit.js", "./harmony-guide.js"))
     factory = "createBrowserUpdaterClient({"
     browser_guard = "&&globalThis.isSecureContext===true;"
     if companion.count(factory) != 1 or companion.count(browser_guard) != 1:
@@ -223,7 +225,7 @@ def package():
     companion = companion.replace(browser_guard,
         "&&globalThis.isSecureContext===true&&['http:','https:'].includes(location.protocol);", 1)
     javascript = "\n".join((core, oled, controller, menu, firmware, schema, model, engine_studio, settings,
-        rhythm, arp, mpe, library, sequencer_midi, device_song, sequencer, device_client,
+        rhythm, arp, mpe, library, sequencer_midi, device_song, sequencer, device_client, backup_migration,
         companion_protocol, help_topics, help_ui, app_settings, cockpit, companion_display, backup_panel, updater_client,
         browser_hid, browser_updater, browser_adapter, desktop_runtime, desktop_chrome, updater_checks, updater_art, updater_layout, updater_panel, harmony_guide, companion, startup, app)).replace("</script", "<\\/script")
     embedded = ('<script id="thy-core-bytes" type="application/octet-stream">' +

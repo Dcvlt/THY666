@@ -253,7 +253,7 @@ export class InstrumentOLEDDirtyScheduler {
   find(priority) {
     const length = priority ? 384 : 640;
     const cursor = priority ? this.priorityCursor : this.otherCursor;
-    const pages = [0, 1, 5, 6, 7];
+    const pages = [1, 5, 0, 6, 7]; // Match C: outer note rows before titles.
     for (let scanned = 0; scanned < length; scanned++) {
       const index = (cursor + scanned) % length;
       const page = priority ? 2 + Math.floor(index / 128) : pages[Math.floor(index / 128)];

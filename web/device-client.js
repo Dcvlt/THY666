@@ -3,7 +3,7 @@
  * transactions. Construction never connects, writes or asks for a port.
  */
 export const BACKUP_HEADER_BYTES=64;
-export const BACKUP_MAX_BYTES=13889;
+export const BACKUP_MAX_BYTES=13908;
 export function deviceCRC32(bytes){
   let crc=0xffffffff;
   for(const byte of bytes){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((-(crc&1))&0xedb88320);}
@@ -47,16 +47,16 @@ export function inspectDeviceBackup(bytes,identity=null){
     compatibility:view.getUint32(20,true),uid:hex(bytes.subarray(24,36)),build:hex(bytes.subarray(36,44)),
     schemaPrefix:hex(bytes.subarray(44,52)),capabilities:view.getUint32(52,true),payloadBytes,payloadCRC,
     payload:bytes.subarray(64),bytes:bytes.length};
-  if(info.settingsVersion!==13||info.target!==0x413||info.compatibility!==0x10001||info.capabilities!==1||view.getUint32(56,true)!==0)
+  if(![13,14,15,16,17,18].includes(info.settingsVersion)||info.target!==0x413||info.compatibility!==0x10001||info.capabilities!==1||view.getUint32(56,true)!==0)
     throw new Error('This backup targets an unsupported device or settings version.');
-  if(identity&&(info.uid!==identity.uid?.toLowerCase()||info.settingsVersion!==Number(identity.settings)||
+  if(identity&&(info.uid!==identity.uid?.toLowerCase()||![13,14,15,16,17,18].includes(Number(identity.settings))||info.settingsVersion>Number(identity.settings)||
     info.target!==Number(identity.target)||info.compatibility!==Number(identity.compatibility)))
     throw new Error('This backup does not belong to the connected board or its supported format.');
   return info;
 }
 
 export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutMs=3000,onState=()=>{},
-  expectedSchema='',now=()=>Date.now(),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
+  expectedSchema='',migrateBackupPayload=null,now=()=>Date.now(),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
   const encoder=new TextEncoder(),decoder=new TextDecoder();
   let port=null,reader=null,writer=null,pump=null,pending=null,lineBuffer='',caps=null,backupCaps=null;
   let operations=0,tail=Promise.resolve(),closing=false;
@@ -166,13 +166,18 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
       const result=deviceFields(await exchange('backup export',/^BACKUP export /),'BACKUP');started=true;
       const count=integer(result.bytes,65,BACKUP_MAX_BYTES,'backup length');
       const bytes=await chunks('backup',count,crcValue(result.crc32));
-      inspectDeviceBackup(bytes,backupCaps);emit('Backup read · checksum verified');return bytes;
+      const info=inspectDeviceBackup(bytes,backupCaps);
+      if(info.settingsVersion!==Number(backupCaps.settings)||Number(result.settings)!==info.settingsVersion)
+        throw new Error('The exported settings version differs from the device capabilities.');
+      emit('Backup read · checksum verified');return bytes;
     }finally{if(started){try{await exchange('backup abort',/^BACKUP aborted$/);}catch{}}}
   }
   function canWrite(){if(!state.compatible)throw new Error('The device and this client use different menu versions. Controls are read-only.');}
   const client={
     get available(){return Boolean(serial?.requestPort);},get connected(){return state.connected;},
     get busy(){return operations>0;},get compatible(){return state.compatible;},
+    get harmonySupported(){return state.connected&&caps?.harmony==='1'&&caps?.harmony_bytes==='800';},
+    get resetSupported(){return state.connected&&caps?.reset==='1';},
     get identity(){return caps?{...caps}:null;},get backupIdentity(){return backupCaps?{...backupCaps}:null;},
     get status(){return {...state};},
     async connect(){
@@ -221,6 +226,42 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
         return {generation,bytes,receivedAt:now()};
       }finally{if(generation!==null){try{await exchange(`companion release ${generation}`,/^COMPANION\/1 RELEASED/);}catch{}}}
     });},
+    harmonySnapshot(){return exclusive(async()=>{
+      if(!client.harmonySupported)throw new Error('This firmware does not expose the live Harmony workspace. Update it to use Harmony in the Client.');
+      let generation=null;
+      try{
+        const result=deviceFields(await exchange('companion harmony snapshot',/^COMPANION\/1 HARMONY /),'COMPANION/1 HARMONY');
+        generation=integer(result.seq,1,0xffffffff,'Harmony snapshot generation');
+        const count=integer(result.bytes,800,800,'Harmony snapshot length');
+        const bytes=await chunks('companion',count,crcValue(result.crc32),generation+' ');
+        return {generation,bytes,receivedAt:now()};
+      }finally{if(generation!==null){try{await exchange(`companion release ${generation}`,/^COMPANION\/1 RELEASED/);}catch{}}}
+    });},
+    harmonyAction(action,value=0){return exclusive(async()=>{
+      canWrite();if(!client.harmonySupported)throw new Error('This firmware does not expose the live Harmony workspace. Update it to use Harmony in the Client.');
+      integer(action,0,10,'Harmony action');integer(value,-2147483648,2147483647,'Harmony value');
+      const result=deviceFields(await exchange(`companion harmony ${caps.schema} ${action} ${value}`,/^COMPANION\/1 HARMONY /),'COMPANION/1 HARMONY');
+      if(result.result!=='0')throw new Error(`The device declined this Harmony action (code ${result.result}).`);
+      if(Number(result.action)!==action||Number(result.value)!==value)throw new Error('The Harmony acknowledgement does not match the action. Read the device state before continuing.');
+      return result;
+    });},
+    harmonyControl(bank,index){return exclusive(async()=>{
+      canWrite();if(!client.harmonySupported)throw new Error('This firmware does not expose the live Harmony workspace. Update it to use Harmony in the Client.');
+      integer(bank,1,3,'Harmony control bank');integer(index,bank===1?7:0,bank===1?13:11,'Harmony control index');
+      const result=deviceFields(await exchange(`companion harmony-control ${caps.schema} ${bank} ${index}`,/^COMPANION\/1 HCONTROL /),'COMPANION/1 HCONTROL');
+      if(result.result!=='0')throw new Error(`The device declined this Harmony control (code ${result.result}).`);
+      if(Number(result.bank)!==bank||Number(result.index)!==index)throw new Error('The Harmony control acknowledgement does not match the request.');
+      return result;
+    });},
+    confirmReset(epoch,confirmed){const confirmationPort=port,confirmationCaps=caps;return exclusive(async()=>{
+      canWrite();if(!client.resetSupported)throw new Error('This firmware does not expose protected reset confirmation.');
+      if(port!==confirmationPort||caps!==confirmationCaps)throw new Error('The device connection changed. Review a fresh reset confirmation before continuing.');
+      integer(epoch,1,0xffffffff,'reset confirmation identity');if(typeof confirmed!=='boolean')throw new Error('Reset confirmation must be explicit.');
+      const value=Number(confirmed),result=deviceFields(await exchange(`companion reset-confirm ${caps.schema} ${epoch} ${value}`,/^COMPANION\/1 RESET /),'COMPANION/1 RESET');
+      if(result.result!=='0')throw new Error(`The device could not complete this reset (code ${result.result}). Release pads and controls, then review its confirmation.`);
+      if(Number(result.epoch)!==epoch||Number(result.confirmed)!==value)throw new Error('The reset acknowledgement does not match this confirmation. Read the device state before continuing.');
+      return result;
+    });},
     read(row,instance=255){return exclusive(async()=>{
       integer(row,0,65534,'menu row');integer(instance,0,255,'menu target');
       const result=deviceFields(await exchange(`companion read ${caps.schema} ${row} ${instance}`,/^COMPANION\/1 VALUE /),'COMPANION/1 VALUE');
@@ -261,7 +302,30 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
     },
     downloadBackup(){return exclusive(download);},
     restoreBackup(bytes){return exclusive(async()=>{
-      const info=inspectDeviceBackup(bytes,backupCaps);
+      // Capture both bytes and identity before asynchronous migration. The
+      // original file and its provenance remain unchanged outside this call.
+      bytes=bytes.slice();
+      const restoreIdentity=backupCaps,restorePort=port;
+      const original=inspectDeviceBackup(bytes,restoreIdentity),originalHeader=bytes.slice(0,64),targetVersion=Number(restoreIdentity.settings);
+      let info=original;
+      if(original.settingsVersion!==targetVersion){
+        if(![15,16,17,18].includes(targetVersion)||![13,14,15,16,17].includes(original.settingsVersion)||original.settingsVersion>=targetVersion||typeof migrateBackupPayload!=='function')
+          throw new Error('This client cannot migrate that backup to the connected settings version. No restore was sent.');
+        emit(`Preparing backup · upgrading settings V${original.settingsVersion} to V${targetVersion} with the shared C codec`);
+        const payload=await migrateBackupPayload(original.payload.slice(),{sourceVersion:original.settingsVersion,targetVersion});
+        if(!(payload instanceof Uint8Array)||!payload.length||payload.length+64>BACKUP_MAX_BYTES)
+          throw new Error('The shared C settings migration returned an invalid payload. No restore was sent.');
+        bytes=new Uint8Array(64+payload.length);
+        // Container framing is host code; musical/settings meaning stays in C.
+        bytes.set(originalHeader,0);
+        bytes.set(payload,64);
+        const header=new DataView(bytes.buffer);header.setUint32(8,payload.length,true);
+        header.setUint32(12,deviceCRC32(payload),true);header.setUint16(16,targetVersion,true);
+        header.setUint32(60,deviceCRC32(bytes.subarray(0,60)),true);
+        info=inspectDeviceBackup(bytes,restoreIdentity);
+      }
+      if(!state.connected||port!==restorePort||backupCaps!==restoreIdentity)
+        throw new Error('The device connection changed during backup preparation. No restore was sent.');
       let uploading=false,applied=false;
       try{
         const before=await backupStatus();if(!['idle','saved-verified','error'].includes(before.state))throw new Error('Device backup service is busy.');
@@ -288,7 +352,9 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
         const checked=inspectDeviceBackup(await download(),backupCaps);
         if(checked.payload.length!==info.payload.length||checked.payload.some((byte,index)=>byte!==info.payload[index]))
           throw new Error('Saved settings re-export differs from the restored payload.');
-        emit('Restored · saved and read back exactly');return {generation:status.generation,payloadCRC:info.payloadCRC,verified:true};
+        emit('Restored · saved and read back exactly');return {generation:status.generation,payloadCRC:info.payloadCRC,
+          sourcePayloadCRC:original.payloadCRC,sourceSettingsVersion:original.settingsVersion,settingsVersion:targetVersion,
+          migrated:original.settingsVersion!==targetVersion,verified:true};
       }finally{if(uploading&&!applied){try{await exchange('backup abort',/^BACKUP aborted$/);}catch{}}}
     });},
   };

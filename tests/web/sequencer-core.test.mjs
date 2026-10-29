@@ -1,4 +1,5 @@
 import {legacyViewInfo} from './legacy-view-fixture.mjs';
+import {CURRENT_SETTINGS_VERSION,CURRENT_SETTINGS_PARAMETER_BYTES} from './current-settings-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -191,7 +192,7 @@ test('created and disabled flags survive web route edits while out-of-range flag
   assert.equal(engine.sequencer.configureTrack(0,{flags:256}).ok,false);
 });
 
-test('browser song save/load and v15 preferences restore the song without starting playback',async()=>{
+test('browser song save/load and current preferences restore the song without starting playback',async()=>{
   const engine=await fresh();let now=0;const model=createSequencerLabModel({engine,now:()=>now,onEvents:()=>engine.drain()});
   okay(engine.sequencer.add(5,[{tick:480,duration:960,pitch:69,value:93,chord:true}]));
   okay(engine.sequencer.configureTrack(5,{channel:11,mask:4,processor:'arp1',quantize:4}));
@@ -199,7 +200,7 @@ test('browser song save/load and v15 preferences restore the song without starti
   const records=new Map(),storage={setItem:(key,value)=>records.set(key,value),getItem:key=>records.get(key)??null};
   okay(model.saveLocal(storage));okay(engine.sequencer.clear(5));okay(model.loadLocal(storage));assert.equal(engine.sequencer.events(5).length,1);
   const expected=engine.sequencer.events(5),payload=engine.settings.encode();assert.ok(payload.length>2881);
-  storage.setItem(PREVIEW_SETTINGS_KEY,JSON.stringify({format:'thy666.preview-settings',version:15,crc:engine.settings.crc(payload),payload:Array.from(payload)}));
+  storage.setItem(PREVIEW_SETTINGS_KEY,JSON.stringify({format:'thy666.preview-settings',version:CURRENT_SETTINGS_VERSION,crc:engine.settings.crc(payload),payload:Array.from(payload)}));
   const cold=await fresh(),prefs=new PreviewSettings(cold,storage);assert.equal(prefs.restore(()=>true),'Saved locally');
   assert.deepEqual(cold.sequencer.events(5),expected);assert.equal(cold.sequencer.track(5).channel,11);assert.equal(cold.sequencer.track(5).processor,'arp1');
   assert.equal(cold.sequencer.snapshot().swapped,false);assert.equal(cold.sequencer.snapshot().inputLayout,'chords');assert.equal(cold.sequencer.track(5).gridTicks,480);
@@ -217,6 +218,6 @@ test('existing v6 browser settings containing a v1 song migrate losslessly into 
   assert.equal(cold.sequencer.track(4).exists,true);assert.equal(cold.sequencer.track(4).channel,9);assert.equal(cold.rhythm.snapshot().transport,'stopped');assert.deepEqual(cold.drain(),[]);
   preferences.tick(0);preferences.tick(1600);
   const migrated=Uint8Array.from(JSON.parse(storage.getItem(PREVIEW_SETTINGS_KEY)).payload);
-  assert.equal(new TextDecoder().decode(migrated.subarray(5013,5017)),'THYS');
-  assert.equal(new DataView(migrated.buffer).getUint16(5017,true),2);assert.equal(cold.settings.validate(migrated),true);
+  assert.equal(new TextDecoder().decode(migrated.subarray(CURRENT_SETTINGS_PARAMETER_BYTES,CURRENT_SETTINGS_PARAMETER_BYTES+4)),'THYS');
+  assert.equal(new DataView(migrated.buffer).getUint16(CURRENT_SETTINGS_PARAMETER_BYTES+4,true),2);assert.equal(cold.settings.validate(migrated),true);
 });

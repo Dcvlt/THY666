@@ -43,6 +43,7 @@ class PublicSiteTests(unittest.TestCase):
         self.assertIn("guide/help-topics.js", self.files)
         self.assertIn("LICENSE.txt", self.files)
         self.assertIn("installer/THIRD_PARTY_LICENSES.txt", self.files)
+        self.assertIn("client/backup-migration.js", self.files)
         forbidden = (".env", "chords.runtime.json", "Resources/", "analysis/", "before.thyb")
         for name in self.files:
             self.assertFalse(any(value in name for value in forbidden), name)

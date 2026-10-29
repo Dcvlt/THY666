@@ -7,6 +7,49 @@
 static unsigned assertions;
 #define CHECK(x) do{++assertions;if(!(x)){fprintf(stderr,"%s:%d %s\n",__FILE__,__LINE__,#x);return 0;}}while(0)
 
+/* Independent two-voice oracle: enumerate all octave pairs, using a brute
+ * whole-octave centroid search instead of production rounding/DP parents. */
+static int centered_pair_reference(const int16_t input[7],const int16_t previous[7],
+    int low,int high,unsigned root,unsigned root_bass,int16_t out[7])
+{
+    int sum=input[0]+input[1],prior_sum=previous[0]+previous[1];
+    int reference_shift=0,reference_error=100000;
+    for(int octave=-11;octave<=11;++octave) {
+        int error=abs(prior_sum+24*octave-sum);
+        if(error<reference_error || (error==reference_error && abs(octave)<abs(reference_shift))) {
+            reference_error=error;reference_shift=octave;
+        }
+    }
+    int prior_low=previous[0]<previous[1]?previous[0]:previous[1];
+    int prior_high=previous[0]>previous[1]?previous[0]:previous[1];
+    prior_low+=12*reference_shift;prior_high+=12*reference_shift;
+    unsigned best=UINT32_MAX,best_rotation=UINT32_MAX;
+    int best_low=128,best_high=128,a_best=0,b_best=0;
+    for(int a=input[0]%12;a<128;a+=12)for(int b=input[1]%12;b<128;b+=12) {
+        int lo=a<b?a:b,hi=a>b?a:b;
+        if(a==b || lo<low || hi>high || (root_bass && (unsigned)(lo%12)!=root))continue;
+        unsigned rotation=((a<b)==(input[0]<input[1]))?0u:1u;
+        unsigned cost=(unsigned)(abs(lo-prior_low)+abs(hi-prior_high))*1024u+
+            (unsigned)(abs(a-input[0])+abs(b-input[1]));
+        if(cost<best || (cost==best && (rotation<best_rotation ||
+           (rotation==best_rotation && (hi<best_high || (hi==best_high && lo<best_low)))))) {
+            best=cost;best_rotation=rotation;best_low=lo;best_high=hi;a_best=a;b_best=b;
+        }
+    }
+    if(best==UINT32_MAX)return THY_INVALID_ARGUMENT;
+    int shift=0,error_best=100000;
+    for(int octave=-11;octave<=11;++octave) {
+        if(best_low+12*octave<low || best_high+12*octave>high)continue;
+        int error=abs(a_best+b_best+24*octave-sum);
+        if(error<error_best || (error==error_best && abs(octave)<abs(shift))) {
+            error_best=error;shift=octave;
+        }
+    }
+    memcpy(out,input,7u*sizeof(*out));
+    out[0]=out[2]=(int16_t)(a_best+12*shift);out[1]=(int16_t)(b_best+12*shift);
+    return THY_OK;
+}
+
 /* Independent oracle: sorted set plus selected-pitch lookup, rather than the
  * production helper's per-slot count of distinct smaller original pitches. */
 static int reference(const int16_t notes[7],uint8_t valid,uint8_t drops,int16_t out[7])
@@ -198,24 +241,15 @@ static int automatic_leading(void)
     CHECK(!memcmp(out,next,sizeof out));
     CHECK(thy_voicing_lead(next,7u,prior,127u,out)==THY_INVALID_ARGUMENT);
     CHECK(!memcmp(out,next,sizeof out));
-    /* Exhaustive two-voice oracle: enumerate every legal pitch pair, compare
-     * minimum movement and authored-register tie cost, independent of the DP. */
+    /* Enumerate all legal pairs against the octave-centered reference, then
+     * apply the independent legal whole-chord register selection. */
     for(int root=0;root<128;root+=7)for(int third=1;third<12;third+=2) {
         int16_t input[7]={root,(root+third)%128,root,0,0,0,0};
         int16_t old[7]={36,79,0,0,0,0,0};
         CHECK(thy_voicing_lead(input,7u,old,3u,out)==THY_OK);
-        unsigned best=UINT32_MAX;
-        for(int a=input[0]%12;a<128;a+=12)for(int b=input[1]%12;b<128;b+=12) {
-            if(a==b)continue;
-            int lo=a<b?a:b,hi=a>b?a:b;
-            unsigned cost=(unsigned)(abs(lo-36)+abs(hi-79))*1024u+
-                (unsigned)(abs(a-input[0])+abs(b-input[1]));
-            if(cost<best)best=cost;
-        }
-        int lo=out[0]<out[1]?out[0]:out[1],hi=out[0]>out[1]?out[0]:out[1];
-        unsigned actual=(unsigned)(abs(lo-36)+abs(hi-79))*1024u+
-            (unsigned)(abs(out[0]-input[0])+abs(out[1]-input[1]));
-        CHECK(actual==best && out[0]==out[2]);
+        int16_t expected[7];
+        CHECK(centered_pair_reference(input,old,0,127,0u,0u,expected)==THY_OK);
+        CHECK(!memcmp(out,expected,sizeof out));
         CHECK(out[0]%12==input[0]%12 && out[1]%12==input[1]%12);
     }
     return 1;
@@ -252,9 +286,151 @@ static int register_modes_preserve_all_pitch_sets(void)
     return 1;
 }
 
+static int constrained_register_root_and_owner_boundaries(void)
+{
+    const int16_t prior[7]={60,64,67,999,-999,0,0};
+    const int16_t next[7]={65,69,72,999,-999,65,0};
+    int16_t out[7],original[7],old[7],alias[7];
+    memcpy(original,next,sizeof next);memcpy(old,prior,sizeof prior);
+    CHECK(thy_voicing_lead_constrained(next,39u,prior,7u,60,71,255u,0u,out)==THY_OK);
+    CHECK(out[0]==65 && out[1]==69 && out[2]==60 && out[5]==65);
+    CHECK(out[3]==999 && out[4]==-999 && out[6]==0);
+    CHECK(thy_voicing_lead_constrained(next,39u,prior,7u,60,83,5u,1u,out)==THY_OK);
+    CHECK(out[0]==65 && out[1]==69 && out[2]==72 && out[5]==65);
+    memcpy(alias,next,sizeof alias);
+    CHECK(thy_voicing_lead_constrained(alias,39u,prior,7u,60,83,5u,1u,alias)==THY_OK);
+    CHECK(!memcmp(alias,out,sizeof out));
+    memcpy(alias,prior,sizeof alias);
+    CHECK(thy_voicing_lead_constrained(next,39u,alias,7u,60,83,5u,1u,alias)==THY_OK);
+    CHECK(!memcmp(alias,out,sizeof out));
+    CHECK(!memcmp(next,original,sizeof original) && !memcmp(prior,old,sizeof old));
+
+    const int16_t low[7]={12,16,19,901,902,903,904};
+    const int16_t bottom[7]={0,4,7,0,0,0,0};
+    CHECK(thy_voicing_lead_constrained(low,7u,bottom,7u,0,7,0u,1u,out)==THY_OK);
+    CHECK(out[0]==0 && out[1]==4 && out[2]==7 && out[3]==901);
+    CHECK(thy_voicing_lead_constrained(bottom,7u,prior,0u,120,127,0u,1u,out)==THY_OK);
+    CHECK(out[0]==120 && out[1]==124 && out[2]==127);
+    CHECK(thy_voicing_lead_constrained(low,7u,prior,0u,60,71,0u,0u,out)==THY_OK);
+    CHECK(out[0]==60 && out[1]==64 && out[2]==67);
+    const int16_t seven[7]={60,62,64,65,67,69,71};
+    CHECK(thy_voicing_lead_constrained(seven,127u,seven,127u,60,71,0u,1u,out)==THY_OK);
+    CHECK(!memcmp(out,seven,sizeof out));
+
+    static thy_core held;
+    thy_core_init(&held);
+    CHECK(thy_core_press(&held,0u,prior,3u,0,0,THY_ROUTE_DIN,96u)==THY_OK);
+    thy_pad_owner owner=held.owners[0];
+    unsigned voices=held.sounding_count,queued=held.queue_count;
+    CHECK(thy_voicing_lead_constrained(next,39u,prior,7u,48,83,5u,1u,out)==THY_OK);
+    CHECK(!memcmp(&owner,&held.owners[0],sizeof owner));
+    CHECK(held.sounding_count==voices && held.queue_count==queued && held.owners[0].held);
+    return 1;
+}
+
+static int constrained_failures_are_atomic_and_rootless_stays_rootless(void)
+{
+    const int16_t chord[7]={60,64,67,999,-999,0,0};
+    const int16_t seven[7]={60,62,64,65,67,69,71};
+    const int16_t sentinel[7]={901,902,903,904,905,906,907};
+    int16_t out[7],alias[7],corrupt[7];memcpy(out,sentinel,sizeof out);
+    CHECK(thy_voicing_lead_constrained(chord,7u,chord,7u,60,71,5u,1u,out)==THY_INVALID_ARGUMENT);
+    CHECK(!memcmp(out,sentinel,sizeof out)); /* F is absent; never insert it. */
+    CHECK(thy_voicing_lead_constrained(seven,127u,seven,127u,60,69,0u,0u,out)==THY_INVALID_ARGUMENT);
+    CHECK(!memcmp(out,sentinel,sizeof out)); /* No legal B, no silent omission. */
+    CHECK(thy_voicing_lead_constrained(chord,7u,chord,7u,60,60,0u,1u,out)==THY_INVALID_ARGUMENT);
+    CHECK(thy_voicing_lead_constrained(chord,7u,chord,7u,-1,127,0u,0u,out)==THY_INVALID_ARGUMENT);
+    CHECK(thy_voicing_lead_constrained(chord,7u,chord,7u,0,128,0u,0u,out)==THY_INVALID_ARGUMENT);
+    CHECK(thy_voicing_lead_constrained(chord,7u,chord,7u,71,60,0u,0u,out)==THY_INVALID_ARGUMENT);
+    CHECK(thy_voicing_lead_constrained(chord,7u,chord,7u,0,127,12u,1u,out)==THY_INVALID_ARGUMENT);
+    CHECK(thy_voicing_lead_constrained(chord,7u,chord,7u,0,127,0u,2u,out)==THY_INVALID_ARGUMENT);
+    CHECK(thy_voicing_lead_constrained(chord,128u,chord,7u,0,127,0u,0u,out)==THY_INVALID_ARGUMENT);
+    CHECK(thy_voicing_lead_constrained(chord,7u,chord,128u,0,127,0u,0u,out)==THY_INVALID_ARGUMENT);
+    CHECK(thy_voicing_lead_constrained(NULL,7u,chord,7u,0,127,0u,0u,out)==THY_INVALID_ARGUMENT);
+    CHECK(thy_voicing_lead_constrained(chord,7u,NULL,0u,0,127,0u,0u,out)==THY_INVALID_ARGUMENT);
+    CHECK(thy_voicing_lead_constrained(chord,7u,chord,7u,0,127,0u,0u,NULL)==THY_INVALID_ARGUMENT);
+    memcpy(corrupt,chord,sizeof corrupt);corrupt[0]=-1;
+    CHECK(thy_voicing_lead_constrained(corrupt,7u,chord,7u,0,127,0u,0u,out)==THY_INVALID_ARGUMENT);
+    CHECK(thy_voicing_lead_constrained(chord,7u,corrupt,7u,0,127,0u,0u,out)==THY_INVALID_ARGUMENT);
+    CHECK(!memcmp(out,sentinel,sizeof out));
+    memcpy(alias,chord,sizeof alias);
+    CHECK(thy_voicing_lead_constrained(alias,7u,chord,7u,60,60,0u,1u,alias)==THY_INVALID_ARGUMENT);
+    CHECK(!memcmp(alias,chord,sizeof alias));
+    CHECK(thy_voicing_lead_constrained(corrupt,0u,chord,0u,0,127,0u,1u,out)==THY_OK);
+    CHECK(!memcmp(out,corrupt,sizeof out)); /* Empty input retains inactive data. */
+    return 1;
+}
+
+static int constrained_two_voice_independent_oracle_and_legacy_equivalence(void)
+{
+    const int16_t previous[7]={36,79,0,0,0,0,0};
+    static const int intervals[]={1,4,7,11};
+    int16_t out[7],old[7];
+    for(int root=0;root<128;root+=17)
+        for(unsigned interval=0u;interval<4u;++interval) {
+            int16_t input[7]={(int16_t)root,(int16_t)((root+intervals[interval])%128),
+                (int16_t)root,999,-999,0,0};
+            CHECK(thy_voicing_lead(input,7u,previous,3u,old)==THY_OK);
+            CHECK(thy_voicing_lead_constrained(input,7u,previous,3u,0,127,255u,0u,out)==THY_OK);
+            CHECK(!memcmp(out,old,sizeof out));
+            for(int low=0;low<128;low+=12)for(unsigned root_bass=0u;root_bass<2u;++root_bass) {
+                int high=low+24<128?low+24:127;
+                int16_t expected[7];for(unsigned n=0u;n<7u;++n)expected[n]=(int16_t)(901u+n);
+                int reference_result=centered_pair_reference(input,previous,low,high,
+                    (unsigned)(input[0]%12),root_bass,expected);
+                for(unsigned n=0u;n<7u;++n)out[n]=(int16_t)(901u+n);
+                int result=thy_voicing_lead_constrained(input,7u,previous,3u,
+                    (int16_t)low,(int16_t)high,(uint8_t)(input[0]%12),(uint8_t)root_bass,out);
+                CHECK(result==reference_result);
+                CHECK(!memcmp(out,expected,sizeof out));
+                if(result!=THY_OK) {
+                    for(unsigned n=0u;n<7u;++n)CHECK(out[n]==(int16_t)(901u+n));
+                } else {
+                    int lo=out[0]<out[1]?out[0]:out[1],hi=out[0]>out[1]?out[0]:out[1];
+                    CHECK(lo>=low && hi<=high && out[0]==out[2]);
+                    CHECK(!root_bass || lo%12==input[0]%12);
+                    CHECK(out[0]%12==input[0]%12 && out[1]%12==input[1]%12);
+                    for(unsigned n=3u;n<7u;++n)CHECK(out[n]==input[n]);
+                }
+            }
+        }
+    return 1;
+}
+
+static int repeated_progressions_remain_in_the_authored_octave_register(void)
+{
+    static const int offsets[7][3]={{0,4,7},{2,5,9},{4,7,11},{5,9,12},{7,11,14},{9,12,16},{11,14,17}};
+    static const int anchors[]={0,24,60,84,108};
+    for(unsigned chromatic=0u;chromatic<2u;++chromatic)
+        for(unsigned descending=0u;descending<2u;++descending)
+            for(unsigned octave=0u;octave<sizeof anchors/sizeof anchors[0];++octave) {
+                int16_t previous[7]={0},out[7],other[7];uint8_t old_mask=0;
+                unsigned steps=chromatic?12u:7u;int base=anchors[octave];
+                for(unsigned cycle=0u;cycle<64u;++cycle)for(unsigned step=0u;step<steps;++step) {
+                    unsigned chord=descending?(steps-step)%steps:step;
+                    int16_t source[7]={0,0,0,-999,0,999,-123};
+                    for(unsigned n=0u;n<3u;++n)source[n]=(int16_t)(base+(chromatic?(int)chord+(n==0u?0:n==1u?4:7):offsets[chord][n]));
+                    source[4]=source[0];
+                    CHECK(thy_voicing_lead(source,23u,previous,old_mask,out)==THY_OK);
+                    CHECK(thy_voicing_lead_constrained(source,23u,previous,old_mask,0,127,255u,0u,other)==THY_OK);
+                    CHECK(!memcmp(out,other,sizeof out));
+                    CHECK(abs(out[0]+out[1]+out[2]-source[0]-source[1]-source[2])<=18);
+                    for(unsigned n=0u;n<3u;++n)CHECK(out[n]>=0 && out[n]<=127 && out[n]%12==source[n]%12);
+                    CHECK(out[4]==out[0] && out[3]==-999 && out[5]==999 && out[6]==-123);
+                    if(chord==0u)CHECK(out[0]==base && out[1]==base+4 && out[2]==base+7);
+                    memcpy(previous,out,sizeof out);old_mask=23u;
+                }
+            }
+    return 1;
+}
+
 int main(void)
 {
-    int(*tests[])(void)={register_modes_preserve_all_pitch_sets,automatic_leading,basic_drop_and_protected_bass,
+    int(*tests[])(void)={constrained_register_root_and_owner_boundaries,
+        constrained_failures_are_atomic_and_rootless_stays_rootless,
+        constrained_two_voice_independent_oracle_and_legacy_equivalence,
+        repeated_progressions_remain_in_the_authored_octave_register,
+        register_modes_preserve_all_pitch_sets,automatic_leading,basic_drop_and_protected_bass,
         duplicates_holes_and_inactive_literals,permutations_use_pitch_rank_not_slot_index,
         exhaustive_duplicate_vectors_masks_and_drop_bits,every_midi_bass_and_boundary_combination,
         invalid_arguments_and_underflow_are_atomic};

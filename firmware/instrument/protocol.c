@@ -169,6 +169,7 @@ static void io_reply(writer *w, const thy_instrument *state) {
     field(w, " led_errors=", board_led_report()->errors + lights->errors);
     field(w, " led_frames=", board_led_report()->frames);
     field(w, " led_fault=", lights->faulted);
+    field(w, " uptime_ms=", board_millis());
 }
 static void touch_reply(writer *w) {
     const thy_touch_capture *capture = board_touch_config_report();
@@ -303,6 +304,17 @@ size_t thy_diag_command(const char *line, char *output, size_t capacity) {
         put(&w, " presses="); number(&w, state ? state->presses : 0);
         put(&w, " releases="); number(&w, state ? state->releases : 0);
         put(&w, " voices="); number(&w, state ? thy_core_sounding(state->core) : 0);
+        const thy_resources *r=board_resources();
+        if(r && r->valid){
+            field(&w," resources=",1u);field(&w," cpu_active=",r->cpu_active);
+            field(&w," timing_valid=",r->timing_valid);field(&w," resource_ms=",r->sampled_ms);
+            field(&w," loop_us=",r->loop_us);field(&w," loop_peak_us=",r->loop_peak_us);
+            field(&w," ram_used=",r->ram_used);field(&w," ram_total=",r->ram_total);
+            field(&w," ccm_used=",r->ccm_used);field(&w," ccm_total=",r->ccm_total);
+            field(&w," stack_used=",r->stack_used);field(&w," stack_total=",r->stack_total);
+            field(&w," stack_valid=",r->stack_valid);
+            field(&w," flash_used=",r->flash_used);field(&w," flash_total=",r->flash_total);
+        }
         put(&w, " layout="); put(&w, thy_instrument_app_scale_name());
     } else if (equal(line, "pads")) {
         const diag_pads_report_t *p = board_pads_report();

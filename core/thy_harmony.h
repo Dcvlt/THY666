@@ -97,6 +97,9 @@ typedef struct thy_modulation {
 size_t thy_guidance_scale_count(void);
 const char *thy_guidance_scale_name(unsigned family);
 uint16_t thy_guidance_scale_mask(unsigned family,unsigned root);
+/* Exact interval-set mapping; advisory identities never become saved catalog IDs. */
+int thy_guidance_catalog_family(unsigned catalog);
+int thy_guidance_playable_catalog(unsigned family);
 int thy_guidance_chords(uint16_t key,uint8_t tonic,uint16_t current,
     thy_chord_suggestion *out,size_t capacity,size_t *count);
 int thy_guidance_scales(uint16_t selected,thy_scale_match *out,size_t capacity,

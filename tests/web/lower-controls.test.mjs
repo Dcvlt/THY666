@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {CURRENT_SETTINGS_VERSION,CURRENT_EMPTY_SETTINGS_BYTES} from './current-settings-fixture.mjs';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createCore } from '../../web/core.js';
@@ -91,7 +92,7 @@ test('mode, scope, availability, indicators and cold-restored layers share the C
   assert.equal(cold.engine.firmware.state().globalExcludedSlots,revision);
 });
 
-test('browser restores v1 safely and saves v15 without losing earlier preferences', async () => {
+test('browser restores v1 safely and saves current settings without losing earlier preferences', async () => {
   const {engine, model} = await fresh();
   assert.ok(model.set('controls.left','hide').ok); // The v1 enum predates Engines.
   assert.ok(model.set('controls.lowerMode','stored-notes').ok);
@@ -111,5 +112,5 @@ test('browser restores v1 safely and saves v15 without losing earlier preference
   assert.equal(cold.engine.firmware.state().globalExcludedSlots,2);
   prefs.tick(0); prefs.tick(1600);
   const migrated=JSON.parse(storage.getItem(PREVIEW_SETTINGS_KEY));
-  assert.equal(migrated.version,15);assert.equal(migrated.payload.length,5633);
+  assert.equal(migrated.version,CURRENT_SETTINGS_VERSION);assert.equal(migrated.payload.length,CURRENT_EMPTY_SETTINGS_BYTES);
 });

@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {CURRENT_SETTINGS_VERSION} from './current-settings-fixture.mjs';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createCore} from '../../web/core.js';
@@ -71,7 +72,7 @@ test('MPE rejects a whole oversized chord and leaves held voices unchanged',asyn
 
 test('MPE settings restore quietly and preserve their exact versioned payload',async()=>{
   const source=await fresh();okay(source.expression.configure({enabled:true,upperZone:true,members:7,glide:true,padWindow:2}));
-  const payload=source.settings.encode(),cold=await fresh();assert.equal(source.settings.version,15);
+  const payload=source.settings.encode(),cold=await fresh();assert.equal(source.settings.version,CURRENT_SETTINGS_VERSION);
   assert.equal(cold.settings.apply(payload),true);assert.deepEqual(cold.expression.config(),source.expression.config());
   assert.deepEqual(cold.settings.encode(),payload);assert.deepEqual(cold.drain(),[]);assert.equal(cold.expression.stats().active,0);
   okay(press(cold,0,[60]));assert.equal(kind(cold.drain(),0x90)[0].channel,14);

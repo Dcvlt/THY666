@@ -30,6 +30,12 @@ prompts, screenshots or logs.
 
 ## Development and pull requests
 
+Write interface copy for the task at hand: one heading per state, one place for
+each instruction, and a clear next action. Remove repetition and filler. Keep
+technical detail in contextual help or expandable diagnostics; retain warnings
+where the user makes the consequential choice. Apply this to device screens,
+the Client, the updater and documentation alike.
+
 1. Fork the repository and make a focused branch. Target **develop** with your PR. Keep unrelated cleanup out of
    a behavior change so reviewers can understand its effect.
 2. Build the public core with `npm run setup` and `npm run build:core`.
