@@ -2,7 +2,7 @@
 
 Versions use **vX.X.X** tags, with X.X.X in package metadata. Prerelease status
 is a GitHub release property rather than a different version spelling.
-`python tools/check_release_version.py --tag v0.2.0` checks the JavaScript,
+`python tools/check_release_version.py --tag v0.2.1` checks the JavaScript,
 Tauri, Rust package and lockfile versions together.
 
 ## Downloads
@@ -28,6 +28,11 @@ limits.
 
 ## Release history
 
+- **v0.2.1 (in preparation):** Client navigation, backups, Harmony controls and
+  live diagnostics are refined; CPU, RAM, stack and flash resources are exposed
+  in the Client and device menu. Shared OLED styling and a three-part Quick start
+  guide complete this milestone. Focused display, resources and Arp timing
+  checks passed on a board; broader platform and recovery limits remain.
 - **v0.1.0:** cleaned historical snapshot of the first published implementation.
   The public history was rewritten to remove internal comparisons and apply GPL
   consistently. It does not retroactively withdraw permissions from earlier copies.
@@ -73,7 +78,7 @@ device identifiers and local paths. Do not publish a binary if its corresponding
 source/input bundle is missing or differs from the audited build.
 
 Attach the firmware, matching source, checksums and board checklist to the draft
-before publication. Keep v0.2.0 marked prerelease until the required board tests
+before publication. Keep testing releases marked prerelease until the required board tests
 are recorded. Preserve original third-party terms and project GPL notices.
 
 ## Prepare each release

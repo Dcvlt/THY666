@@ -49,7 +49,7 @@ uses illustrations, expandable reference sections and phone-friendly tables.
 
 ## Current status
 
-**Hardware alpha. v0.2.0 is a prerelease for board testing.** Existing playing,
+**Hardware alpha. Preparing v0.2.1 for board testing.** Existing playing,
 MIDI, display, storage and Windows update paths have device evidence. The latest
 musical additions have passed software checks and focused board tests, including
 Harmony exploration, held-note stability and saved preferences after power-off.
