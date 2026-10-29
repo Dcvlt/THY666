@@ -210,3 +210,51 @@
 }
 
 .thy-help :is(h2,h3){font-family:var(--font-accent,Orbitron),system-ui,sans-serif;color:var(--help-ink)}
+
+.thy-help-index-toggle { display:none; }
+.thy-help-contents { display:flex;flex-wrap:wrap;gap:10px 20px;margin:24px 0 42px;padding:20px 0;border-block:1px solid var(--help-edge); }
+.thy-help-contents .thy-help-eyebrow { flex-basis:100%;margin:0; }
+.thy-help-contents a { color:var(--help-ink);font-size:14px;text-underline-offset:5px; }
+.thy-help-section { scroll-margin-top:24px; }
+.thy-help-section > p { max-width:70ch; }
+@media(max-width:760px) {
+  .thy-help { gap:20px; }
+  .thy-help-rail { padding:0;max-height:none;border:0;overflow:visible; }
+  .thy-help-rail > :is(.thy-help-title,.thy-help-eyebrow),.thy-help-rail::before { display:none; }
+  .thy-help-index-toggle { display:flex;align-items:center;justify-content:space-between;width:100%;min-height:48px;padding:12px 16px;border:1px solid var(--help-edge);background:var(--help-paper);color:var(--help-ink);font:12px var(--help-control);text-align:left; }
+  .thy-help-index-toggle::after { content:'+';font-size:22px;color:var(--help-accent); }
+  .thy-help-index-toggle[aria-expanded="true"]::after { content:'−'; }
+  .thy-help-rail:not(.index-open) .thy-help-index-content { display:none; }
+  .thy-help-index-content { max-height:60dvh;overflow:auto;overscroll-behavior:contain;padding:20px 16px;border:1px solid var(--help-edge);border-top:0; }
+  .thy-help-article { padding:16px 0 40px;min-width:0; }
+  .thy-help-contents { flex-direction:column;gap:14px;margin-bottom:30px; }
+  .thy-help-contents a { padding-block:4px; }
+  .thy-help-section { margin-top:36px; }
+}
+/* Progressive detail: the first two sections lead, deeper reference opens on demand. */
+.thy-help-section{padding:24px 0;border-bottom:1px solid var(--help-rule);max-width:78ch}
+.thy-help-section>summary{cursor:pointer;color:var(--help-accent);padding:4px 0;min-height:44px}
+.thy-help-section>summary h2{display:inline;font-size:20px}
+.thy-help-section[open]>summary{margin-bottom:24px}
+.thy-help-section ol{list-style:none;counter-reset:guide-step;padding:0;display:grid;gap:12px}
+.thy-help-section ol>li{counter-increment:guide-step;position:relative;padding:16px 16px 16px 56px;border:1px solid var(--help-rule)}
+.thy-help-section ol>li:before{content:counter(guide-step,decimal-leading-zero);position:absolute;left:16px;color:var(--help-accent);font-family:var(--help-control)}
+.thy-help-contents{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:16px 0}.thy-help-contents>.thy-help-eyebrow{grid-column:1/-1}.thy-help-contents a{padding:6px 0;font-size:14px}
+@media(max-width:760px){.thy-help-section{padding:20px 0}.thy-help-contents{grid-template-columns:1fr}.thy-help-section>summary h2{font-size:17px}.thy-help-table-scroll thead{display:none}.thy-help-table-scroll tr{display:block;padding:12px 0;border-bottom:1px solid var(--help-rule)}.thy-help-table-scroll td{display:block;border:0!important;padding:6px 0!important;min-width:0!important}.thy-help-table-scroll td:before{content:attr(data-label);display:block;color:var(--help-accent);font-size:11px;letter-spacing:.06em}.thy-help-table-scroll table{min-width:0!important;width:100%}}
+
+/* Quick start: the actual OLED frame stays linked to the five physical keys.
+ * Text remains HTML-sized on phones rather than shrinking inside an SVG. */
+.thy-help-inline-link { color:var(--help-ink);text-decoration-color:var(--help-accent);text-underline-offset:4px; }
+.thy-help-inline-link:hover { color:var(--help-accent); }
+.thy-help-inline-link:focus-visible { outline:2px solid var(--help-accent);outline-offset:4px; }
+.thy-help-figure-navigation { grid-column:1/-1; }
+.thy-help-figure-navigation .thy-help-figure-viewport { width:min(100%,384px);margin-inline:auto;border:1px solid var(--help-edge); }
+.thy-help-nav-keys { position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));width:min(100%,384px);margin:30px auto 20px; }
+.thy-help-nav-keys::before { content:'';position:absolute;top:-14px;left:10%;right:10%;border-top:1px solid var(--help-accent); }
+.thy-help-nav-keys::after { content:'';position:absolute;left:50%;top:-30px;height:16px;border-left:1px solid var(--help-accent); }
+.thy-help-nav-key { position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;color:var(--help-ink);font:10px/1.6 var(--help-control),var(--font-symbol,system-ui),sans-serif; }
+.thy-help-nav-key::before { content:'';position:absolute;left:50%;top:-14px;height:12px;border-left:1px solid var(--help-accent); }
+.thy-help-nav-symbol { color:var(--help-accent);font:32px/1.2 var(--font-symbol,system-ui),sans-serif; }
+.thy-help-section .thy-help-nav-legend { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 20px;margin:24px 0 12px;padding:0;list-style:none; }
+.thy-help-section .thy-help-nav-legend li { margin:0;padding:0;font-size:14px;line-height:1.7; }
+@media(max-width:420px){.thy-help-section .thy-help-nav-legend{grid-template-columns:1fr;gap:8px}.thy-help-nav-key{font-size:9px}}

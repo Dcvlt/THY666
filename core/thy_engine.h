@@ -10,6 +10,7 @@
 #include "thy_sequencer_ui.h"
 #include "thy_mpe.h"
 #include "thy_channel_expression.h"
+#include "thy_harmony_workspace.h"
 
 typedef struct thy_engine_channel_config {
     uint8_t aftertouch,bend,range; /* 0 inherit,1 Off,2 Poly,3 Channel; bend0..2. */
@@ -59,6 +60,7 @@ typedef struct thy_engine {
     thy_state state;
     thy_instrument *instrument;
     thy_engine_session session;
+    thy_harmony_workspace harmony;
     uint16_t scale;
     uint8_t route_target; /* Editor target, independent of sounding owners. */
     uint8_t shortcut_target; /* Editor target for the twelve scale shortcuts. */
@@ -110,6 +112,8 @@ typedef struct thy_engine {
  * until the engine is discarded. It may reside in a different memory bank. */
 void thy_engine_init(thy_engine *engine, thy_instrument *instrument,
     uint16_t scale, uint16_t scale_count, thy_seq_event history[THY_SEQ_EVENTS]);
+/* Called only by the confirmed shared-menu transaction. No storage/device I/O. */
+int thy_engine_reset_options(thy_engine *,uint8_t group,const uint8_t targets[9],uint8_t track);
 void thy_engine_bind_controls(thy_engine *engine);
 void thy_engine_bind_music(thy_engine *engine);
 void thy_engine_bind_expression(thy_engine *, thy_mpe *);

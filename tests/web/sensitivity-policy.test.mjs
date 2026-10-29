@@ -1,4 +1,5 @@
 import {legacyViewInfo} from './legacy-view-fixture.mjs';
+import {CURRENT_SETTINGS_VERSION,CURRENT_EMPTY_SETTINGS_BYTES,CURRENT_SETTINGS_PARAMETER_BYTES} from './current-settings-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -12,10 +13,10 @@ const row=id=>MENU_ROWS.findIndex(value=>value.id===id);
 const response=(changes={})=>({attack:1200,release:1000,floor:800,ceiling:3200,curve:0,...changes});
 const velocity=(changes={})=>({mode:1,curve:0,softRate:4,hardRate:128,minimum:10,maximum:120,...changes});
 const stripPolicy=payload=>{
-  assert.equal(payload[6],15,'Fixture projects the frozen V7 prefix from current V15 settings.');
+  assert.equal(payload[6],CURRENT_SETTINGS_VERSION,'Fixture projects the frozen V7 prefix from current settings.');
   payload=legacyViewInfo(payload);
-  assert.equal(new TextDecoder().decode(payload.subarray(5013,5017)),'THYS');
-  const legacy=new Uint8Array(3217+payload.length-5013);legacy.set(payload.subarray(0,3217));legacy[6]=7;
+  assert.equal(new TextDecoder().decode(payload.subarray(CURRENT_SETTINGS_PARAMETER_BYTES,CURRENT_SETTINGS_PARAMETER_BYTES+4)),'THYS');
+  const legacy=new Uint8Array(3217+payload.length-CURRENT_SETTINGS_PARAMETER_BYTES);legacy.set(payload.subarray(0,3217));legacy[6]=7;
   // A v7 file had one common response/velocity family. Project the explicitly
   // configured Left cluster into that frozen legacy family for this fixture.
   legacy.set(payload.subarray(3508,3517),59);
@@ -24,7 +25,7 @@ const stripPolicy=payload=>{
     if(!legacy[188+20*pad])legacy.set(legacy.subarray(59,68),189+20*pad);
     if(!legacy[2353+9*pad])legacy.set(legacy.subarray(2345,2353),2354+9*pad);
   }
-  legacy.set(payload.subarray(5013),3217);return legacy;
+  legacy.set(payload.subarray(CURRENT_SETTINGS_PARAMETER_BYTES),3217);return legacy;
 };
 async function fresh(){return createCore({bytes});}
 
@@ -98,12 +99,12 @@ test('linked scope profiles load all three configuration families atomically and
   assert.equal(firmware.velocity(95).overridden,1);
 });
 
-test('v15 preserves linked release and independent aftertouch across cold restoration',async()=>{
+test('current settings preserve linked release and independent aftertouch across cold restoration',async()=>{
   const source=await fresh();
   okay(source.firmware.setSensitivity(-1,response({release:1177,floor:2000}),velocity(),{linked:1,gap:23}));
   okay(source.firmware.setSensitivity(95,response({attack:1500,release:1000}),velocity({mode:0}),{linked:0,gap:31}));
-  const payload=source.settings.encode();assert.equal(source.settings.version,15);
-  assert.equal(source.settings.payloadVersion(payload),15);assert.equal(payload.length,5633);
+  const payload=source.settings.encode();assert.equal(source.settings.version,CURRENT_SETTINGS_VERSION);
+  assert.equal(source.settings.payloadVersion(payload),CURRENT_SETTINGS_VERSION);assert.equal(payload.length,CURRENT_EMPTY_SETTINGS_BYTES);
   const cold=await fresh();assert.equal(cold.settings.apply(payload),true);
   for(const pad of [-1,95]){
     assert.deepEqual(cold.firmware.response(pad),source.firmware.response(pad));

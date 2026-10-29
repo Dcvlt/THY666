@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
- * Reuse the real V13 codec/journal fixtures, not a substitute settings model.
+ * Reuse the real codec/journal fixtures, not a substitute settings model.
  * The older suite's expensive power-cut runner is linked but never invoked. */
 #define main settings_fixture_unused_runner
 #include "test_settings.c"
@@ -61,9 +61,26 @@ static void send_file(void)
 }
 static void upload_file(void)
 {begin_file(thy_settings_crc32(backup_file,backup_size));send_file();}
+static void advertised_version_matches_exported_codec(void)
+{
+    ++scenarios;setup_backup();
+    /* Exercise a current-only value, rather than just exporting old defaults. */
+    instrument.voicing_mode=4u;
+    char expected[48];
+    (void)snprintf(expected,sizeof expected,"BACKUP version=1 settings=%u max=",THY_SETTINGS_VERSION);
+    request("backup caps",0u,1,1,expected);
+    request("backup export",1u,1,1,"BACKUP export bytes=");
+    (void)snprintf(expected,sizeof expected," settings=%u\r\n",THY_SETTINGS_VERSION);
+    CHECK(strstr(backup_reply,expected)!=NULL);
+    CHECK(backup.header[16u]==THY_SETTINGS_VERSION&&backup.header[17u]==0u);
+    CHECK(thy_settings_payload_version(backup.buffer,backup.payload_bytes)==THY_SETTINGS_VERSION);
+    CHECK(thy_settings_validate(backup.buffer,backup.payload_bytes,70u));
+    request("backup abort",2u,1,1,"BACKUP aborted");
+}
 static void full_current_state_and_verified_save(void)
 {
     ++scenarios;setup_backup();seed_library();
+    instrument.voicing_mode=4u;
     const thy_instrument_response left={820u,797u,1353u,4095u,1u},right={1100u,1060u,900u,3000u,2u};
     const thy_instrument_velocity velocity={3u,100u,THY_VELOCITY_STRIKE,1u,2u,120u};
     const thy_instrument_release_policy lp={23u,1u},rp={40u,1u};
@@ -95,6 +112,7 @@ static void full_current_state_and_verified_save(void)
     CHECK(encode(roundtrip)==backup_size-64u&&!memcmp(roundtrip,backup_file+64u,backup_size-64u));
     CHECK(!core.queue_count&&!core.sounding_count&&!core.generated_count&&thy_mpe_quiet(&expression));
     CHECK(engine.expression_config.enabled&&engine.expression_config.glide&&engine.sequencer.count==512u);
+    CHECK(instrument.voicing_mode==4u);
     CHECK(instrument.sensitivity_guard[95]==900u&&instrument.library.chords[23].used);
     request("backup abort",1001u,1,1,"ERR backup-applied");
     thy_settings_transfer_poll(&backup,&engine,&journal,1,1001u);CHECK(backup.state==THY_BACKUP_QUEUED);
@@ -123,6 +141,53 @@ static void rejected_bytes_are_atomic(void)
     }
     memcpy(backup_file,original_file,backup_size);setup_backup();begin_file(thy_settings_crc32(backup_file,backup_size)^1u);send_file();
     request("backup commit",1000u,1,1,"ERR backup-crc-or-format");CHECK(!apply_calls);
+}
+static void restore_requires_current_agreeing_header_and_payload(void)
+{
+    ++scenarios;setup_backup();export_file();memcpy(original_file,backup_file,backup_size);
+    uint32_t original_size=backup_size;
+    const unsigned versions[][2]={
+        {13u,13u},{14u,14u},{15u,15u},{16u,16u},{17u,17u},{14u,THY_SETTINGS_VERSION},
+        {THY_SETTINGS_VERSION,14u},{THY_SETTINGS_VERSION+1u,THY_SETTINGS_VERSION+1u},
+        {THY_SETTINGS_VERSION,THY_SETTINGS_VERSION+1u},{THY_SETTINGS_VERSION+1u,THY_SETTINGS_VERSION}
+    };
+    for(unsigned n=0;n<sizeof versions/sizeof versions[0];++n){
+        backup_size=original_size;memcpy(backup_file,original_file,backup_size);
+        backup_file[16u]=(uint8_t)versions[n][0];backup_file[17u]=(uint8_t)(versions[n][0]>>8u);
+        backup_file[64u+6u]=(uint8_t)versions[n][1];
+        if(versions[n][1]>=13u&&versions[n][1]<=17u){
+            unsigned prefix=versions[n][1]==17u?THY_SETTINGS_V17_PARAMETER_BYTES:versions[n][1]==16u?THY_SETTINGS_V16_PARAMETER_BYTES:THY_SETTINGS_V15_PARAMETER_BYTES;
+            memmove(backup_file+64u+prefix,
+                backup_file+64u+THY_SETTINGS_V18_PARAMETER_BYTES,
+                backup_size-64u-THY_SETTINGS_V18_PARAMETER_BYTES);
+            backup_size-=THY_SETTINGS_V18_PARAMETER_BYTES-prefix;
+            put32(backup_file+8u,backup_size-64u);
+        }
+        put32(backup_file+12u,thy_settings_crc32(backup_file+64u,backup_size-64u));
+        put32(backup_file+60u,thy_settings_crc32(backup_file,60u));
+        /* Supported old codecs are deliberately not applied directly on wire.
+         * The host must migrate them using shared C before upload. */
+        if(versions[n][1]<THY_SETTINGS_VERSION)
+            CHECK(thy_settings_validate(backup_file+64u,backup_size-64u,70u));
+        setup_backup();size_t before=encode(payload);upload_file();
+        request("backup commit",1000u,1,1,"ERR backup-crc-or-format");
+        CHECK(!apply_calls&&backup.state==THY_BACKUP_UPLOAD);
+        CHECK(encode(roundtrip)==before&&!memcmp(payload,roundtrip,before));
+    }
+}
+static void changed_applied_settings_cannot_claim_saved_verification(void)
+{
+    ++scenarios;setup_backup();export_file();upload_file();
+    request("backup commit",1000u,1,1,"BACKUP applied bytes=");
+    CHECK(backup.state==THY_BACKUP_APPLIED);
+    /* A generation advance with a different payload cannot prove this restore. */
+    instrument.fixed_velocity=(uint8_t)(instrument.fixed_velocity==80u?81u:80u);
+    for(unsigned n=0;n<7000u&&backup.state!=THY_BACKUP_ERROR;++n){
+        thy_settings_journal_task(&journal,&engine,1002u+n,1);
+        thy_settings_transfer_poll(&backup,&engine,&journal,1,1002u+n);
+    }
+    CHECK(backup.state==THY_BACKUP_ERROR&&!thy_settings_transfer_busy(&backup));
+    CHECK(journal.loaded&&journal.saved_crc!=get32(backup_file+12u));
 }
 static void bounds_busy_and_quiet_gates(void)
 {
@@ -174,7 +239,10 @@ static void source_build_and_schema_are_provenance_not_update_locks(void)
 }
 int main(void)
 {
+    advertised_version_matches_exported_codec();
     full_current_state_and_verified_save();rejected_bytes_are_atomic();bounds_busy_and_quiet_gates();
+    restore_requires_current_agreeing_header_and_payload();
+    changed_applied_settings_cannot_claim_saved_verification();
     expiration_disconnect_and_save_errors_release();
     source_build_and_schema_are_provenance_not_update_locks();
     printf("%u settings transfer C tests passed (%u assertions)\n",scenarios,checks);return 0;

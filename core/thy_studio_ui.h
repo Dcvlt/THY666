@@ -4,6 +4,7 @@
 
 #include "thy_state.h"
 #include "thy_ui.h"
+#include "thy_resources.h"
 
 #define THY_STUDIO_UI_TRANSITION_MS 180u
 /* Startup alone advances with a bounded presented-frame step. Hierarchy
@@ -28,6 +29,7 @@ enum thy_studio_boot_phase {
  * Only hierarchy transitions slide: entering a category moves left, backing
  * out moves right. Cursor motion and edit/apply/cancel never start a slide. */
 typedef struct thy_studio_ui {
+    const thy_resources *resources; /* Optional live target measurements. */
     const char *build_identity; /* Optional caller-owned immutable build label. */
     uint8_t animations_enabled;
     uint8_t navigation_animations_enabled;

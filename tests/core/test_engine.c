@@ -110,7 +110,8 @@ static int test_all_live_rows_use_real_instrument_values(void)
     for (unsigned row = 0; row < THY_MENU_ROW_COUNT; ++row)
         if (thy_menu_rows[row].status == THY_MENU_LIVE &&
             thy_menu_rows[row].type != THY_MENU_ACTION && thy_menu_rows[row].type != THY_MENU_INFO &&
-            row != THY_ROW_SEQUENCER_STEPLENGTH && row != THY_ROW_SEQUENCER_STEPVELOCITY) ++live_count;
+            row != THY_ROW_SEQUENCER_STEPLENGTH && row != THY_ROW_SEQUENCER_STEPVELOCITY &&
+            row != THY_ROW_HARMONY_FREEZE && row != THY_ROW_HARMONY_TARGETROOT && row != THY_ROW_HARMONY_TARGETSCALE) ++live_count;
     for (unsigned n = 0; n < sizeof edits / sizeof edits[0]; ++n) {
         CHECK(set(edits[n].row, edits[n].value) == THY_STATE_OK);
         CHECK(get(edits[n].row) == edits[n].value);
@@ -127,6 +128,11 @@ static int test_all_live_rows_use_real_instrument_values(void)
             if (edits[n].row == row) covered = 1u;
         if (!covered) {
             int32_t value = get(row);
+            if(row==THY_ROW_HARMONY_FREEZE||row==THY_ROW_HARMONY_TARGETROOT||row==THY_ROW_HARMONY_TARGETSCALE){
+                /* Transient Harmony actions require its active workspace.
+                 * Their success path has the live workspace fixture. */
+                CHECK(value!=INT32_MIN&&set(row,value)==THY_STATE_BLOCKED);continue;
+            }
             int result = value == INT32_MIN ? THY_STATE_ADAPTER_ERROR : set(row,value);
             if (result != THY_STATE_OK) fprintf(stderr,"Live adapter %s value %ld returned %d\n",
                 thy_menu_rows[row].id,(long)value,result);
@@ -175,6 +181,10 @@ static int test_all_live_rows_use_real_instrument_values(void)
             /* Transport, destructive edits and history require dedicated
              * sequencer fixtures; never blindly execute the whole menu. */
             if (thy_menu_rows[row].group == thy_menu_rows[THY_ROW_SEQUENCER_TRACK].group ||
+                /* Confirmation/reset transactions have dedicated scoped and
+                 * atomicity fixtures; never execute every reset blindly. */
+                thy_state_reset_row(row) ||
+                thy_menu_rows[row].group == thy_menu_rows[THY_ROW_HARMONY_OPEN].group || row==THY_ROW_ENGINES_HARMONY ||
                 row == THY_ROW_ENGINES_ARP || row == THY_ROW_ENGINES_SEQUENCER ||
                 /* Ordinary receiver setup emits an explicit RPN batch and
                  * is covered independently below. */
@@ -199,6 +209,12 @@ static int test_all_live_rows_use_real_instrument_values(void)
                 CHECK(!engine.arps[engine.arp_target].held_count);
             } else if (row == THY_ROW_ENGINES_PLAY) {
                 CHECK(instrument.engine_kind == THY_PLAY_ENGINE_PLAY);
+            } else if (row == THY_ROW_ENGINES_SETTINGS || row == THY_ROW_ENGINESETTINGS_HARMONY || row == THY_ROW_ENGINESETTINGS_SEQUENCER) {
+                CHECK(instrument.engine_kind == THY_PLAY_ENGINE_PLAY);
+                CHECK(engine.state.level == THY_STATE_ROWS);
+                const uint16_t target = row == THY_ROW_ENGINES_SETTINGS ? THY_ROW_ENGINESETTINGS_HARMONY :
+                    row == THY_ROW_ENGINESETTINGS_HARMONY ? THY_ROW_HARMONY_DIRECTION : THY_ROW_SEQUENCER_OPEN;
+                CHECK(engine.state.group_index == thy_menu_rows[target].group);
             } else if (row == THY_ROW_CHORDS_GUIDANCE) {
                 CHECK(instrument.guidance.open);
                 CHECK(thy_engine_navigate(&engine, THY_STATE_LEFT) == THY_STATE_OK);
@@ -218,7 +234,7 @@ static int test_all_live_rows_use_real_instrument_values(void)
             } else CHECK(0 && "Uncovered live action");
             ++actions;
         }
-    CHECK(actions == 9u && cleanup_revisions == 4u);
+    CHECK(actions == 12u && cleanup_revisions == 4u);
     CHECK(engine.state.revision == live_count + actions + cleanup_revisions);
     return 1;
 }
@@ -509,6 +525,10 @@ static int test_default_engines_shortcut_and_arp_entry_are_processor_access(void
     CHECK(control(THY_STATE_LEFT));
     CHECK(engine.state.level == THY_STATE_ROWS && thy_state_current_row(&engine.state) == THY_ROW_ENGINES_PLAY);
     CHECK(control(THY_STATE_DOWN));
+    CHECK(thy_state_current_row(&engine.state) == THY_ROW_ENGINES_HARMONY);
+    CHECK(control(THY_STATE_DOWN));
+    CHECK(thy_state_current_row(&engine.state) == THY_ROW_ENGINES_SEQUENCER);
+    CHECK(control(THY_STATE_DOWN));
     CHECK(thy_state_current_row(&engine.state) == THY_ROW_ENGINES_ARP);
     CHECK(control(THY_STATE_RIGHT));
     CHECK(engine.arp_quick_open && !engine.sequencer_ui.open);
@@ -600,7 +620,7 @@ static int test_sequencer_navigation_reports_success_and_opens_selected_note(voi
     CHECK(thy_sequencer_ui_pad(&engine.sequencer_ui,0u,0));
     CHECK(engine.sequencer.count == 1u); /* Selection release never changes content. */
     CHECK(thy_engine_navigate(&engine,THY_STATE_SELECT) == THY_STATE_OK);
-    CHECK(!engine.sequencer_ui.open && engine.state.level == THY_STATE_PLAY);
+    CHECK(engine.sequencer_ui.open && !engine.sequencer_ui.options_open && engine.state.level == THY_STATE_PLAY);
     return 1;
 }
 
@@ -664,7 +684,7 @@ static int test_track_options_have_their_own_scope_and_return_path(void)
     CHECK(thy_engine_navigate(&engine,THY_STATE_RIGHT) == THY_STATE_OK);
     CHECK(thy_engine_navigate(&engine,THY_STATE_UP) == THY_STATE_OK);
     CHECK(thy_engine_navigate(&engine,THY_STATE_SELECT) == THY_STATE_OK);
-    CHECK(!engine.sequencer_ui.options_open && !engine.sequencer_ui.open && !engine.state.editing);
+    CHECK(!engine.sequencer_ui.options_open && engine.sequencer_ui.open && !engine.state.editing);
     CHECK(engine.state.level == THY_STATE_PLAY && engine.sequencer.tracks[0].channel == 0u);
     for (unsigned n = 0u; n < sizeof track_rows / sizeof track_rows[0]; ++n)
         CHECK(!thy_state_row_visible(&engine.state,track_rows[n]));

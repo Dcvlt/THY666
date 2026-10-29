@@ -113,7 +113,14 @@ export function initializeCockpit({ mount } = {}) {
   for (const [key, label] of [['mpe','MPE'],['arp1','ARP 1'],['arp2','ARP 2'],['running','PLAY'],['recording','REC']]) {
     const chip = el('span', 'cockpit-mode', label); chip.dataset.cockpitFlag = key; modes.append(chip); flags.push([key, label, chip]);
   }
-  clock.append(modes); panels.append(contacts, pressure, harmony, clock); hud.append(panels); mount.append(hud);
+  clock.append(modes); panels.append(contacts, pressure, harmony, clock);
+  const context=el('div','cockpit-context-panels');
+  const mpePanel=panel('05','MPE EXPRESSION','cockpit-context'),arpPanel=panel('06','ARPEGGIATORS','cockpit-context'),seqPanel=panel('07','SEQUENCER','cockpit-context'),harmonyPanel=panel('08','HARMONY','cockpit-context');
+  mpePanel.append(reading('OUTPUT','mpe-output'),reading('AFTERTOUCH L / R','mpe-stage'),el('p','cockpit-context-note','Per-note channels. Pressure gauges above show each half’s peak.'));
+  arpPanel.append(reading('ENABLED','arp-engines'),reading('NOTE POOL','arp-pool'),reading('SOUNDING','arp-sounding'));
+  seqPanel.append(reading('TRACK','seq-track'),reading('TRANSPORT','seq-state'),reading('CAPTURE','seq-capture'));
+  harmonyPanel.append(reading('HOME','harmony-home'),reading('PLAYED','harmony-played'),el('p','cockpit-context-note','Open Harmony to refine the map and explore suggestions.'));
+  context.append(mpePanel,arpPanel,seqPanel,harmonyPanel);hud.append(panels,context); mount.append(hud);
 
   function update(snapshot, { connected = false, preview = false } = {}) {
     if (disposed) return null;
@@ -126,6 +133,13 @@ export function initializeCockpit({ mount } = {}) {
     setText('source', state === 'device' ? 'LIVE DEVICE' : state === 'preview' ? 'DESIGN MODE / BROWSER ENGINE' : 'OFFLINE');
     if (!active) return { state, session };
     const data = snapshot && typeof snapshot === 'object' ? snapshot : {};
+    mpePanel.hidden=data.mpe!==true;arpPanel.hidden=!(data.arp1||data.arp2);seqPanel.hidden=!(data.engine===2||data.sequenceOpen||data.running||data.recording);harmonyPanel.hidden=data.engine!==6;
+    setText('mpe-output','Per-note expression');setText('mpe-stage',Array.isArray(data.aftertouchStage)?data.aftertouchStage.map(v=>v?'On':'Off').join(' / '):'—');
+    setText('arp-engines',[data.arp1?'Arp 1':'',data.arp2?'Arp 2':''].filter(Boolean).join(' + '));
+    setText('arp-pool',Array.isArray(data.pool)?data.pool.length:'—');setText('arp-sounding',Array.isArray(data.sounding)?data.sounding.length:'—');
+    setText('seq-track',Number.isInteger(data.selectedTrack)&&data.selectedTrack>=0&&data.selectedTrack<21?`T${data.selectedTrack+1}`:'—');
+    setText('seq-state',data.running?'Playing':'Stopped');setText('seq-capture',['Off','Armed','Recording','Overdub'][data.capture]||'—');
+    setText('harmony-home',data.scale||'—');setText('harmony-played',data.harmony||'—');
     const padCount = integer(data.heldPads, 0, 96), notes = integer(data.noteCount, 0, 128), bpm = number(data.tempo, 1, 1000);
     setText('pads', padCount ?? '—'); setText('notes', notes ?? '—'); setText('tempo', bpm === null ? '—' : bpm.toFixed(1));
     setText('scale', typeof data.scale === 'string' && data.scale ? data.scale : '—');
@@ -174,5 +188,78 @@ export function initializeCockpit({ mount } = {}) {
       mount.classList.toggle('cockpit-active', hadActive);
       delete mount.dataset.cockpitState; delete mount.dataset.cockpitSession;
     },
+  };
+}
+/** Read-only diagnostics: bounded history, explicit units, no transport or timer. */
+export function initializeDiagnostics(mount) {
+  const doc=mount.ownerDocument,el=(tag,cls='',text)=>{const n=doc.createElement(tag);n.className=cls;if(text!==undefined)n.textContent=String(text);return n;};
+  const root=el('section','diagnostics-dashboard'),head=el('div','diagnostics-heading');
+  const freshness=el('p','diagnostics-freshness','Waiting for a device snapshot');freshness.setAttribute('role','status');
+  head.append(el('h2','','◈  Device health'),freshness);
+  const resources=el('div','diagnostics-resources'),meters=[];
+  for(const [key,label,max,description] of [['heldPads','Held pads',96,'Physical pad activity'],['generated','Generated notes',128,'Shared Arp / sequencer owner pool']]){
+    const card=el('section','diagnostics-resource'),value=el('strong','','—'),bar=el('meter');bar.min=0;bar.max=max;bar.value=0;bar.setAttribute('aria-label',label);
+    card.append(el('h3','',label),value,bar,el('p','',description));resources.append(card);meters.push({key,max,value,bar});
+  }
+  const unavailable=el('details','diagnostics-unavailable'),resourceNote=el('p','','Read Activity to check firmware resource reporting.');
+  unavailable.append(el('summary','','About resources'),resourceNote);
+  const targetResources=el('div','diagnostics-resources'),targetMeters=[];
+  for(const [key,label,detail] of [['cpu','CPU active','Includes polling; 100% does not mean overload.'],['ram','Static RAM','Stack reservation is separate; no dynamic heap.'],['ccm','CCM RAM','CPU-only memory.'],['stack','Observed stack peak','Since boot; not a worst-case guarantee.'],['flash','Firmware flash','Application partition; separate from saved data.']]){
+    const card=el('section','diagnostics-resource'),value=el('strong','','—'),bar=el('meter');bar.min=0;bar.value=0;bar.hidden=true;bar.setAttribute('aria-label',label);
+    card.append(el('h3','',label),value,bar,el('p','',detail));targetResources.append(card);targetMeters.push({key,value,bar});
+  }
+  const resourceAge=el('p','diagnostics-freshness','Resources · read Activity to update');
+  targetResources.hidden=true;
+
+  const report=el('section','diagnostics-report'),reportTitle=el('h3','','Report summary'),metrics=el('dl','diagnostics-metrics');
+  const graph=doc.createElementNS('http://www.w3.org/2000/svg','svg');graph.setAttribute('viewBox','0 0 600 100');graph.setAttribute('preserveAspectRatio','none');graph.setAttribute('role','img');graph.setAttribute('aria-label','No report samples');graph.setAttribute('class','diagnostics-trend');
+  const line=doc.createElementNS('http://www.w3.org/2000/svg','polyline');line.setAttribute('fill','none');line.setAttribute('stroke','currentColor');line.setAttribute('stroke-width','2');graph.append(line);
+  const caption=el('p','diagnostics-chart-caption','Read a report or start a live session.');report.append(reportTitle,metrics,graph,caption);
+  root.append(head,resources,targetResources,resourceAge,unavailable,report);mount.append(root);
+  let history=[],lastKind='',connected=false,previousIO=null;
+  const fields={status:[['uptime_ms','Uptime','ms'],['errors','Error flags',''],['voices','Sounding voices',''],['presses','Presses',''],['releases','Releases',''],['loop_us','Mean loop','µs'],['loop_peak_us','Peak loop (last window)','µs']],io:[['din_tx','DIN transmitted','bytes'],['din_rate','DIN output','bytes/s'],['din_accept','DIN accepted','messages'],['usb_accepted','USB accepted','messages'],['din_pending','DIN backlog','events'],['usb_pending','USB backlog','events'],['din_errors','DIN errors',''],['usb_dropped','USB dropped / suppressed',''],['blocked','Blocked pads','']],settings:[['generation','Saved generation',''],['saves','Saves',''],['errors','Save errors','']],display:[['last_render_us','Render time','µs'],['last_duration_ms','Transfer time','ms'],['dirty_bytes','Pending display data','bytes'],['failed_chunks','Failed transfers','']]};
+  const trend={status:['voices','Sounding voices',''],io:['din_rate','DIN output','bytes/s'],settings:['saves','Save count',''],display:['last_render_us','Render time','µs']};
+  return {
+    snapshot(data,isConnected){
+      connected=Boolean(isConnected);freshness.textContent=connected?'Device snapshot · updated '+new Date().toLocaleTimeString():'Disconnected';
+      for(const m of meters){const n=data?.[m.key],valid=connected&&Number.isInteger(n)&&n>=0&&n<=m.max;m.value.textContent=valid?`${n} / ${m.max}`:'—';m.bar.hidden=!valid;m.bar.value=valid?n:0;}
+      if(!connected){history=[];lastKind='';previousIO=null;targetResources.hidden=true;resourceAge.textContent='Resources · disconnected';metrics.replaceChildren();line.setAttribute('points','');graph.setAttribute('aria-label','No report samples');caption.textContent='Connect to read device health.';}
+    },
+    report(kind,text){
+      if(!connected||!fields[kind]||typeof text!=='string'||text.length>8192||!text.startsWith(kind.toUpperCase()+' '))return false;
+      const values=new Map();for(const m of text.matchAll(/(?:^|\s)([a-z_]+)=(\d+)(?=\s|$)/g)){const n=Number(m[2]);if(Number.isSafeInteger(n))values.set(m[1],n);}
+      if(kind==='status'){
+        const supported=values.get('resources')===1;
+        targetResources.hidden=!supported;
+        resourceNote.textContent=supported?'CPU active includes the continuous polling loop and interrupts. Use loop timing and MIDI backlogs to assess responsiveness. RAM is fixed allocation; stack peak is observed since boot. Saved-state usage remains under System → Storage.':'This firmware does not expose resources. Update firmware to enable CPU timing, RAM, stack and application-flash reporting.';
+        resourceAge.textContent=supported?'Resources · sampled at device uptime '+(values.get('resource_ms')??'—')+' ms':'Resources unavailable on this firmware';
+        for(const m of targetMeters){
+          const total=m.key==='cpu'?100:values.get(m.key+'_total');
+          const used=m.key==='cpu'?values.get('cpu_active'):values.get(m.key+'_used');
+          const valid=supported&&Number.isInteger(total)&&total>0&&Number.isInteger(used)&&used>=0&&used<=total&&
+            (m.key!=='cpu'||values.get('timing_valid')===1)&&(m.key!=='stack'||values.get('stack_valid')===1);
+          m.bar.hidden=!valid;m.bar.max=total||1;m.bar.value=valid?used:0;
+          const reserve=m.key==='ram'?values.get('stack_total')||0:0;
+          m.value.textContent=!valid?'Measuring…':m.key==='cpu'?used+'%':`${(used/1024).toFixed(1)} / ${(total/1024).toFixed(0)} KiB · ${(Math.max(0,total-used-reserve)/1024).toFixed(1)} KiB free`;
+        }
+      }
+      if(kind==='status'&&values.get('resources')===1&&values.get('timing_valid')!==1){values.delete('loop_us');values.delete('loop_peak_us');}
+      if(kind==='io'){
+        const now=values.get('uptime_ms')??Date.now(),sent=values.get('din_tx');
+        if(previousIO&&now>previousIO.time&&Number.isInteger(sent)&&sent>=previousIO.sent)
+          values.set('din_rate',Math.round((sent-previousIO.sent)*1000/(now-previousIO.time)));
+        previousIO=Number.isInteger(sent)?{time:now,sent}:null;
+      }else previousIO=null;
+      reportTitle.textContent={status:'Activity',io:'MIDI & pad scanning',settings:'Saved settings',display:'Display timing'}[kind];metrics.replaceChildren();
+      for(const [key,label,unit] of fields[kind]){metrics.append(el('dt','',label),el('dd','',values.has(key)?`${values.get(key)} ${unit}`.trim():'Unavailable'));}
+      if(lastKind!==kind)history=[];lastKind=kind;
+      const [key,label,unit]=trend[kind],n=values.get(key);if(n!==undefined){history.push(n);if(history.length>60)history.shift();}else history=[];
+      const max=Math.max(1,...history);line.setAttribute('points',history.map((v,i)=>`${10+i*580/59},${90-v/max*80}`).join(' '));
+      graph.setAttribute('aria-label',`${label}: ${n??'unavailable'} ${unit}; ${history.length} samples; scale 0 to ${max}`);
+      caption.textContent=history.length?`${label} · last ${history.length} samples · scale 0–${max} ${unit} · ${new Date().toLocaleTimeString()}`:kind==='io'?'DIN activity appears after two reports. Backlog counts messages waiting, not messages sent.':'This report has no trend measurement.';
+      return true;
+    },
+    reset(){history=[];lastKind='';previousIO=null;line.setAttribute('points','');graph.setAttribute('aria-label','No report samples');caption.textContent='Session started · waiting for reports.';},
+    destroy(){history=[];root.remove();}
   };
 }

@@ -1,4 +1,5 @@
 import {legacyViewInfo} from './legacy-view-fixture.mjs';
+import {CURRENT_SETTINGS_VERSION,CURRENT_SETTINGS_PARAMETER_BYTES} from './current-settings-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -118,12 +119,12 @@ test('velocity edits cannot change a held attack; direct pointer-style presses r
   okay(h.engine.release(0));h.engine.drain();
 });
 
-test('v13 cold restoration preserves velocity and pressure overrides without replaying strikes',async()=>{
+test('current cold restoration preserves velocity and pressure overrides without replaying strikes',async()=>{
   const h=await fresh();okay(h.firmware.setVelocity(-1,config({curve:1})));
   okay(h.firmware.setVelocity(95,config({mode:0,minimum:35,maximum:80})));
   okay(h.firmware.setResponse(95,response({attack:1450,curve:2})));
   h.strike(0,64);
-  const payload=h.engine.settings.encode();assert.equal(h.engine.settings.version,15);
+  const payload=h.engine.settings.encode();assert.equal(h.engine.settings.version,CURRENT_SETTINGS_VERSION);
   const cold=await fresh();assert.equal(cold.engine.settings.apply(payload),true);
   assert.deepEqual(cold.firmware.velocity(),h.firmware.velocity());
   assert.deepEqual(cold.firmware.velocity(95),h.firmware.velocity(95));
@@ -135,9 +136,9 @@ test('v13 cold restoration preserves velocity and pressure overrides without rep
 test('legacy v6 loads Fixed velocity while retaining its existing song and route values',async()=>{
   const h=await fresh();okay(h.firmware.setVelocity(-1,config()));
   okay(h.engine.sequencer.add(2,[{tick:240,duration:480,pitch:67,value:91}]));
-  const modern=legacyViewInfo(h.engine.settings.encode()),legacy=new Uint8Array(2345+modern.length-5013);
-  assert.equal(new TextDecoder().decode(modern.subarray(5013,5017)),'THYS');
-  legacy.set(modern.subarray(0,2345));legacy[6]=6;legacy.set(modern.subarray(5013),2345);
+  const modern=legacyViewInfo(h.engine.settings.encode()),legacy=new Uint8Array(2345+modern.length-CURRENT_SETTINGS_PARAMETER_BYTES);
+  assert.equal(new TextDecoder().decode(modern.subarray(CURRENT_SETTINGS_PARAMETER_BYTES,CURRENT_SETTINGS_PARAMETER_BYTES+4)),'THYS');
+  legacy.set(modern.subarray(0,2345));legacy[6]=6;legacy.set(modern.subarray(CURRENT_SETTINGS_PARAMETER_BYTES),2345);
   assert.equal(h.engine.settings.validate(legacy),true);
   const cold=await fresh();assert.equal(cold.engine.settings.apply(legacy),true);
   assert.equal(cold.firmware.velocity().mode,0);assert.equal(cold.firmware.velocity(95).overridden,0);

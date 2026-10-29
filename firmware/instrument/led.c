@@ -71,7 +71,8 @@ __attribute__((noinline)) void thy_instrument_lights_task(const thy_instrument *
         /* Keep all96 voicing previews out of the fast acquisition path.
          * Global OFF and a release to an entirely dark setup bypass this
          * bound, as does fault handling above. */
-        int potentially_lit = instrument->light_idle != 0u;
+        int potentially_lit = instrument->light_idle != 0u ||
+            instrument->engine_kind == THY_PLAY_ENGINE_HARMONY;
         if (!potentially_lit)
             for (unsigned i = 0u; i < THY_PAD_COUNT; ++i)
                 potentially_lit |= instrument->sensors[i].held &&

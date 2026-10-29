@@ -41,10 +41,22 @@ static unsigned unique(const int16_t *notes,uint8_t mask,int16_t *sorted)
     }
     return count;
 }
-int thy_voicing_lead(const int16_t notes[7],uint8_t mask,
-    const int16_t previous[7],uint8_t previous_mask,int16_t out[7])
+/* Nearest whole octave, with exact half-octave ties retaining the smaller
+ * correction. Centroid differences are represented without floating point. */
+static int centroid_octaves(int delta,unsigned voices)
 {
-    if(!notes || !previous || !out || mask>127u || previous_mask>127u)
+    unsigned magnitude=(unsigned)(delta<0?-delta:delta),step=12u*voices;
+    unsigned octaves=magnitude/step;
+    if((magnitude%step)*2u>step)++octaves;
+    return delta<0?-(int)octaves:(int)octaves;
+}
+
+static int lead_centered(const int16_t notes[7],uint8_t mask,
+    const int16_t previous[7],uint8_t previous_mask,int16_t low,int16_t high,
+    uint8_t root_pc,uint8_t root_bass,int16_t out[7])
+{
+    if(!notes || !previous || !out || mask>127u || previous_mask>127u ||
+        low<0 || high>127 || low>high || root_bass>1u || (root_bass && root_pc>11u))
         return THY_INVALID_ARGUMENT;
     for(unsigned n=0;n<7u;++n)
         if(((mask&(1u<<n)) && (notes[n]<0 || notes[n]>127)) ||
@@ -53,23 +65,36 @@ int thy_voicing_lead(const int16_t notes[7],uint8_t mask,
     int16_t source[7],prior[7],best[7],result[7];
     unsigned count=unique(notes,mask,source),old=unique(previous,previous_mask,prior);
     for(unsigned n=0;n<7u;++n)result[n]=notes[n];
+    int source_sum=0,prior_sum=0,identity=!old;
+    for(unsigned n=0u;n<count;++n){source_sum+=source[n];if(source[n]<low || source[n]>high)identity=0;}
+    if(root_bass && count && (unsigned)source[0]%12u!=root_pc)identity=0;
     if(count && old) {
+        for(unsigned n=0u;n<old;++n)prior_sum+=prior[n];
+        /* Prior motion is compared in the authored chord's octave register.
+         * The captured history itself is untouched. Otherwise small changes
+         * around a repeated progression can walk every voice to MIDI0/127. */
+        int shift=12*centroid_octaves(source_sum*(int)old-prior_sum*(int)count,count*old);
+        for(unsigned n=0u;n<old;++n)prior[n]=(int16_t)(prior[n]+shift);
+    }
+    if(count && !identity) {
         uint32_t best_cost=UINT32_MAX;
         /* All cyclic voice orders, all legal octaves, strictly ascending voices.
          * Cost is motion first, distance from authored register second. At most
          * 7*7*11 candidates and as many prefix-minimum visits; no recursion, heap or mutable global state. */
         for(unsigned rotation=0;rotation<count;++rotation) {
+            if(root_bass && (unsigned)source[rotation]%12u!=root_pc)continue;
             uint32_t costs[2][11];uint8_t parent[7][11];
             for(unsigned voice=0;voice<count;++voice) {
                 unsigned index=(voice+rotation)%count,pc=(unsigned)source[index]%12u;
-                unsigned target=count==1u?(old-1u)/2u:voice*(old-1u)/(count-1u);
+                unsigned rank=old?(count==1u?(old-1u)/2u:voice*(old-1u)/(count-1u)):0u;
+                int target=old?prior[rank]:source[index];
                 uint32_t prefix=UINT32_MAX;unsigned k=0;uint8_t from=0;
                 unsigned last_pc=(unsigned)source[(voice+count-1u+rotation)%count]%12u;
                 for(unsigned octave=0;octave<11u;++octave) {
                     unsigned pitch=pc+12u*octave;
                     uint32_t cost=UINT32_MAX;
-                    if(pitch<=127u) {
-                        uint32_t local=distance((int)pitch,prior[target])*1024u+
+                    if(pitch>=(unsigned)low && pitch<=(unsigned)high) {
+                        uint32_t local=distance((int)pitch,target)*1024u+
                             distance((int)pitch,source[index]);
                         if(!voice)cost=local;
                         else {
@@ -95,12 +120,30 @@ int thy_voicing_lead(const int16_t notes[7],uint8_t mask,
                 }
         }
         if(best_cost==UINT32_MAX)return THY_INVALID_ARGUMENT;
+        /* Keep the selected intervals, but place the whole result as near
+         * the authored centroid as its legal range permits. This is a small
+         * integer translation, not a per-note clamp or a new DP dimension. */
+        int sum=0,minimum=127,maximum=0;
+        for(unsigned n=0u;n<count;++n){sum+=best[n];if(best[n]<minimum)minimum=best[n];if(best[n]>maximum)maximum=best[n];}
+        int octaves=centroid_octaves(source_sum-sum,count);
+        while(minimum+12*octaves<low)++octaves;
+        while(maximum+12*octaves>high)--octaves;
+        for(unsigned n=0u;n<count;++n)best[n]=(int16_t)(best[n]+12*octaves);
         for(unsigned n=0;n<7u;++n)if(mask&(1u<<n))
             for(unsigned k=0;k<count;++k)if(notes[n]==source[k]){result[n]=best[k];break;}
     }
     for(unsigned n=0;n<7u;++n)out[n]=result[n];
     return THY_OK;
 }
+
+int thy_voicing_lead(const int16_t notes[7],uint8_t mask,
+    const int16_t previous[7],uint8_t previous_mask,int16_t out[7])
+{return lead_centered(notes,mask,previous,previous_mask,0,127,0u,0u,out);}
+
+int thy_voicing_lead_constrained(const int16_t notes[7],uint8_t mask,
+    const int16_t previous[7],uint8_t previous_mask,int16_t low,int16_t high,
+    uint8_t root_pc,uint8_t root_bass,int16_t out[7])
+{return lead_centered(notes,mask,previous,previous_mask,low,high,root_pc,root_bass,out);}
 
 int thy_voicing_fold(const int16_t notes[7],uint8_t mask,int16_t out[7])
 {

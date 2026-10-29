@@ -279,6 +279,10 @@ void thy_instrument_set_musical_handler(thy_instrument *instrument,
     instrument->musical_release = release;
     instrument->musical_pressure = NULL;
     instrument->musical_reset = reset;
+    instrument->musical_melody_plan = NULL;
+    instrument->musical_voicing_plan = NULL;
+    instrument->musical_chord_plan = NULL;
+    instrument->musical_quiet = NULL;
     instrument->musical_context = context;
 }
 
@@ -355,7 +359,33 @@ int thy_instrument_apply_scale(thy_instrument *i)
         i->degree_count=i->catalog_degree_count;
         for(unsigned n=0;n<i->catalog_degree_count;++n)i->degrees[n]=i->catalog_degrees[n];
     }
-    i->live_degree_count=0u; i->voicing_previous_mask=0u;return THY_OK;
+    i->live_degree_count=0u;
+    /* Harmony Apply key deliberately retains the preceding chord as its
+     * voice-leading reference across the adapter's catalog reload. Explicit
+     * key_changed callers still clear history before changing ordinary keys. */
+    if(i->engine_kind!=THY_PLAY_ENGINE_HARMONY)i->voicing_previous_mask=0u;
+    return THY_OK;
+}
+
+uint8_t thy_instrument_role_pad(const thy_instrument *i,uint8_t physical)
+{
+    if(!valid(i)||physical>=THY_PAD_COUNT||i->cluster_swap>1u)return UINT8_MAX;
+    return i->cluster_swap?(uint8_t)((physical+48u)%96u):physical;
+}
+uint8_t thy_instrument_physical_pad(const thy_instrument *i,uint8_t role)
+{ return thy_instrument_role_pad(i,role); }
+int thy_instrument_set_cluster_swap(thy_instrument *i,uint8_t enabled)
+{
+    if(!valid(i)||enabled>1u)return THY_INVALID_ARGUMENT;
+    if(i->cluster_swap==enabled)return THY_OK;
+    const thy_core *c=i->core;
+    if(c->queue_count||c->sounding_count||c->generated_count||c->pending_keys||c->sustain_count||
+       (i->musical_quiet&&i->musical_quiet(i->musical_context)!=1))return THY_INVALID_ARGUMENT;
+    for(unsigned p=0;p<THY_PAD_COUNT;++p)
+        if(!velocity_editable(i,p)||i->context_held[p])return THY_INVALID_ARGUMENT;
+    i->cluster_swap=enabled;
+    ++i->layout_revision;++i->revision;
+    return THY_OK;
 }
 
 int thy_instrument_set_mapping(thy_instrument *instrument,
@@ -1068,6 +1098,20 @@ int thy_instrument_note_in_key(const thy_instrument *i,int note)
 int thy_instrument_chord_cell(const thy_instrument *i,uint8_t logical,thy_chord_cell *out)
 {
     if(!valid(i)||!out||logical>=48u||!i->layout)return THY_INVALID_ARGUMENT;
+    if(i->musical_chord_plan){
+        thy_chord_cell cell={.degree=THY_CHORD_NO_DEGREE};
+        if(i->musical_chord_plan(i->musical_context,logical,cell.notes,&cell.valid_mask)>0){
+            /* Workspace plans are root-first, before transpose/voicing. Their
+             * identity must also drive held color and current-chord metadata. */
+            if(cell.valid_mask){
+                unsigned first=0;while(first<7u&&!(cell.valid_mask&(1u<<first)))++first;
+                cell.root=cell.notes[first];
+                int pitch=(cell.root+i->transpose[0]-i->performance.root)%12;if(pitch<0)pitch+=12;
+                for(unsigned n=0;n<i->degree_count;++n)if(i->degrees[n]%12==pitch){cell.degree=(uint8_t)n;break;}
+            }
+            *out=cell;return THY_OK;
+        }
+    }
     if(i->chord_layout==THY_CHORD_LAYOUT_USER){
         unsigned column=logical/4u,row=logical%4u,slot=column*2u+row%2u;
         const thy_library_chord *chord=&i->library.chords[slot];thy_chord_cell cell={.degree=THY_CHORD_NO_DEGREE};
@@ -1145,8 +1189,26 @@ static int plan_pad(const thy_instrument *instrument, uint8_t logical,
         shape->excluded_slots=(uint64_t)(~cell.valid_mask&127u);
     } else
     shape->excluded_slots = (uint64_t)(~pad->valid_mask & 0x7fu);
+    if(!side && instrument->musical_chord_plan) {
+        uint8_t mask=0u;
+        int override=instrument->musical_chord_plan(instrument->musical_context,logical,plan->chord_notes,&mask);
+        if(override<0)return THY_INVALID_ARGUMENT;
+        if(override){
+            plan->notes=plan->chord_notes;shape->excluded_slots=(uint64_t)(~mask&127u);
+            if(!mask){plan->count=0u;plan->notes=NULL;return THY_OK;}
+        }
+    }
     shape->octave_shift = side == 0u ? instrument->performance.chord_octave :
                                    instrument->performance.melody_octave;
+    if(side && instrument->musical_melody_plan) {
+        int override=instrument->musical_melody_plan(instrument->musical_context,logical,&plan->generated);
+        if(override<0||override>1)return THY_INVALID_ARGUMENT;
+        if(override) {
+            if(plan->generated<0||plan->generated>127)return THY_INVALID_ARGUMENT;
+            plan->notes=&plan->generated;plan->count=1u;shape->excluded_slots=0u;
+            return THY_OK;
+        }
+    }
     if (side == 0u) {
         if (instrument->lower_mode == THY_LOWER_STORED_NOTES) {
             shape->excluded_slots |= instrument->slot_scope == THY_SLOTS_SELECTED_PAD ?
@@ -1162,9 +1224,19 @@ static int plan_pad(const thy_instrument *instrument, uint8_t logical,
             if(result!=THY_OK)return result;
             plan->notes=plan->chord_notes;
         } else if(instrument->voicing_mode==2u) {
-            result=thy_voicing_lead(plan->notes,(uint8_t)(~shape->excluded_slots&127u),
-                instrument->voicing_previous,instrument->voicing_previous_mask,plan->chord_notes);
-            if(result!=THY_OK)return result;
+            uint8_t mask=(uint8_t)(~shape->excluded_slots&127u);
+            int override=instrument->musical_voicing_plan?
+                instrument->musical_voicing_plan(instrument->musical_context,logical,
+                    plan->notes,mask,plan->chord_notes):0;
+            if(override<0||override>1)return THY_INVALID_ARGUMENT;
+            if(override) {
+                for(unsigned n=0;n<7u;++n)if((mask&(1u<<n))&&
+                    (plan->chord_notes[n]<0||plan->chord_notes[n]>127))return THY_INVALID_ARGUMENT;
+            }else {
+                result=thy_voicing_lead(plan->notes,mask,
+                    instrument->voicing_previous,instrument->voicing_previous_mask,plan->chord_notes);
+                if(result!=THY_OK)return result;
+            }
             plan->notes=plan->chord_notes;
         } else if(instrument->voicing_mode==3u || instrument->voicing_mode==4u) {
             uint8_t mask=(uint8_t)(~shape->excluded_slots&127u);
@@ -1276,12 +1348,16 @@ int thy_instrument_preview_pad(const thy_instrument *instrument, uint8_t logical
     int16_t out[THY_MAX_NOTES], size_t *count)
 {
     if (!out || !count) return THY_INVALID_ARGUMENT;
-    if (thy_instrument_context_pad(instrument, logical)) { *count = 0u; return THY_OK; }
-    return thy_instrument_preview_source(instrument, logical, out, count);
+    uint8_t role=thy_instrument_role_pad(instrument,logical);
+    if(role>=THY_PAD_COUNT)return THY_INVALID_ARGUMENT;
+    if (thy_instrument_context_pad(instrument, role)) { *count = 0u; return THY_OK; }
+    return thy_instrument_preview_source(instrument, role, out, count);
 }
 
 int thy_instrument_context_pad(const thy_instrument *instrument, uint8_t logical)
 {
+    if(instrument && instrument->musical_chord_plan &&
+       instrument->musical_chord_plan(instrument->musical_context,logical,NULL,NULL)>0)return 0;
     if (instrument == NULL || !instrument->context_controls) return 0;
     /* Explicit, labeled opt-in octave/voicing overlay. Logical IDs are
      * column-major. Ordinal0 is the upper-right corner and1 the lower-left;
@@ -1340,7 +1416,7 @@ int thy_instrument_chord_root(const thy_instrument *instrument, uint8_t logical,
 {
     int16_t notes[THY_MAX_NOTES]; size_t count = 0u;
     if (root == NULL || logical >= 48u ||
-        thy_instrument_preview_pad(instrument, logical, notes, &count) != THY_OK || !count)
+        thy_instrument_preview_source(instrument, logical, notes, &count) != THY_OK || !count)
         return THY_INVALID_ARGUMENT;
     *root=notes[0];for(size_t n=1;n<count;++n)if(notes[n]<*root)*root=notes[n];
     thy_chord_cell cell;
@@ -1388,7 +1464,8 @@ static void capture_source_color(thy_instrument *instrument, uint8_t electrical,
 void thy_instrument_capture_pad_color(thy_instrument *instrument, uint8_t electrical)
 {
     if (!valid(instrument) || electrical >= THY_PAD_COUNT) return;
-    capture_source_color(instrument, electrical, instrument->mapping[electrical]);
+    capture_source_color(instrument, electrical,
+        thy_instrument_role_pad(instrument,instrument->mapping[electrical]));
 }
 
 void thy_instrument_capture_silent_input(thy_instrument *i,uint8_t p,uint8_t logical,
@@ -1417,7 +1494,8 @@ int thy_instrument_press_pad(thy_instrument *instrument, uint8_t electrical)
     int filtered = THY_OK;
     if (instrument->pad_filter && instrument->pad_filter(instrument->pad_filter_context,
         electrical, 1, &filtered)) return filtered;
-    uint8_t logical = instrument->mapping[electrical];
+    uint8_t logical = thy_instrument_role_pad(instrument,instrument->mapping[electrical]);
+    if(logical>=THY_PAD_COUNT)return THY_INVALID_ARGUMENT;
     if (instrument->core->owners[electrical].held) return THY_OK;
     if (instrument->context_held[electrical]) return THY_OK;
     int context = thy_instrument_context_pad(instrument, logical);

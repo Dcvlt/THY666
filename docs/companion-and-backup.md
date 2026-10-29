@@ -23,8 +23,8 @@ does not connect to the controller. Without a board, its surface is an inactive
 wireframe; mouse, touch and keyboard gestures cannot play it or change a device.
 
 Without a connected board, **Board** provides the red wireframe outline and
-**Harmony**, **Documentation** and **Update** remain available. **Parameters**, **Songs & library**,
-**Backups** and **Diagnostics** are disabled until connection. They do not open
+**Documentation** and **Update** remain available. **Parameters**, **Harmony**,
+**Songs & library**, **Backups** and **Diagnostics** are disabled until connection. They do not open
 as offline editors, and disconnecting returns any of those pages to Board.
 
 Beneath the disconnected Board wireframe, the prompt reads “Connect a
@@ -75,6 +75,19 @@ sends an explicit change; Cancel sends nothing. A missing value stays Reading
 rather than falling back to a preview value. Changing a physical route or pad
 selection does not redirect an existing browser draft. Browsing categories in
 the browser does not navigate the physical OLED menu.
+
+Harmony projects the board's cached analysis and physical pad hints. Its virtual
+shortcuts require the physical Harmony workspace; opening device Settings or a
+quick page disables them. M-key previews require built-in scale assignments:
+Cycle layout and saved custom-scale assignments are disabled with an explanation.
+See [Harmony](harmony.md) for the playing workflow and current limits.
+
+**Reset options** opens the device's confirmation without resetting anything.
+The Client shows that same C-rendered prompt with separate **Cancel** and
+**Reset options** buttons. Review the captured scope before confirming. A
+physical selection change is not Client consent, and a canceled or replaced
+request cannot be confirmed by an older click. Other Client controls pause while
+the request is pending; physical navigation remains available on the board.
 
 Songs/library playground editors remain read-only where connected editing is
 not implemented; they cannot silently replace device material. Use the board
@@ -167,7 +180,7 @@ board-action diagrams and option tables. These examples are read-only.
 ## What a .thyb backup contains
 
 **Read backup** explicitly downloads the connected instrument's complete
-applied V13 settings payload: musical preferences, routes, ordinary expression
+applied settings payload (development V18): musical preferences, routes, ordinary expression
 and MPE configuration, both clusters' sensitivity/velocity/release defaults,
 per-pad calibration parameters/overrides/guards, custom scales/chords/six sets
 and the current song. Applied values can be awaiting the normal idle autosave;
@@ -176,10 +189,10 @@ slot. Unapplied editor/calibration drafts, learned ADC baselines, held notes,
 playback positions and runtime owners are excluded.
 
 The file is **THYB version 1**, with a 64-byte header and a maximum of
-**13,889 bytes**. Header and payload have independent IEEE CRC32 checks; the
+**13,901 bytes**. Header and payload have independent IEEE CRC32 checks; the
 transfer also checks the complete file. The header binds board UID, target,
 adapter/catalog compatibility and settings version. Source build and schema
-fingerprint are provenance: a compatible V13 backup can be restored to the
+fingerprint are provenance: a compatible backup can be restored to the
 same board after a firmware change without requiring the old build identity.
 It is not a named on-device profile/song collection.
 
@@ -192,7 +205,11 @@ installation route; no bootloader replacement is included.
 
 Choosing a file only inspects it. **Restore backup** requires a separate explicit
 confirmation. The client validates checksums and connected-board compatibility
-before upload. The device checks the complete file and settings semantics before
+before upload. For a compatible older backup being restored to the current format, a separate shared
+C/WASM instance validates, applies and re-encodes the old payload before any
+device write. The original file is retained unchanged. The firmware accepts its
+current format only; future formats and unsupported downgrade requests are
+rejected. The device checks the complete file and settings semantics before
 changing live state. Restore requires released inputs, stopped musical activity,
 quiet expression/output ownership and closed calibration/library drafts.
 Busy rejection does not panic or cancel the user's playing.
@@ -208,6 +225,8 @@ The status distinction is deliberate:
 3. **SavedVerified:** journal commit/readback and an independently re-encoded
    current payload match the intended size/CRC. The client then re-exports the
    configuration and compares **every payload byte** before reporting success.
+   For a migrated backup, this comparison uses the independently computed current
+   payload, rather than expecting the older wire representation to stay identical.
    Header provenance can legitimately differ after an update.
 
 An error or timeout never becomes verified success. An unacknowledged commit
@@ -237,8 +256,67 @@ and default pad profiles. Nonempty songs/libraries and calibration overrides sti
 need restoration tests. Interrupted-update recovery and automatic rollback remain
 unqualified. A configuration round trip is not a raw firmware/bootloader backup.
 
+The Windows V13-to-V15 update session also passed explicit restoration and a
+confirmed full power-off check. Its V15 export matched every byte of the
+independently migrated C payload and the complete pre-power-off V15 file. The
+original V13 file was retained unchanged. This qualifies that captured
+configuration; V14 migration and broader saved-material coverage remain separate.
+
 The project site exposes the same browser Client through **Install / Client / User guide**.
 It opens disconnected and needs no private musical archive. Use desktop Chrome or Edge
 over HTTPS or localhost for explicit Web Serial connection. After the standalone
 installer finishes, **Go to Client** releases its port and opens the Client; use
 **Connect board** there to establish a new connection.
+
+Harmony wire version 4 uses 800 bytes: the compatible prefix plus the full
+48-pad pitch-class map, recent history, exploration settings and selected reason.
+Older wire versions cannot drive these revised Harmony controls. Settings V18
+appends four bytes after the frozen V17 prefix; migration retains musical data
+and physical calibration while replacing retired Harmony map/view preferences.
+
+## Compact navigation and guided tasks
+
+On narrow screens, use the header menu for application areas and Client pages.
+The guide's **Find a topic** button opens its searchable index. Choosing an
+article closes the index; **On this page** jumps between its sections.
+
+Backups starts with **Back up** and **Restore**. Choose one to reveal its steps.
+Selecting a flow does not read or change the board. Restore still validates the
+file and requires explicit confirmation before applying it.
+
+Diagnostics offers **Start live session** alongside a single **Read report**.
+Live sessions request the selected report at most once per second through the
+existing serialized connection. They pause while hidden and stop when leaving
+Diagnostics, disconnecting, or transferring USB ownership to the updater. The chart retains up to 60 values from the selected report; raw text retains
+only the latest reply. It resets for a new session, report type or disconnect.
+Charts name the measurement, units, scale and last sample time. This is report
+monitoring, not a recording of raw sensor or MIDI traffic.
+
+**MIDI & scanning** charts DIN bytes sent per second between reports. Its totals
+count bytes transmitted and messages accepted; they do not confirm that a synth
+received them. **Backlog** is messages still waiting to be sent. Zero backlog is
+normal while playing. The rate needs two reports and restarts after reconnect or
+counter reset. USB accepted messages are not a USB delivery acknowledgement.
+
+With the resource-enabled firmware, **Activity** also updates CPU activity, loop
+timing, static RAM, CCM, observed stack peak and application-flash gauges. These
+same measurements appear under **System → Resources**. The loop continuously
+polls, so CPU activity near 100% is expected; it is not an overload meter. Mean
+and peak loop times cover the last sampling window (normally one second).
+RAM figures describe fixed allocations and exclude the reserved stack from free
+space. The stack watermark is the deepest observed usage since boot, not a
+worst-case guarantee. Flash is the application partition, not song storage.
+**System → Storage** retains saved-state and song usage. Older firmware still
+supports MIDI activity; resource gauges stay unavailable until updated.
+
+The resource telemetry and System page are host-tested; hardware qualification
+of their values and timing overhead is pending.
+
+Board adds contextual panels for MPE, Arps, Sequencer and Harmony when active.
+Harmony groups the retained chord and physical map, suggestions, exploration
+settings and playing/voicing settings. Capture controls, pad feedback and physical
+shortcuts are expandable. Displayed results always come from device readback.
+
+The guide keeps its first workflow sections open and places deeper reference
+sections in expandable panels. On this page links open and focus the requested
+section. Option tables become labeled rows on narrow screens.

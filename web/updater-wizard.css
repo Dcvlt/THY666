@@ -120,7 +120,7 @@
 .companion-app .update-package-facts .update-fact-wide { grid-column: 1 / -1; }
 .companion-app .update-acknowledgment { display: flex; align-items: flex-start; gap: 12px; margin: 18px 0; color: var(--update-muted); font: 11px/1.8 var(--font-base,var(--font)); }
 .companion-app .update-acknowledgment input[type="checkbox"] { flex: 0 0 17px; width: 17px; height: 17px; margin-top: 2px; accent-color: var(--update-accent); }
-.companion-app .update-backup-layout { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.2fr); align-items: center; gap: 36px; }
+.companion-app .update-backup-layout { display: grid; grid-template-columns: minmax(0,1fr); align-items: center; gap: 36px; }
 .companion-app .update-backup-art { display: grid; justify-items: center; gap: 16px; padding: 20px; color: var(--update-accent); }
 .companion-app .update-backup-art > .update-icon { width: 92px; height: 92px; stroke-width: .8; }
 .companion-app .update-backup-details h3 { color: var(--update-ink); font: 500 16px/1.6 var(--font-accent,var(--font)); margin: 0 0 12px; }

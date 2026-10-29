@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "thy_lighting.h"
+#include "thy_harmony_workspace.h"
 
 static const uint32_t spectrum_palette[12] = {
     UINT32_C(0x00ff00), UINT32_C(0x55ff00), UINT32_C(0xffff00),
@@ -90,6 +91,19 @@ uint32_t thy_lighting_note_color_palette(uint8_t midi_note, uint8_t palette)
     return result;
 }
 
+int thy_lighting_harmony_color(uint32_t color, uint8_t role, uint16_t grb[3])
+{
+    if (!grb || color > UINT32_C(0xffffff) || role > THY_HARMONY_SUGGESTED)
+        return 0;
+    /* The retained current chord stays below a physical held highlight (8),
+     * so a fresh attack remains visible even on the same current chord. */
+    static const uint16_t levels[] = {1792u, 2304u, 4095u, 3328u};
+    for (unsigned c = 0u; c < 3u; ++c)
+        grb[c] = (uint16_t)((((color >> (16u - c * 8u)) & 255u) *
+            levels[role] + 127u) / 255u);
+    return 1;
+}
+
 static uint32_t brightness(uint32_t rgb, uint8_t level)
 {
     uint32_t result = 0u;
@@ -111,6 +125,13 @@ static uint32_t interpolate(uint32_t from, uint32_t target, uint32_t elapsed,
     }
     return result;
 }
+static uint32_t overlay_rgb(const uint16_t components[3])
+{
+    uint32_t result=0u;
+    for(unsigned c=0u;c<3u;++c){unsigned value=(components[c]+255u)/512u;
+        if(value>8u)value=8u;result|=(uint32_t)value<<(16u-c*8u);}
+    return result;
+}
 
 int thy_lighting_render(thy_lighting *lighting, const thy_instrument *instrument,
     const thy_lighting_config *config, uint32_t now_ms,
@@ -130,12 +151,14 @@ int thy_lighting_render(thy_lighting *lighting, const thy_instrument *instrument
     }
     for (unsigned logical = 0u; logical < THY_PAD_COUNT; ++logical) {
         unsigned electrical = electrical_for_logical[logical];
+        uint8_t role=thy_instrument_role_pad(instrument,(uint8_t)logical);
+        if(role>=THY_PAD_COUNT)return THY_INVALID_ARGUMENT;
         const thy_instrument_sensor *sensor = &instrument->sensors[electrical];
         const thy_pad_owner *owner = &instrument->core->owners[electrical];
         /* Musical ownership is canonical in both MCU acquisition and direct
          * browser presses. A browser owner need not synthesize ADC state. */
         int held = !sensor->blocked && owner->held;
-        int control = thy_instrument_context_pad(instrument, (uint8_t)logical);
+        int control = thy_instrument_context_pad(instrument, role);
         int force_off = !config->enabled || !instrument->input_enabled || sensor->blocked;
         uint32_t color = 0u, desired;
         uint8_t color_pc = 0u;
@@ -143,10 +166,20 @@ int thy_lighting_render(thy_lighting *lighting, const thy_instrument *instrument
         int16_t notes[THY_MAX_NOTES];
         size_t count = 0u;
         lighting->source_color[logical] = instrument->layout != NULL ?
-            instrument->layout[logical].color : 0u;
+            instrument->layout[role].color : 0u;
+        /* Cached workspace hints already own idle output. Avoid resolving all
+         * 48 automatic voicings again just to overwrite their colors below.
+         * Held/context feedback still takes its original snapshot path. */
+        uint16_t cached_overlay[3];
+        if(force_off||(!held&&!control&&instrument->light_overlay&&
+            instrument->light_overlay(instrument->light_overlay_context,(uint8_t)logical,cached_overlay))){
+            rgb[logical]=force_off?0u:overlay_rgb(cached_overlay);
+            lighting->from[logical]=lighting->target[logical]=0u;
+            lighting->changed_ms[logical]=now_ms;continue;
+        }
         thy_chord_cell chord;
-        int has_chord = logical < 48u &&
-            thy_instrument_chord_cell(instrument, (uint8_t)logical, &chord) == THY_OK;
+        int has_chord = role < 48u &&
+            thy_instrument_chord_cell(instrument, role, &chord) == THY_OK;
         uint8_t chord_degree=has_chord ? chord.degree : THY_CHORD_NO_DEGREE;
         if(has_chord && instrument->chord_layout!=THY_CHORD_LAYOUT_CLASSIC)
             lighting->source_color[logical]=chord_degree==THY_CHORD_NO_DEGREE?0u:(uint8_t)(chord_degree+1u);
@@ -157,7 +190,7 @@ int thy_lighting_render(thy_lighting *lighting, const thy_instrument *instrument
                 sounding_note = owner->count ? (int)(thy_pad_owner_key(owner, (uint8_t)(0)) & 127u) :
                     instrument->held_input_first[electrical];
                 color_pc = pitch_class(sounding_note);
-                if (logical < 48u && config->chord_color_mode == THY_LIGHTING_CHORD_BASS) {
+                if (role < 48u && config->chord_color_mode == THY_LIGHTING_CHORD_BASS) {
                     if (!owner->count) sounding_note = instrument->held_input_bass[electrical];
                     for (unsigned n = 1u; n < owner->count; ++n) {
                         int note = (int)(thy_pad_owner_key(owner, (uint8_t)(n)) & 127u);
@@ -165,7 +198,7 @@ int thy_lighting_render(thy_lighting *lighting, const thy_instrument *instrument
                     }
                     color_pc = pitch_class(sounding_note);
                 }
-                if (logical < 48u && instrument->held_color_valid[electrical]) {
+                if (role < 48u && instrument->held_color_valid[electrical]) {
                     if (config->chord_color_mode == THY_LIGHTING_CHORD_ROOT)
                         color_pc = pitch_class(instrument->held_color_root[electrical]);
                     else if (config->chord_color_mode == THY_LIGHTING_CHORD_DEGREE)
@@ -181,7 +214,7 @@ int thy_lighting_render(thy_lighting *lighting, const thy_instrument *instrument
                        notes, &count) == THY_OK && count != 0u) {
             sounding_note = notes[0];
             color_pc = pitch_class(sounding_note);
-            if (logical < 48u) {
+            if (role < 48u) {
                 if (config->chord_color_mode == THY_LIGHTING_CHORD_BASS) {
                     for (size_t n = 1u; n < count; ++n)
                         if (notes[n] < sounding_note) sounding_note = notes[n];
@@ -210,7 +243,7 @@ int thy_lighting_render(thy_lighting *lighting, const thy_instrument *instrument
             color = thy_lighting_note_color_palette(color_pc, config->palette);
             /* In-key-lit changes illumination only. Notes outside the key
              * remain playable and still get a visible held highlight. */
-            if (logical >= 48u &&
+            if (role >= 48u &&
                 (config->right_illumination == THY_LIGHTING_RIGHT_IN_KEY ||
                  instrument->performance.melody_layout == 7u) &&
                 !thy_instrument_note_in_key(instrument, sounding_note)) color = 0u;
@@ -229,12 +262,13 @@ int thy_lighting_render(thy_lighting *lighting, const thy_instrument *instrument
         uint8_t level = held && config->held_feedback ?
                         config->held_brightness : config->idle_brightness;
         if (!held && config->selected_enabled &&
-            logical == instrument->selected_pad) level = config->selected_brightness;
+            role == instrument->selected_pad) level = config->selected_brightness;
         /* Contrast belongs to absolute pitch class, never column parity:
          * transposition, guitar frets and piano layouts retain black keys.
-         * All-lit explicitly keeps equal resting brightness. */
-        if (!held && !control && logical >= 48u && config->key_contrast &&
-            instrument->performance.melody_layout != 8u && black_key(color_pc))
+         * Chromatic and All notes share the same contrast switch: choosing a
+         * playable layout must not silently override its saved preference. */
+        if (!held && !control && role >= 48u && config->key_contrast &&
+            black_key(color_pc))
             level = (uint8_t)(((unsigned)level * config->key_dim_percent + 50u) / 100u);
         if (held && config->held_feedback &&
             config->held_style == THY_LIGHTING_HELD_WHITE && color != 0u)
@@ -261,13 +295,7 @@ int thy_lighting_render(thy_lighting *lighting, const thy_instrument *instrument
             uint16_t components[3];
             if (instrument->light_overlay(instrument->light_overlay_context,
                 (uint8_t)logical,components)) {
-                uint32_t overlay=0u;
-                for(unsigned c=0u;c<3u;++c) {
-                    unsigned value=(components[c]+255u)/512u;
-                    if(value>8u) value=8u;
-                    overlay|=(uint32_t)value<<(16u-c*8u);
-                }
-                rgb[logical]=overlay;
+                rgb[logical]=overlay_rgb(components);
             }
         }
     }

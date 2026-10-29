@@ -141,8 +141,8 @@ test('updater mounts offline with no helper requests, physical writes or implici
   assert.equal(f.find('updaterField', 'file').disabled, false);
   assert.equal(f.panel.refresh().step, 1); assert.equal(f.panel.refresh().source, 'thy666');
   assert.equal(f.visible(f.find('updaterAction', 'install')), false);
-  assert.match(f.mount.textContent, /Nothing is installed until you choose Apply and confirm/);
-  assert.match(f.mount.textContent, /No automatic restore or rollback/);
+  assert.equal(f.find('updaterReadout', 'notice').hidden, true);
+  assert.match(f.mount.querySelector('.update-backup-disclaimer').textContent, /automatic rollback is not available/);
   assert.equal(f.mount.querySelectorAll('.update-board-pad').length, 96); assert.equal(f.mount.querySelectorAll('.update-board-control').length, 43);
 });
 
@@ -158,7 +158,7 @@ test('direct browser startup prepares only its updater core and catalog, without
   const f=fixture({runtime:{kind:'browser-direct',companionLabel:'Client guide'}});await flush();
   assert.deepEqual(f.calls.map(([name])=>name),['connect']);
   assert.equal(f.find('updaterReadout','setup').hidden,true);
-  assert.equal(f.find('updaterReadout','browser').hidden,false);
+  assert.equal(f.find('updaterReadout','browser').hidden,true);
   assert.match(f.find('updaterReadout','browser').textContent,/Browser updater ready/);
   assert.equal(f.find('updaterAction','companion').textContent,'Client guide');
   assert.equal(f.calls.some(([name])=>['devices','install','application-connect'].includes(name)),false);
@@ -341,6 +341,18 @@ test('double confirmation starts one correlated write; explicit progress unlocks
   assert.equal(f.timers.size, 0);
   assert.deepEqual(f.ownership, [true, false]); assert.match(f.panel.refresh().notice, /Transfer completed.*verify the running build/);
   assert.equal(f.find('updaterAction', 'install').disabled, true);
+});
+
+test('transfer has one visible heading and progress message with technical details kept available', async () => {
+  const rawMessage='Checking transferred and external CRC replies';
+  const f=fixture({install:async()=>({...status(),phase:'checksums',message:rawMessage})});
+  await prepare(f);f.act('install');f.act('confirm');await flush();
+  const headings=f.all().filter(n=>['H3','H4'].includes(n.tagName)&&f.visible(n)&&n.textContent==='Installing firmware');
+  assert.equal(headings.length,1);
+  const meter=f.mount.querySelectorAll('.update-progress').find(n=>n.attributes['aria-label']==='Firmware transfer progress');
+  assert.equal(meter.querySelector('.update-progress-copy').textContent,'Checking the transfer…');
+  assert.equal(f.find('updaterReadout','notice').hidden,true);
+  assert.match(f.find('updaterReadout','progress').textContent,/external CRC replies/);
 });
 test('automatic progress reads are serialized, stop on errors and terminal states, and never repeat an installation', async () => {
   let finish, reads = 0;

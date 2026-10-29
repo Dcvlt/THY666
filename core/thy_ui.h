@@ -38,6 +38,12 @@ void thy_ui_draw_rectangle(uint8_t *out, unsigned x, unsigned y,
     unsigned width, unsigned height, int enabled);
 void thy_ui_draw_text(uint8_t *out, unsigned x, unsigned y,
     const char *label, unsigned limit, int inverse);
+/* Content-aligned two-pixel notch in rows center_y-1..center_y+1.
+ * Width/label count are clipped; NULL/empty label gives a straight separator.
+ * below is nonzero for a legend below the rule. No state or heap allocation. */
+unsigned thy_ui_text_width(const char *label, unsigned limit);
+void thy_ui_draw_rule(uint8_t *out, unsigned center_y, unsigned width,
+    unsigned text_x, const char *label, unsigned limit, int below);
 void thy_ui_draw_play(uint8_t *out, const thy_instrument *instrument,
     const char *scale_name, int din_ready, int usb_ready);
 

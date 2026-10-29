@@ -518,3 +518,96 @@ body.companion-app:is(.device-connected,.cockpit-preview) { --signal-live: .9; }
 /* Match the public presentation typography while retaining light-mode contrast. */
 .companion-app :is(h2,h3,h4){font-family:var(--font-accent);color:var(--ui-ink);font-weight:500}
 .companion-app .companion-main-nav button{color:var(--ui-ink);text-transform:none}
+
+/* Compact navigation uses the same controls, moved into one accessible drawer. */
+.compact-nav-open { overflow:hidden; }
+.compact-nav-toggle svg { width:27px;height:24px; }
+.compact-nav-overlay:not([hidden]) { position:fixed;inset:0;z-index:1500;display:flex;background:var(--ui-scrim, #000b);padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom)); }
+.compact-nav-panel { width:min(360px,100%);max-height:100%;overflow:auto;overscroll-behavior:contain;padding:20px;background:var(--ui-paper,#000);border:1px solid var(--theme-bright);clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,12px 100%,0 calc(100% - 12px));box-shadow:inset 3px 0 var(--theme-mid); }
+.compact-nav-heading { display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:26px;font-family:var(--font-accent); }
+.compact-nav-heading .button { min-width:44px;min-height:44px;font-size:24px; }
+.compact-nav-group + .compact-nav-group { margin-top:24px;padding-top:20px;border-top:1px solid var(--theme-edge); }
+.companion-app .compact-nav-panel :is(.companion-main-nav,.companion-client-nav) { display:flex;flex-direction:column;align-items:stretch;width:100%;gap:6px;overflow:visible;padding:0;border:0; }
+.companion-app .compact-nav-panel :is(.companion-main-nav,.companion-client-nav) :is(button,a) { display:flex;align-items:center;min-height:48px;width:100%;padding:12px;text-align:left;font-size:12px;white-space:normal; }
+.companion-app .compact-nav-panel .rail-text { display:inline; }
+@media(max-width:900px) {
+  body.companion-app { --companion-header-height:84px;--companion-brand-width:84px;--companion-brand-height:70px;--companion-brand-top:7px; }
+  .companion-app .companion-topbar { height:var(--companion-header-height);padding:0 14px;gap:8px;grid-template-columns:minmax(44px,1fr) 84px minmax(0,1fr);margin-bottom:20px; }
+  .companion-app .compact-nav-toggle { grid-column:1;grid-row:1;width:48px;height:48px;padding:10px; }
+  .companion-app .companion-connection { grid-column:3;grid-row:1;justify-self:end;min-width:0; }
+  .companion-app .companion-connect { min-height:44px;padding:8px;font-size:9px;white-space:normal;line-height:1.5; }
+  .companion-app .connection-status { display:none; }
+  .companion-app .companion-workspace,.companion-app .companion-workspace.rail-collapsed { display:block; }
+  .companion-app .companion-rail.compact-nav-hidden { display:none; }
+  .companion-app .companion-content { padding:18px 16px 80px;min-width:0; }
+  .companion-app .companion-docs { padding:12px 16px 70px; }
+  .companion-app .companion-notice { margin-inline:16px; }
+  .companion-app .companion-page-head { margin-bottom:20px; }
+}
+.backup-flow-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:20px 0}
+.backup-flow-choice{display:grid;grid-template-columns:42px 1fr;gap:8px 16px;text-align:left;padding:24px;background:var(--panel);color:var(--text);border:1px solid var(--line);cursor:pointer;clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px))}
+.backup-flow-choice[aria-expanded="true"]{border-color:var(--accent);box-shadow:inset 3px 0 var(--accent)}
+.backup-flow-choice:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.backup-flow-choice strong{font-family:var(--font-accent);font-size:20px}
+.backup-flow-choice>span:last-child{grid-column:2;font-size:14px}
+.backup-flow-icon{grid-row:span 2;font-size:36px;color:var(--accent)}
+.backup-flow{padding:20px 0;border-top:1px solid var(--line)}
+.backup-flow[hidden]{display:none}
+.telemetry-controls{display:flex;flex-wrap:wrap;gap:12px}
+.telemetry-session{color:var(--accent);font-size:13px}
+@media(max-width:600px){.backup-flow-choices{grid-template-columns:1fr}.backup-flow-choice{padding:20px}.telemetry-controls>*{min-height:44px;max-width:100%}}
+/* Task panels share the same flat, angular visual vocabulary. */
+.diagnostics-dashboard{display:grid;gap:20px;margin-bottom:24px}
+.diagnostics-heading{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.diagnostics-heading h2{margin:0;font-size:20px}.diagnostics-freshness,.diagnostics-chart-caption{font-size:12px;color:var(--muted)}
+.diagnostics-resources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.diagnostics-resource,.diagnostics-report{padding:22px;border:1px solid var(--theme-edge);border-top:2px solid var(--accent);background:var(--ui-paper);min-width:0}
+.diagnostics-resource h3{margin:0 0 12px;font-size:14px}.diagnostics-resource strong{font-size:28px;font-family:var(--font-base);color:var(--accent)}
+.diagnostics-resource meter{display:block;width:100%;height:16px;margin-top:14px;accent-color:var(--accent)}
+.diagnostics-resource meter::-webkit-meter-bar{background:var(--ui-paper);border:1px solid var(--theme-edge);border-radius:0}
+.diagnostics-resource meter::-webkit-meter-optimum-value{background:var(--accent)}
+.diagnostics-resource p{font-size:12px;margin-bottom:0}.diagnostics-metrics{display:grid;grid-template-columns:1fr auto;gap:10px 24px;font-size:14px}.diagnostics-metrics dd{margin:0;color:var(--accent);font-variant-numeric:tabular-nums}
+.diagnostics-trend{width:100%;height:110px;color:var(--accent);border-bottom:1px solid var(--theme-edge);margin-top:12px}
+.diagnostics-unavailable,.diagnostics-advanced,.diagnostics-raw{padding:16px 0;border-top:1px solid var(--theme-edge)}
+.diagnostics-advanced>summary,.diagnostics-unavailable>summary,.diagnostics-raw>summary{cursor:pointer;min-height:30px}
+.diagnostics-advanced[open]>.client-local-tabs{margin-top:24px}
+.companion-app .client-telemetry{background:var(--ui-paper);border:1px solid var(--theme-edge);border-radius:0}
+.telemetry-output{white-space:pre-wrap;overflow-wrap:anywhere;max-height:380px;overflow:auto;font-size:12px}
+.backup-journey{display:flex;list-style:none;padding:0;gap:16px;border-block:1px solid var(--theme-edge)}
+.backup-journey li{flex:1;padding:14px 0;color:var(--muted);font-size:13px}.backup-journey li[aria-current]{color:var(--accent);border-bottom:2px solid var(--accent)}
+.backup-panel[aria-busy=true] .backup-journey li[aria-current]{animation:backup-pulse 1.2s ease-in-out infinite alternate}
+@keyframes backup-pulse{to{opacity:.45}}
+.harmony-content{display:grid;gap:24px}.harmony-intro{margin:0}.harmony-live-workspace{align-items:start}
+.harmony-options>h3{margin-top:32px;padding-top:20px;border-top:1px solid var(--theme-edge)}
+.harmony-fine,.harmony-capture{margin-top:24px;border-top:1px solid var(--theme-edge);padding-top:16px}.harmony-fine[open]>.harmony-controls,.harmony-capture[open]>.harmony-tabs{margin-top:16px}
+.harmony-shortcuts>summary,.harmony-fine>summary,.harmony-capture>summary{cursor:pointer;min-height:30px;color:var(--accent)}
+.harmony-feedback:empty,.harmony-caption:empty{display:none}.harmony-feedback{padding:12px 16px;border-left:2px solid var(--accent);margin:0;color:var(--accent)}
+.harmony-live-table{table-layout:fixed}.harmony-live-table td{overflow-wrap:anywhere}.harmony-live-table td:first-child{width:38%}
+.harmony-guide input,.harmony-guide select{min-width:0;max-width:100%}.harmony-guide .harmony-field{min-width:0}
+.harmony-live-workspace .harmony-card{min-width:0}.harmony-mini-halves{overflow:hidden}
+.cockpit-context-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:16px}
+.cockpit-context[hidden]{display:none}.cockpit-context-note{font-size:12px;line-height:1.6;color:var(--muted)}
+.cockpit-context .cockpit-reading{display:flex;justify-content:space-between;gap:16px;margin-block:12px}.cockpit-context .cockpit-reading dt{font-size:10px}
+@media(max-width:650px){.cockpit-panels{grid-template-columns:1fr}.cockpit-panel-head h2{font-size:11px!important}.cockpit-reading dt{font-size:10px}.cockpit-inspection,.cockpit-expression{font-size:10px}.cockpit-context-panels{grid-template-columns:1fr}.cockpit-chord>[data-cockpit-value=harmony]{font-size:15px}.diagnostics-resources{grid-template-columns:1fr}.diagnostics-resource,.diagnostics-report{padding:16px}.backup-journey{gap:8px}.backup-journey li{font-size:11px}.harmony-card{clip-path:none}.harmony-live-table th,.harmony-live-table td{font-size:12px;padding:8px 4px}.harmony-live-table .button{font-family:var(--font-base);font-size:12px;padding:8px 4px}}
+@media(prefers-reduced-motion:reduce){.backup-panel[aria-busy=true] .backup-journey li{animation:none}}
+
+/* Keep the musical result near its controls, including narrow viewports. */
+.harmony-guide{gap:20px}.harmony-guide>.harmony-caption{margin:0}
+.harmony-content[hidden],.harmony-intro[hidden]{display:none}
+.harmony-fifths{width:190px;height:190px;margin:20px auto}
+.harmony-fifth{width:28px;height:28px;font-size:12px;transform:translate(-50%,-50%) rotate(calc(var(--fifth)*30deg)) translateY(-80px) rotate(calc(var(--fifth)*-30deg))}
+.harmony-live-pads{gap:4px;margin:12px 0}.harmony-live-pads>span{aspect-ratio:auto;min-height:24px}
+.harmony-mini-halves .harmony-caption{margin:12px 0}
+.harmony-tabs .is-selected{border-color:var(--accent);box-shadow:inset 0 -2px var(--accent)}
+@media(max-width:650px){.harmony-live-workspace{gap:16px}.harmony-content{gap:16px}.harmony-live-pads>span{font-size:9px}.harmony-card{padding:16px}.harmony-guide>.companion-page-head{padding-bottom:16px}}
+
+@media(max-width:650px){
+  .companion-app .backup-panel{padding:16px}
+  .companion-app .backup-body{padding:0}
+  .backup-flow-choice{grid-template-columns:26px minmax(0,1fr);gap:8px 12px;padding:16px}
+  .backup-flow-choice strong{font-size:18px}
+  .backup-flow-choice>span:last-child{font-family:var(--font-base);line-height:1.5}
+  .backup-flow-icon{font-size:28px}
+  .backup-panel .panel-heading{gap:12px}.backup-panel .panel-heading h2{font-size:20px}
+  .backup-panel input[type=file]{width:100%;min-width:0}
+}

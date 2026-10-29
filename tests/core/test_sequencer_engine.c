@@ -274,7 +274,8 @@ static int simplified_actions_and_latched_chord_entry(void)
     CHECK(thy_engine_sequencer_action(&engine,THY_SEQ_UI_OCTAVE_DOWN,0)==THY_STATE_OK && !instrument.performance.chord_octave);
     CHECK(thy_engine_sequencer_action(&engine,THY_SEQ_UI_HELP,0)==THY_OK && engine.sequencer_ui.help_open);
     CHECK(thy_engine_navigate(&engine,THY_STATE_LEFT)==THY_STATE_OK && !engine.sequencer_ui.help_open);
-    CHECK(thy_engine_navigate(&engine,THY_STATE_SELECT)==THY_STATE_OK && !engine.sequencer_ui.open);
+    CHECK(thy_engine_navigate(&engine,THY_STATE_SELECT)==THY_STATE_OK && engine.sequencer_ui.open);
+    CHECK(engine.state.level==THY_STATE_GROUPS);
     CHECK(!thy_state_row_visible(&engine.state,THY_ROW_SEQUENCER_TRACK));
     CHECK(!thy_state_row_visible(&engine.state,THY_ROW_SEQUENCER_LAYOUT));
     CHECK(!thy_state_row_visible(&engine.state,THY_ROW_SEQUENCER_LENGTH));
@@ -365,7 +366,7 @@ static int track_options_preserve_step_input_colors_and_held_releases(void)
     CHECK(chord_notes==3u);CHECK(drain()==3u);
     const thy_pad_owner chord_owner=core.owners[48];
     CHECK(thy_engine_navigate(&engine,THY_STATE_SELECT)==THY_STATE_OK);
-    CHECK(!engine.sequencer_ui.open && !engine.sequencer_ui.options_open);
+    CHECK(engine.sequencer_ui.open && !engine.sequencer_ui.options_open);
     CHECK(!memcmp(&chord_owner,&core.owners[48],sizeof chord_owner) && !drain());
     CHECK(thy_instrument_release_pad(&instrument,48u)==THY_OK);
     CHECK(drain()==3u && !core.sounding_count && !core.generated_count && !engine.sequencer.transaction_open);

@@ -1,4 +1,5 @@
 import {legacyViewInfo} from './legacy-view-fixture.mjs';
+import {CURRENT_SETTINGS_VERSION,CURRENT_SETTINGS_PARAMETER_BYTES,legacyParameterPayload} from './current-settings-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -87,18 +88,18 @@ test('OFF restores the original single-stage curve, and invalid or held-pad edit
   const narrow=f.expressionProfile(1);assert.equal(f.setExpressionProfile(1,profile()).ok,false);assert.deepEqual(f.expressionProfile(1),narrow);
 });
 
-test('V13 restores cluster and individual profiles without held axes; V11 and V10 migrate safely',async()=>{
+test('current settings restore cluster and individual profiles without held axes; V12, V11 and V10 migrate safely',async()=>{
   const source=await fresh(),f=source.firmware;
   okay(f.setExpressionProfile(-1,profile()));okay(f.setExpressionProfile(-2,profile({split:40,pressureCurve:2})));
   okay(f.setExpressionProfile(95,profile({split:55,aftertouchCurve:1})));
-  const payload=source.settings.encode(),cold=await fresh();assert.equal(source.settings.version,15);
+  const payload=source.settings.encode(),cold=await fresh();assert.equal(source.settings.version,CURRENT_SETTINGS_VERSION);
   assert.equal(cold.settings.apply(payload),true);
   for(const scope of [-2,-1,0,48,95])assert.deepEqual(cold.firmware.expressionProfile(scope),f.expressionProfile(scope));
   assert.deepEqual(cold.settings.encode(),payload);assert.deepEqual(cold.drain(),[]);assert.equal(cold.expression.stats().active,0);
   const song=source.sequencer.exportBytes();
-  assert.deepEqual(payload.subarray(5013),song,'V12 places the song after policies and the complete custom library.');
+  assert.deepEqual(payload.subarray(CURRENT_SETTINGS_PARAMETER_BYTES),song,'Current settings place the song after library and Harmony/system preferences.');
   const legacyPayload=legacyViewInfo(payload);
-  const v12=legacyPayload.slice();v12[6]=12;
+  const v12=legacyParameterPayload(legacyPayload,12);
   assert.equal(source.settings.payloadVersion(v12),12);assert.equal(source.settings.validate(v12),true);
   assert.equal(cold.settings.apply(v12),true);assert.deepEqual(cold.settings.encode(),legacyPayload);
   const v11=new Uint8Array(4263+song.length);

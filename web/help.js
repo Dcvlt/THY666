@@ -45,7 +45,17 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
   resultStatus.setAttribute('role', 'status');
   resultStatus.setAttribute('aria-live', 'polite');
   const links = el('div', 'thy-help-topic-list');
-  rail.append(searchLabel, searchInput, resultStatus, links);
+  const indexToggle = button('Find a topic', 'thy-help-index-toggle');
+  indexToggle.setAttribute('aria-expanded', 'false');
+  indexToggle.setAttribute('aria-controls', `${prefix}-index`);
+  const indexContent = el('div', 'thy-help-index-content');indexContent.id = `${prefix}-index`;
+  indexContent.append(searchLabel, searchInput, resultStatus, links);
+  rail.append(indexToggle, indexContent);
+  listen(indexToggle, 'click', () => {
+    const opened = indexToggle.getAttribute('aria-expanded') !== 'true';
+    indexToggle.setAttribute('aria-expanded', String(opened));rail.classList.toggle('index-open', opened);
+    if (opened) searchInput.focus();
+  });
   const article = el('article', 'thy-help-article');
   article.tabIndex = -1;
   article.setAttribute('aria-label', 'Guide article');
@@ -76,6 +86,14 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
     return matches;
   }
 
+  function articleLink(text, id) {
+    const destination = HELP_TOPICS.find(item => item.id === id);
+    if (!destination) return el('span', '', text);
+    const link = el('a', 'thy-help-inline-link', text);
+    link.href = `#${destination.id}`; link.dataset.helpTopic = destination.id;
+    return link;
+  }
+
   function renderArticle(item) {
     article.replaceChildren();
     const group = HELP_GROUPS.find(value => value.id === item.group);
@@ -84,9 +102,24 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
     title.id = `${prefix}-article-title`;
     article.setAttribute('aria-labelledby', title.id);
     article.append(title, el('p', 'thy-help-lead', item.summary));
-    for (const part of item.sections) {
-      const section = el('section', 'thy-help-section');
-      section.append(el('h2', '', part.title));
+    if (item.sections.length > 2) {
+      const contents = el('nav', 'thy-help-contents');contents.setAttribute('aria-label', 'On this page');
+      contents.append(el('p', 'thy-help-eyebrow', 'On this page'));
+      item.sections.forEach((part, index) => {
+        const link = el('a', '', part.title);link.href = `#${prefix}-section-${index}`;
+        link.addEventListener('click', event => {
+          event.preventDefault();const section = article.querySelector(`#${prefix}-section-${index}`);
+          if(section?.tagName==='DETAILS')section.open=true;section?.scrollIntoView?.({ block: 'start' });section?.focus();
+        });
+        contents.append(link);
+      });
+      article.append(contents);
+    }
+    for (const [index, part] of item.sections.entries()) {
+      const expandable = index > 1 && !part.open;
+      const section = el(expandable ? 'details' : 'section', 'thy-help-section');
+      section.id = `${prefix}-section-${index}`;section.tabIndex = -1;
+      if(expandable){const summary=el('summary');summary.append(el('h2','',part.title));section.append(summary);}else section.append(el('h2', '', part.title));
       for (const paragraph of part.paragraphs || []) section.append(el('p', '', paragraph));
       if (part.figures?.length) {
         const gallery = el('div', 'thy-help-figures');
@@ -95,12 +128,26 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
               !illustration.src.startsWith('data:image/svg+xml;charset=utf-8,')) continue;
           const figure = el('figure', `thy-help-figure thy-help-figure-${illustration.kind}`);
           figure.dataset.helpFigure = illustration.kind;
+          if (illustration.navigation) figure.className += ' thy-help-figure-navigation';
           figure.append(el('h3', 'thy-help-figure-label', illustration.label));
           const viewport = el('div', 'thy-help-figure-viewport'), image = el('img');
           image.src = illustration.src; image.alt = illustration.alt;
           image.width = illustration.width; image.height = illustration.height;
           image.loading = 'lazy'; image.decoding = 'async';
-          viewport.append(image); figure.append(viewport, el('figcaption', '', illustration.caption));
+          viewport.append(image); figure.append(viewport);
+          if (illustration.navigation?.length) {
+            const keys = el('div', 'thy-help-nav-keys');
+            keys.setAttribute('aria-label', 'Five navigation controls below the screen, left to right');
+            const legend = el('ul', 'thy-help-nav-legend');
+            for (const { control, symbol, destination, topic } of illustration.navigation) {
+              const key = el('div', 'thy-help-nav-key');
+              const glyph = el('span', 'thy-help-nav-symbol', symbol); glyph.setAttribute('aria-hidden', 'true');
+              key.append(glyph, el('span', '', control)); keys.append(key);
+              const entry = el('li'); entry.append(articleLink(`${control} → ${destination}`, topic)); legend.append(entry);
+            }
+            figure.append(keys, legend);
+          }
+          figure.append(el('figcaption', '', illustration.caption));
           gallery.append(figure);
         }
         section.append(gallery);
@@ -121,7 +168,13 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
         const body = el('tbody');
         for (const row of part.table.rows) {
           const tr = el('tr');
-          for (const value of row) tr.append(el('td', '', value));
+          for (const [column, value] of row.entries()) {
+            const cell = el('td'); cell.dataset.label = part.table.columns[column];
+            if (value && typeof value === 'object' && typeof value.text === 'string')
+              cell.append(articleLink(value.text, value.topic));
+            else cell.textContent = String(value ?? '');
+            tr.append(cell);
+          }
           body.append(tr);
         }
         table.append(head, body); scroll.append(table); section.append(scroll);
@@ -169,6 +222,7 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
     closeContext({ focus: false });
     const item = getHelpTopic(id);
     selected = item.id;
+    rail.classList.remove('index-open');indexToggle.setAttribute('aria-expanded', 'false');
     renderNavigation(); renderArticle(item);
     onNavigate(selected);
     if (focus) article.focus();

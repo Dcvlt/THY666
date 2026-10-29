@@ -9,6 +9,9 @@
 #include "thy_settings_transfer.h"
 #include "thy_companion.h"
 #include <stdbool.h>
+#include "thy_resources.h"
+const thy_resources *board_resources(void);
+void board_resources_task(uint32_t now_ms);
 const thy_instrument *thy_instrument_app_state(void);
 const thy_state *thy_instrument_app_menu_state(void);
 const char *thy_instrument_app_scale_name(void);

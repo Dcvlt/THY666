@@ -120,6 +120,15 @@ an installation automatically or promise configuration preservation.
 
 ## Documentation and presentation
 
+Treat concise, contextual copy as a project-wide requirement across firmware,
+Client, updater and documentation. Give each state one clear heading and each
+instruction one home. Remove repeated status text, filler and implementation
+reassurance. State the result and next useful action in familiar words. Put
+protocol names, checksums, identifiers and diagnostic detail in expandable
+details unless needed to resolve a problem. Keep consequential warnings at the
+decision they explain, and never hide errors or uncertain outcomes for brevity.
+
+
 Maintain `README.md` with material feature, status, workflow and setup changes.
 Update relevant `docs/` and Client help at the same time. Clearly distinguish
 implemented, host-tested, device-tested and planned functionality. Avoid stale

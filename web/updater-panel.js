@@ -25,7 +25,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
   let progressTimer = null, helperSimulation = false, rejectionPending = null,hostActive=true;
   let step = 1, backupState = 'idle', source = 'thy666', releases = [], catalogConfigured = false, detectedUID = null, verifying = false;
   const health = new Map(); let healthError = '', packageTicket = 0, packageReadoutKey = '';
-  let notice = 'Connect your board to begin. Nothing is installed until you choose Apply and confirm.';
+  let notice = '', noticeKind = 'info';
   const directBrowser=runtime?.kind==='browser-direct';
   let quietDesktopLaunch=runtime?.kind==='desktop'||directBrowser;
   const el = (tag, className = '', text) => {
@@ -112,7 +112,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
       for(const {row,result} of view.healthRows.values()){row.dataset.state=scene===3?'pending':scene===6?'failure':'pass';result.textContent=scene===3?'Waiting':scene===6?'Needs attention':'Passed (preview)';}
       view.restoration.hidden=scene!==4;view.restorationSummary.textContent='Example backup ready. Review before restoring your saved configuration.';
       view.verify.hidden=scene!==3;view.companion.hidden=scene!==5&&scene!==8;
-      view.headings[stage].parentNode.hidden=scene===7;view.headings[stage].textContent=scenarios[scene];
+      view.headings[stage].parentNode.hidden=scene>=2;view.headings[stage].textContent=scenarios[scene];
       view.headings[stage].parentNode.children[1].textContent=scene===2?'Keep USB connected while firmware transfers. This preview uses synthetic progress.':stage===1?'Save your THY666 configuration before changing firmware.':stage===2?'Choose the firmware to install.':scene===4?'Restore your saved configuration after the firmware checks pass.':'Check the running firmware before returning to Client.';
       view.logoArt.dataset.state=view.completion.dataset.state;
       for(const node of previewRoot.querySelectorAll('[data-updater-action]'))node.disabled=false;
@@ -156,7 +156,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
   }
   function say(message, kind = 'info') {
     if (disposed) return;
-    notice = String(message);if(!quietDesktopLaunch||kind==='error')notify(notice, kind);refresh();
+    notice = String(message);noticeKind=kind;if(!quietDesktopLaunch||kind==='error')notify(notice, kind);refresh();
   }
   function cancelProgress() { if (progressTimer !== null) { clearTimer(progressTimer); progressTimer = null; } }
   function scheduleProgress() {
@@ -253,7 +253,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
       backupState==='running'?'Reading your applied settings…':unavailable.checked?'Backup skipped. No recovery copy has been created.':
       connected ? 'Your THY666 settings are ready to back up.' : 'Backup is unavailable in update mode or on firmware without the THY666 backup service.';
     helperSummary.textContent = helper.connected ? 'Local helper connected. USB ownership is reserved only when installation starts.' : 'Local helper disconnected';
-    browserSummary.hidden=!directBrowser;
+    browserSummary.hidden=!directBrowser||(helper.connected&&helper.available!==false);
     browserSummary.textContent=helper.available===false?'Direct browser installation is unavailable here. Use desktop Chrome or Edge with WebHID, or the desktop updater.':helper.connected?'Browser updater ready. Board access starts only when you choose Detect board.':'Preparing the browser updater. No board is opened automatically.';
     setup.dataset.state=helper.connected?'connected':'disconnected';
     setup.querySelector('summary').querySelector('span').textContent=helper.connected?'Updater connected · connection options':'Connect the updater on this computer';
@@ -319,8 +319,11 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
     releaseNotice.textContent=source==='custom'?'Custom files must pass the same compatibility and integrity checks.':release&&!release.available?release.disabled_reason||'This firmware is not available in this updater package.':!catalogConfigured?'No bundled firmware catalog is configured. Use Custom file, or use an updater download containing the release packages.':release?'Firmware supplied by this updater package; no unverified download is used.':'This updater package does not contain this firmware. Choose a custom file instead.';
     const progressMatch=/Reading backup · ([0-9]+)\/([0-9]+) bytes/.exec(client.status?.message||'');
     paintProgress(backupProgress,{state:backupState,completed:currentBackup()?1:Number(progressMatch?.[1]||0),total:currentBackup()?1:Number(progressMatch?.[2]||0),message:backupSummary.textContent});
+    backupSummary.hidden=!backupProgress.box.hidden;
     const complete=operation?.state==='awaiting-verification';
-    paintProgress(installProgress,{state:operation?(complete?'done':operation.state==='failed'?'failure':'running'):'idle',completed:operation?.completed||0,total:operation?.phase==='application'||complete?operation.total:0,message:operation?.message||''});
+    const phaseCopy={opening:'Connecting to the board…',preflight:'Checking the board…',preparation:'Preparing the board…',metadata:'Preparing the transfer…',ready2:'Preparing the transfer…',application:'Transferring firmware…',checksums:'Checking the transfer…',activation:'Starting the new firmware…','application-verification':'Transfer complete'};
+    const transferCopy=operation?.state==='failed'||operation?.state==='outcome-unknown'?operation.message:operation?phaseCopy[operation.phase]||'Updating the board…':'';
+    paintProgress(installProgress,{state:operation?(complete?'done':operation.state==='failed'?'failure':'running'):'idle',completed:operation?.completed||0,total:operation?.phase==='application'||complete?operation.total:0,message:transferCopy});
     progress.hidden=!operation;install.hidden=Boolean(operation);find.hidden=Boolean(operation);
     healthList.hidden=operation?.firmware_kind==='stock'||Boolean(operation?.simulation);
     for(const [id,nodes] of healthRows){const value=health.get(id);nodes.row.dataset.state=value?.state||'pending';nodes.result.textContent=value?.message||'Waiting';}
@@ -330,7 +333,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
     restore.disabled=!mayRestore();keepSettings.disabled=!mayKeepSettings();
     restore.hidden=['verified','declined'].includes(restorationState);keepSettings.hidden=restore.hidden;
     restoration.dataset.state=restorationState;
-    restorationSummary.textContent=restorationState==='verified'?'Your configuration was restored, saved and re-exported. The complete saved payload matches your retained backup.':restorationState==='declined'?'You chose to keep the current settings. The downloaded backup remains available for a later explicit restore.':restorationState==='running'?'Restoring your configuration and checking the saved readback. Keep the board connected and every pad released.':restorationState==='failed'?`${restorationError} No restore retry was sent. Keep the downloaded backup and inspect the current device state before another explicit attempt.`:firmwareVerified?'Firmware checks passed. Restore the saved configuration next, or explicitly choose to keep the current settings.':'First verify the intended board and firmware. Your retained backup will not be written before those checks pass.';
+    restorationSummary.textContent=restorationState==='verified'?'Your configuration was restored, saved and re-exported. The complete saved payload matches the independently checked restore payload.':restorationState==='declined'?'You chose to keep the current settings. The downloaded backup remains available for a later explicit restore.':restorationState==='running'?'Restoring your configuration and checking the saved readback. Keep the board connected and every pad released.':restorationState==='failed'?`${restorationError} No restore retry was sent. Keep the downloaded backup and inspect the current device state before another explicit attempt.`:firmwareVerified?'Firmware checks passed. Restore the saved configuration next, or explicitly choose to keep the current settings.':'First verify the intended board and firmware. Your retained backup will not be written before those checks pass.';
     const restoreMatch=/Sending backup · ([0-9]+)\/([0-9]+) bytes/.exec(client.status?.message||'');
     paintProgress(restoreProgress,{state:restorationState==='running'?'running':restorationState==='verified'?'done':restorationState==='failed'?'failure':'idle',completed:restorationState==='verified'?1:Number(restoreMatch?.[1]||0),total:restorationState==='verified'?1:Number(restoreMatch?.[2]||0),message:restorationSummary.textContent});
     completion.hidden=!operation;completion.dataset.state=firmwareVerified&&restorationState==='verified'?'restored':firmwareVerified?'verified':complete&&operation?.firmware_kind==='stock'?'stock-complete':complete?'finished':operation?.state==='failed'?'failure':'busy';
@@ -341,11 +344,17 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
     verify.hidden=!complete||operation?.firmware_kind==='stock'||Boolean(operation?.simulation)||firmwareVerified;verify.disabled=busy||locked||verifying||client.available===false;
     verify.textContent=connected?'Run basic checks':'Connect and verify';companion.hidden=!verified;
     if(operation?.firmware_kind==='stock')applicationSummary.hidden=true;
-    headings[2].parentNode.hidden=complete&&operation?.firmware_kind==='stock';
+    // The logo/result block owns the heading once installation begins.
+    headings[2].parentNode.hidden=Boolean(operation);
+    headings[3].parentNode.hidden=Boolean(operation);
     headings[2].textContent=complete&&operation?.firmware_kind==='stock'?'Firmware installed':operation?'Installing firmware':'Choose your firmware';headings[2].parentNode.children[1].textContent=complete&&operation?.firmware_kind==='stock'?'Transfer complete. Check normal startup and playing on your board.':operation?'Keep the USB cable connected. Progress below comes from the actual transfer.':'THY666 is recommended. You can also restore the original firmware or use a supported custom file.';
     headings[3].textContent=operation?.simulation?'Practice finished':operation?.firmware_kind==='stock'?'All done':verified?'Ready to play':'One last check';headings[3].parentNode.children[1].textContent=operation?.simulation?'The simulated workflow is complete. Your physical board has not been accessed.':operation?.firmware_kind==='stock'?'The original firmware transfer is finished.':'Basic checks confirm the new THY666 installation before you start playing.';
     recovery.open=operation?.state==='failed'||operation?.state==='outcome-unknown';
     status.textContent = notice;
+    // Progress and check rows already own their messages. Preserve unexpected
+    // failures raised outside those regions instead of hiding all notices.
+    status.hidden=!notice||(Boolean(operation)&&noticeKind!=='error')||notice===healthError||(step===2&&notice===operation?.message)||notice===backupSummary.textContent;
+    if(healthError||firmwareVerified)applicationSummary.hidden=true;
     if (dialog && confirmationKind!=='preview-install' && !(confirmationKind==='restore'?mayRestore():confirmationKind==='keep-settings'?mayKeepSettings():mayInstall())) closeConfirmation();
     return { helperConnected: Boolean(helper.connected), simulation: helperSimulation || operation?.simulation === true,
       usbBusy: locked && !helperSimulation && operation?.simulation !== true, selected: selected?.name || null,
@@ -499,7 +508,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
       if(replacing){health.clear();healthError='';backup=null;backupState='idle';restoreWanted.checked=false;unavailable.checked=false;detectedUID=null;selected=null;source='thy666';++fileTicket;++packageTicket;showStep(1);}
       try{await loadReleases();}catch{releaseNotice.textContent='The firmware list could not be read. You can still choose a custom file.';}
       if(step===2&&source!=='custom')await chooseSource(source);
-      say(helperSimulation?'SIMULATION updater connected. Its fake backend never opens a physical board.':'Save a configuration backup or skip to choose firmware and detect your board.');
+      say(helperSimulation?'Simulation only. No physical board is accessed.':'');
     }
   }
   async function verifyInstallation(){
@@ -549,7 +558,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
         if(disposed)return;
         if(operation?.operation_id!==expectedOperation||backup!==retained)throw new Error('The update or retained backup changed during restoration.');
         restoreIdentity();
-        if(result?.verified!==true||result.payloadCRC!==retained.payloadCRC)
+        if(result?.verified!==true||(result.sourcePayloadCRC??result.payloadCRC)!==retained.payloadCRC)
           throw new Error('The saved restoration result does not match the retained configuration.');
         restorationState='verified';say('Settings Restored. Configuration saved and read back exactly.','success');
       }catch(error){if(!disposed){restorationState='failed';restorationError=error.message;say(`Configuration restoration needs attention: ${error.message} No automatic restore retry was sent.`,'error');}}

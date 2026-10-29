@@ -116,7 +116,7 @@ export function initializeEngineStudio({ engine, groups, getContext, onChange, o
   let lastDeviceMode = 'offline';
   const activate = () => onActivate?.();
   const changed = (force = false) => { lastIdentity = ''; forceEditor ||= force; refresh(); if (!device.connected) onChange?.(); };
-  for (const group of model.groups) {
+  for (const group of model.groups.filter(group=>!group.nested)) {
     const button = studioText('button', group.label);
     const icons = { engines: '⚙', performance: '◇', chords: '♬', arps: '↗', sequencer: '▥', midi: '⇄', sensitivity: '◉', lights: '☼', storage: '▣', system: '⚙', views: '▤', controls: '✥' };
     const icon = studioText('span', icons[group.id] || '◇', 'engine-group-icon');
@@ -158,7 +158,7 @@ export function initializeEngineStudio({ engine, groups, getContext, onChange, o
     }
     if (row.type === 'action' && row.status === 'live') {
       const instance = connected ? device.actionInstance(row) : null;
-      const run = studioText('button', (connected ? 'Run on device: ' : row.id.startsWith('engines.') ? 'Select ' : 'Run ') + row.label, 'button engine-apply');
+      const run = studioText('button', (row.group === 'engines' && ['engines.play','engines.harmony','engines.sequencer'].includes(row.id) ? 'Select ' : row.group === 'engines' || row.group === 'engineSettings' ? 'Open ' : '') + row.label, 'button engine-apply');
       run.type = 'button';
       run.disabled = connected && (instance === null || device.pending);
       run.addEventListener('click', async () => {
@@ -328,8 +328,9 @@ export function initializeEngineStudio({ engine, groups, getContext, onChange, o
         button.type = 'button'; button.dataset.setting = item.id;
         button.dataset.section = item.advanced ? 'advanced' : 'basic';
         button.setAttribute('aria-pressed', String(item.id === row?.id));
-        const workspaceIcons={'engines.play':'♬','engines.sequencer':'▥','engines.drums':'◉','engines.lightboard':'☼','engines.user':'◇'};
+        const workspaceIcons={'engines.play':'▷','engines.harmony':'♪','engines.arp':'↗','engines.sequencer':'▥','engines.drums':'◉'};
         const itemLabel=studioText('span',item.label);
+        if(item.icon==='reset') { const glyph=studioText('span','↺ ','engine-workspace-icon'); glyph.setAttribute('aria-hidden','true'); itemLabel.prepend(glyph); }
         if(workspaceIcons[item.id]) { const glyph=studioText('span',workspaceIcons[item.id]+' ','engine-workspace-icon'); glyph.setAttribute('aria-hidden','true'); itemLabel.prepend(glyph); }
         button.append(itemLabel, studioText('span', device.connected ? deviceFormat(model, item, device.get(item.id)) : model.format(item), 'engine-menu-value'), studioText('small', item.status === 'live' ? 'LIVE' : item.type === 'info' ? 'INFO' : 'FUTURE', item.status === 'live' ? 'is-live' : ''));
         button.addEventListener('click', () => { if (device.pending) return; if (device.connected) device.cancel(); activate(); if (snapshot.quickOpen) model.focusQuick(item.id); else model.focus(group.id, item.id); changed(); });

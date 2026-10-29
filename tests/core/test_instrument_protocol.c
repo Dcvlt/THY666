@@ -32,6 +32,8 @@ static diag_pads_report_t pads;
 static diag_report_t board;
 static thy_touch_capture touch;
 static thy_display_report display;
+static thy_resources resources;
+const thy_resources *board_resources(void) { return &resources; }
 static unsigned capture_begin_calls, capture_read_calls;
 static int touch_available = 1, display_available = 1, allow_capture;
 static uint32_t now;
@@ -376,7 +378,7 @@ static void status_and_all_io_fields(void)
     instrument.sensors[95].warmup_count = 7u;
     leds.errors = 12u; lights.errors = 13u; leds.frames = 14u; lights.faulted = 1u;
     read_only("io", output);
-    CHECK(strcmp(output, "IO din_ready=1 din_errors=2 din_queued=3 din_tx=4 din_accept=5 usb_ready=1 usb_mounted=1 usb_accepted=6 din_events=7 usb_dropped=17 transport_fault=0 core_queued=0 core_pending=0 din_pending=10 usb_pending=11 held=2 blocked=1 warmed=95 led_errors=25 led_frames=14 led_fault=1\r\n") == 0);
+    CHECK(strcmp(output, "IO din_ready=1 din_errors=2 din_queued=3 din_tx=4 din_accept=5 usb_ready=1 usb_mounted=1 usb_accepted=6 din_events=7 usb_dropped=17 transport_fault=0 core_queued=0 core_pending=0 din_pending=10 usb_pending=11 held=2 blocked=1 warmed=95 led_errors=25 led_frames=14 led_fault=1 uptime_ms=0\r\n") == 0);
     int16_t chord[3] = {60, 64, 67}; thy_shape strum = {0}; strum.strum_ms = 20u;
     CHECK(thy_core_press_shaped(&core, 5u, chord, 3u, 0, 0u,
         THY_ROUTE_USB0 | THY_ROUTE_DIN, 96u, &strum) == THY_OK);
@@ -608,6 +610,25 @@ static void settings_read_only_report(void)
     }
 }
 
+static void resources_read_only_report(void)
+{
+    reset();++scenarios;char output[THY_DIAG_REPLY_MAX];
+    resources=(thy_resources){.valid=1u,.timing_valid=1u,.stack_valid=1u,.cpu_active=100u,
+        .ram_used=102400u,.ram_total=131072u,.ccm_used=49152u,.ccm_total=65536u,
+        .flash_used=409600u,.flash_total=524288u,.stack_used=3072u,.stack_total=8192u,
+        .loop_us=30u,.loop_peak_us=420u,.sampled_ms=1000u};
+    thy_resources before=resources;read_only("status",output);
+    CHECK(unsigned_field(output," resources=")==1u);
+    CHECK(unsigned_field(output," cpu_active=")==100u);
+    CHECK(unsigned_field(output," ram_used=")==102400u);
+    CHECK(unsigned_field(output," flash_total=")==524288u);
+    CHECK(unsigned_field(output," stack_used=")==3072u);
+    CHECK(unsigned_field(output," loop_peak_us=")==420u);
+    CHECK(strstr(output," layout=") && strlen(output)<THY_DIAG_REPLY_MAX-1u);
+    CHECK(!memcmp(&before,&resources,sizeof resources));
+    resources=(thy_resources){0};
+}
+
 int main(int argc, char **argv)
 {
     if (argc == 2 && strcmp(argv[1], "--fixtures") == 0) {
@@ -628,6 +649,7 @@ int main(int argc, char **argv)
     touch_partial_and_strict_arguments();
     display_read_only_report();
     settings_read_only_report();
+    resources_read_only_report();
     velocity_observation_is_effective_read_only_and_backwards_compatible();
     {
         ++scenarios;char output[THY_DIAG_REPLY_MAX];

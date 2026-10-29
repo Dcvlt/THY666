@@ -16,7 +16,7 @@ export function createUpdaterLayout(doc, prefix) {
     n.append(el('span','update-step-number',i+1),copy);rail.append(n);return n;
   });
   const stages=[],bodies=[],actions=[],headings=[];
-  for(const [i,title,description] of [[1,'Keep what matters','Save your THY666 settings before changing firmware. You can also skip this step.'],[2,'Choose your firmware','THY666 is recommended. You can also restore the original firmware or use a supported custom file.'],[3,'One last check','We will check the new THY666 firmware before you start playing.']]){
+  for(const [i,title,description] of [[1,'Save a backup','Keep your settings, pad calibration, custom chords and current song.'],[2,'Choose your firmware','Install THY666, restore the original firmware or choose a custom file.'],[3,'Verify your board','Check startup and saved settings before playing.']]){
     const n=el('section','update-stage'),head=el('div','update-stage-heading'),h=el('h3','',title);h.setAttribute('tabindex','-1');
     n.dataset.updateStage=String(i);n.hidden=i!==1;head.append(h,el('p','',description));const body=el('div','update-stage-body'),a=el('div','update-stage-actions');n.append(head,body,a);stages[i]=n;bodies[i]=body;actions[i]=a;headings[i]=h;
   }
@@ -44,15 +44,14 @@ export function createUpdaterLayout(doc, prefix) {
   const deviceActions=el('div','update-device-dock');const detectActions=el('div','update-stage-actions');detectActions.append(find);deviceActions.append(entry,field('Detected board',device),detectActions);
   const backupArt=el('div','update-backup-art');backupArt.append(createUpdateIcon(doc,'backup'));
   const coverage=el('div','update-backup-coverage');for(const text of ['Settings','Calibration','Chords & scales','Current song'])coverage.append(el('span','',text));backupArt.append(coverage);
-  const backupDetails=el('div','update-backup-details');backupDetails.append(el('h4','','Configuration backup'),el('p','','A verified copy you can restore to THY666. This is not a full-device image and cannot repair a damaged bootloader.'));
-  const backupLayout=el('div','update-backup-layout');backupLayout.append(backupArt,backupDetails);
+  const backupLayout=el('div','update-backup-layout');backupLayout.append(backupArt);
   const backupSummary=el('p','update-status');backupSummary.dataset.updaterReadout='backup';
   const read=button('Back up my settings','backup','update-primary'),skip=button('Skip backup','skip-backup','update-quiet');
   const unavailable=input('checkbox','backup-unavailable');unavailable.hidden=true;unavailable.setAttribute('aria-hidden','true');unavailable.setAttribute('tabindex','-1');
   const backupConnect=button('Connect THY666 to back up','application','update-secondary');
   const restoreWanted=input('checkbox','restore-wanted');restoreWanted.checked=true;restoreWanted.setAttribute('role','switch');
   const restoreChoice=field('Restore this configuration after verifying THY666',restoreWanted);restoreChoice.className='update-restore-choice';restoreChoice.hidden=true;
-  const backupDisclaimer=el('p','update-stage-footnote update-backup-disclaimer','Backups require THY666 in normal playing mode. Stock firmware and update mode do not provide a verified full dump. Restoration requires a separate review after firmware checks. No automatic restore or rollback is performed.');
+  const backupDisclaimer=el('details','update-stage-footnote update-backup-disclaimer');backupDisclaimer.append(el('summary','','Backup limits'),el('p','','Requires THY666 in normal Play mode. This saves configuration, not a full-device image or bootloader recovery copy. Restoration needs your confirmation; automatic rollback is not available.'));
   bodies[1].append(backupDisclaimer,backupLayout,backupSummary,backupConnect,restoreChoice,unavailable);
   actions[1].append(read,skip);
   const firmwareChoices=el('div','update-firmware-choices');firmwareChoices.setAttribute('role','group');firmwareChoices.setAttribute('aria-label','Firmware choices');const sourceButtons=new Map();

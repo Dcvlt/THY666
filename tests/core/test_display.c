@@ -69,7 +69,7 @@ static int test_initial_zero_frame_must_reach_every_panel_byte(void)
         const thy_display_transfer *transfer = thy_display_prepare(&display, chunk);
         CHECK(transfer != NULL && transfer->count == 16u);
         seen_pages |= 1u << (transfer->offset / 128u);
-        if (chunk == 3u) CHECK(transfer->offset / 128u == 0u);
+        if (chunk == 3u) CHECK(transfer->offset / 128u == 1u);
         CHECK(commit_to_panel(chunk));
         CHECK(display.report.frames == (chunk == 63u ? 1u : 0u));
     }
@@ -235,6 +235,22 @@ static int test_dense_full_screen_churn_covers_all_pages_in_sixty_four_chunks(vo
     CHECK(covered == 1024u);
     for (unsigned offset = 0; offset < sizeof frame; ++offset) CHECK(seen[offset]);
     CHECK(drain(200u));
+    return 1;
+}
+
+static int test_outer_note_rows_precede_title_without_starving_footer(void)
+{
+    CHECK(clean_panel());
+    /* Simultaneous title, outer five-note rows and footer changes. */
+    frame[0]=frame[128]=frame[640]=frame[896]=1u;
+    CHECK(thy_display_submit(&display,frame,100u));
+    static const unsigned expected[]={128u,640u,0u,896u};
+    for(unsigned n=0;n<4u;++n){
+        const thy_display_transfer *t=thy_display_prepare(&display,100u+n);
+        CHECK(t && t->offset==expected[n] && t->count==1u);
+        CHECK(commit_to_panel(100u+n));
+    }
+    CHECK(!display.report.active && memcmp(panel,frame,sizeof panel)==0);
     return 1;
 }
 
@@ -657,7 +673,8 @@ static int test_initial_scene_failure_stays_hidden_and_default_api_is_unchanged(
 
 int main(void)
 {
-    if (!test_initial_zero_frame_must_reach_every_panel_byte() ||
+    if (!test_outer_note_rows_precede_title_without_starving_footer() ||
+        !test_initial_zero_frame_must_reach_every_panel_byte() ||
         !test_sparse_bytes_use_explicit_nonzero_column_addresses() ||
         !test_latest_target_never_overwrites_a_prepared_payload() ||
         !test_target_can_cancel_dirty_then_old_commit_redirties_it() ||
@@ -678,6 +695,6 @@ int main(void)
         !test_scene_request_preserves_an_existing_ordinary_inflight_slice() ||
         !test_scene_off_payload_is_immutable_and_queued_scene_can_be_cancelled() ||
         !test_initial_scene_failure_stays_hidden_and_default_api_is_unchanged()) return 1;
-    printf("21 dirty OLED/scene transport scenarios passed (%u assertions)\n", assertions);
+    printf("22 dirty OLED/scene transport scenarios passed (%u assertions)\n", assertions);
     return 0;
 }

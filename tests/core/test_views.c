@@ -44,9 +44,10 @@ static int region_equal(const uint8_t *a, const uint8_t *b, unsigned top, unsign
 static int text_at(const uint8_t *actual, unsigned y, const char *text)
 {
     uint8_t expected[THY_UI_FRAME_BYTES] = {0};
-    thy_ui_draw_text(expected, 2u, y, text, 25u, 0);
+    unsigned start = y == 1u ? 12u : 2u;
+    thy_ui_draw_text(expected, start, y, text, 25u, 0);
     for (unsigned dy = y; dy <= y + 4u; ++dy)
-        for (unsigned x = 0u; x < 108u; ++x)
+        for (unsigned x = y == 1u ? 12u : 0u; x < 108u; ++x)
             if (pixel(actual, x, dy) != pixel(expected, x, dy)) return 0;
     return 1;
 }

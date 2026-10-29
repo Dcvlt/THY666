@@ -19,6 +19,38 @@ static void instrument_boot_stage(uint32_t stage);
 #include "led.h"
 #include "../diagnostic/center.h"
 
+static thy_resources resources;
+static thy_resource_clock resource_clock;
+extern uint32_t __ram_end__, __stack_limit__, __stack_top__;
+extern uint32_t __ccm_noinit_end__, __flash_used_end__;
+const thy_resources *board_resources(void) { return &resources; }
+void board_resources_task(uint32_t now_ms)
+{
+    static uintptr_t cursor;
+    if(!resources.valid){
+        resources.flash_used=(uint32_t)(uintptr_t)&__flash_used_end__-0x08040000u;
+        resources.flash_total=512u*1024u;
+        resources.ram_used=(uint32_t)(uintptr_t)&__ram_end__-0x20000000u;
+        resources.ram_total=128u*1024u;
+        resources.ccm_used=(uint32_t)(uintptr_t)&__ccm_noinit_end__-0x10000000u;
+        resources.ccm_total=64u*1024u;
+        resources.stack_total=(uint32_t)((uintptr_t)&__stack_top__-(uintptr_t)&__stack_limit__);
+        cursor=(uintptr_t)&__stack_limit__;resources.valid=1u;
+    }
+    thy_resources_tick(&resources,&resource_clock,MMIO32(0xe0001004u),now_ms,g_diag_mailbox.hclk_hz);
+    /* At most 16 word reads per turn. Never writes live stack or disables IRQs.
+     * Sweep continues after the first changed word to catch a deeper watermark.
+     * A larger used value is retained for the whole boot. */
+    for(unsigned n=0u;n<16u;++n){
+        if(*(volatile uint32_t *)cursor!=0xa55aa55au){
+            uint32_t used=(uint32_t)((uintptr_t)&__stack_top__-cursor);
+            if(used>resources.stack_used)resources.stack_used=used;
+        }
+        cursor+=4u;
+        if(cursor>=(uintptr_t)&__stack_top__){cursor=(uintptr_t)&__stack_limit__;resources.stack_valid=1u;break;}
+    }
+}
+
 static thy_display display;
 
 /* DWT was enabled by the tested board bring-up. These elapsed CPU timings
@@ -78,6 +110,7 @@ static void instrument_oled_ready(void)
      * subsequent visibility fences and reveals only confirmed scene bytes. */
     thy_display_enable_scene_control(&display, 1);
     thy_studio_ui_init(&ui);
+    ui.resources=board_resources();
     thy_studio_ui_set_navigation_animations(&ui, 0);
     scene_key_seen = 0u;
     thy_studio_ui_set_build_identity(&ui, THY_DIAG_BUILD_ID);

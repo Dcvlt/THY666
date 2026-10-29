@@ -13,6 +13,7 @@
 #include "../../firmware/instrument/app.c"
 #undef main
 
+void board_resources_task(uint32_t now_ms) { (void)now_ms; }
 volatile diag_report_t g_diag_mailbox;
 const char thy_diag_build_id[]="0123456789abcdef";
 int board_companion_visual(void *context,uint8_t oled[1024],uint8_t rgb[288],
