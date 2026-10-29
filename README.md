@@ -2,7 +2,7 @@
   <img src="docs/assets/thy666-banner.png" alt="THY666 — open source firmware for TheoryBoard THY333" width="1200">
 </p>
 
-# Your TheoryBoard. Back from the brink.
+#TheoryBoard. Back from the brink.
 
 **THY666** is independent open-source firmware for the **Irijule TheoryBoard
 THY333**, with a Client for your browser and desktop. Keep playing the instrument
