@@ -182,6 +182,18 @@ Reset_Handler:
     str r3, [r1], #4
     b 3b
 4:
+#ifdef THY_INSTRUMENT_STACK_WATERMARK
+    /* Interrupts masked, DMA quiesced, no calls or pushes yet. */
+    ldr r1, =__stack_limit__
+    ldr r2, =__stack_top__
+    ldr r3, =0xa55aa55a
+5:
+    cmp r1, r2
+    bhs 6f
+    str r3, [r1], #4
+    b 5b
+6:
+#endif
     bl main
     b Default_Handler
 .size Reset_Handler, .-Reset_Handler

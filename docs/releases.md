@@ -5,6 +5,27 @@ is a GitHub release property rather than a different version spelling.
 `python tools/check_release_version.py --tag v0.2.0` checks the JavaScript,
 Tauri, Rust package and lockfile versions together.
 
+## Downloads
+
+Open a release's **Assets** list and choose the file for your task:
+
+| Download | Use it for |
+| --- | --- |
+| Firmware `.333` | Install on the TheoryBoard through the browser or desktop updater. |
+| Windows setup `.exe` or portable `.zip` | Run the desktop Client on Windows x64. Extract the complete portable ZIP before opening it. |
+| macOS `.dmg` | Install the desktop Client on Apple Silicon. |
+| Matching firmware source/input archive | Inspect or reproduce the exact firmware build, including its reviewed musical input. |
+| Checksums and build manifests | Verify the selected download and identify its build. |
+
+The browser Client needs no desktop download. GitHub also adds **Source code**
+ZIP/TAR archives automatically; these contain project source, not built apps or
+firmware, and do not include the separate musical input needed to build firmware.
+
+The historical v0.1.0 release provides source only. The v0.2.0 prerelease includes
+standalone firmware, matching source/input, Windows and macOS Clients, and
+checksums. Read the notes attached to the release for platform and device-test
+limits.
+
 ## Release history
 
 - **v0.1.0:** cleaned historical snapshot of the first published implementation.
@@ -54,6 +75,29 @@ source/input bundle is missing or differs from the audited build.
 Attach the firmware, matching source, checksums and board checklist to the draft
 before publication. Keep v0.2.0 marked prerelease until the required board tests
 are recorded. Preserve original third-party terms and project GPL notices.
+
+## Prepare each release
+
+1. Merge the intended changes through develop into reviewed main, including
+   matching X.X.X package versions, release notes and qualification status.
+2. Check the version with `python tools/check_release_version.py --tag vX.X.X`,
+   then create the release tag on that reviewed main commit.
+3. The tag starts **Release Client installers**. After the Windows and macOS
+   builds pass, it uploads their packages, checksums and manifests to a draft
+   prerelease. A manual run can build an existing compatible tag.
+4. From the exact tag and reviewed musical input, prepare and inspect the
+   firmware and its matching source/input archive as described above. Attach
+   these, their checksums, the firmware manifest and qualification notes to the
+   same draft. This is a reviewed maintainer step; public Client CI does not
+   build the private-input firmware.
+5. Verify that the notes and manifests identify the tag, full firmware build ID
+   and exact asset hashes. Check the complete download set, retained notices
+   and declared platform limits before publishing. Keep testing releases marked
+   prerelease until their qualification checklist is complete.
+
+Merging to main deploys the site; it does not create a release, move an existing
+tag or replace its downloads. Publish a new version for new binaries rather
+than relabeling them as an earlier release.
 
 ## Pages and pull requests
 

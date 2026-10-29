@@ -75,10 +75,10 @@ static int test_geometry_catalog_and_render_is_read_only(void)
     static const uint8_t s[] = {0x12, 0x15, 0x15, 0x09};
     for (unsigned x = 0; x < 4u; ++x)
         for (unsigned y = 0; y < 5u; ++y)
-            CHECK(pixel_at(guarded.pixels, x + 2u, y + 1u) == !!(s[x] & (1u << y)));
+            CHECK(pixel_at(guarded.pixels, x + 12u, y + 1u) == !!(s[x] & (1u << y)));
     for (unsigned x = 0; x < THY_UI_WIDTH; ++x) {
-        CHECK(pixel_at(guarded.pixels, x, 9));
-        CHECK(pixel_at(guarded.pixels, x, 53));
+        CHECK(pixel_at(guarded.pixels,x,8)+pixel_at(guarded.pixels,x,9)+pixel_at(guarded.pixels,x,10)==1);
+        CHECK(pixel_at(guarded.pixels,x,53)+pixel_at(guarded.pixels,x,54)+pixel_at(guarded.pixels,x,55)==1);
     }
     for (unsigned g = 0; g < THY_MENU_GROUP_COUNT; ++g) {
         const thy_menu_group *group = &thy_menu_groups[g];
@@ -859,9 +859,13 @@ static int test_information_rows_show_read_only_text_without_service_errors(void
             CHECK(memcmp(before, frame, sizeof frame) != 0);
             if(row==THY_ROW_SENSITIVITY_CUSTOMCURVE) CHECK(matches_text(frame,2u,13u,"AFTERTOUCH",12u));
             else if(row==THY_ROW_SENSITIVITY_SCOPE) CHECK(matches_text(frame,2u,13u,"LEFT: CLUSTER DEFAULTS",25u));
+            else if(row==THY_ROW_SYSTEM_RESOURCES) CHECK(matches_text(frame,2u,20u,"DEVICE METRICS UNAVAILABLE",25u));
             else if(row==THY_ROW_SYSTEM_STORAGE) CHECK(matches_text(frame,2u,13u,"STATE ",6u));
             else CHECK(matches_text(frame, 2u, 13u, thy_menu_rows[row].short_label, 25u));
-            CHECK(matches_text(frame, 2u, 57u, "READ ONLY O EXIT < BACK", 25u));
+            if(row==THY_ROW_SYSTEM_RESOURCES){
+                CHECK(matches_text(frame,12u,1u,"RESOURCES",9u));
+                CHECK(matches_text(frame,2u,58u,"O EXIT  < BACK",25u));
+            }else CHECK(matches_text(frame, 2u, 57u, "READ ONLY O EXIT < BACK", 25u));
             if (row == thy_state_find_row("midi.remoteEcho"))
                 CHECK(matches_text(frame, 2u, 25u, "No automatic echo / THRU", 25u));
             memcpy(target, frame, sizeof target);
@@ -1284,11 +1288,12 @@ static int test_simple_five_notes_use_four_large_corners_and_large_center(void)
                 chords[chord].x[note], y[note], 2u);
         }
         for (unsigned py = 11u; py < 47u; ++py)
-            for (unsigned px = 0u; px < 108u; ++px)
+            for (unsigned px = 0u; px < 106u; ++px)
                 CHECK(pixel_at(frame, px, py) == pixel_at(before, px, py));
+        CHECK(pixel_at(frame,106u,16u) && pixel_at(frame,107u,22u));
         char musical_name[32];
         thy_studio_ui_view_line(&state,THY_VIEW_INFO_MUSICAL_NAMES,"MAJOR C",1,1,musical_name);
-        CHECK(matches_text(frame, 2u, 1u, musical_name, 21u));
+        CHECK(matches_text(frame,strlen(musical_name)<=19u?12u:2u,1u,musical_name,strlen(musical_name)<=19u?19u:21u));
         CHECK(matches_text(frame, 2u, 48u, musical_name, 21u));
         CHECK(matches_text(frame, 2u, 58u, "PADS 1  NOTES 5", 25u));
         CHECK(thy_core_release(&musical_core, 0u) == THY_OK);
@@ -1316,11 +1321,11 @@ static int test_simple_six_notes_begin_compact_wrapping_without_ownership_change
     for (unsigned note = 0u; note < 6u; ++note)
         expected_note_label(before, labels[note], x[note], y[note], 1u);
     for (unsigned py = 11u; py < 47u; ++py)
-        for (unsigned px = 0u; px < 108u; ++px)
+        for (unsigned px = 0u; px < 106u; ++px)
             CHECK(pixel_at(frame, px, py) == pixel_at(before, px, py));
     char musical_name[32];
         thy_studio_ui_view_line(&state,THY_VIEW_INFO_MUSICAL_NAMES,"MAJOR C",1,1,musical_name);
-        CHECK(matches_text(frame, 2u, 1u, musical_name, 21u));
+        CHECK(matches_text(frame,strlen(musical_name)<=19u?12u:2u,1u,musical_name,strlen(musical_name)<=19u?19u:21u));
     CHECK(matches_text(frame, 2u, 48u, musical_name, 21u));
     CHECK(matches_text(frame, 2u, 58u, "PADS 1  NOTES 6", 25u));
     CHECK(thy_core_release(&musical_core, 0u) == THY_OK);
@@ -1490,7 +1495,10 @@ static int test_engines_gear_is_distinct_and_descriptions_require_selection(void
     CHECK(state.info_open);
     render(&still, 3u, frame);
     CHECK(matches_text(frame, 2u, 13u, thy_menu_rows[row].short_label, 25u));
-    CHECK(matches_text(frame, 2u, 57u, "READ ONLY O EXIT < BACK", 25u));
+    if(row==THY_ROW_SYSTEM_RESOURCES){
+                CHECK(matches_text(frame,12u,1u,"RESOURCES",9u));
+                CHECK(matches_text(frame,2u,58u,"O EXIT  < BACK",25u));
+            }else CHECK(matches_text(frame, 2u, 57u, "READ ONLY O EXIT < BACK", 25u));
     CHECK(memcmp(before, frame, sizeof frame) != 0);
     CHECK(thy_state_navigate(&state, THY_STATE_LEFT) == THY_STATE_OK);
     CHECK(!state.info_open && thy_state_current_row(&state) == row);
@@ -1653,7 +1661,7 @@ static int test_track_settings_have_a_dedicated_title_scene_and_return_legend(vo
     thy_sequencer_ui frozen = engine.sequencer_ui;
     uint32_t revision = engine.sequencer.revision;
     render(&still, 1u, frame);
-    CHECK(matches_text(frame, 2u, 1u, "T1 SETTINGS", 20u));
+    CHECK(matches_text(frame,12u,1u,"T1 SETTINGS",17u));
     CHECK(matches_text(frame, 2u, 57u, "< TRACK > EDIT O EXIT", 25u));
     CHECK(!memcmp(&state, &before_state, sizeof state));
     CHECK(!memcmp(&engine.sequencer_ui, &frozen, sizeof frozen));
@@ -1673,7 +1681,7 @@ static int test_track_settings_have_a_dedicated_title_scene_and_return_legend(vo
     CHECK(thy_state_focus(&state, thy_menu_rows[THY_ROW_SEQUENCER_OPEN].group,
         THY_ROW_SEQUENCER_OPEN) == THY_STATE_OK);
     render(&still, 3u, frame);
-    CHECK(matches_text(frame, 2u, 1u, thy_menu_groups[thy_menu_rows[THY_ROW_SEQUENCER_OPEN].group].label, 20u));
+    CHECK(matches_text(frame,12u,1u,thy_menu_groups[thy_menu_rows[THY_ROW_SEQUENCER_OPEN].group].label,17u));
     CHECK(thy_studio_ui_scene_key(&state) != 0x80000u);
     CHECK(!thy_state_row_visible(&state, THY_ROW_SEQUENCER_CHANNEL));
     return 1;
@@ -1703,7 +1711,7 @@ static int test_scoped_sensitivity_graphs_and_pick_prompt_are_read_only(void)
     CHECK(thy_state_focus(&state,thy_menu_rows[THY_ROW_SENSITIVITY_CUSTOMCURVE].group,
         THY_ROW_SENSITIVITY_CUSTOMCURVE)==THY_STATE_OK);
     render(&still,0u,before);
-    CHECK(!state.info_open && matches_text(before,2u,1u,"SENSE LEFT",20u));
+    CHECK(!state.info_open && matches_text(before,12u,1u,"SENSE LEFT",17u));
     CHECK(thy_engine_navigate(&engine,THY_STATE_RIGHT)==THY_STATE_OK);
     CHECK(state.info_open && !state.editing);
     before_state=state;
@@ -1731,11 +1739,41 @@ static int test_scoped_sensitivity_graphs_and_pick_prompt_are_read_only(void)
     CHECK(thy_state_focus(&state,thy_menu_rows[THY_ROW_SENSITIVITY_PICK].group,THY_ROW_SENSITIVITY_PICK)==THY_STATE_OK);
     CHECK(thy_state_begin_edit(&state,THY_ROW_SENSITIVITY_PICK)==THY_STATE_OK);
     render(&still,3u,frame);
-    CHECK(matches_text(frame,2u,1u,"SENSE R4 C12",20u));
+    CHECK(matches_text(frame,12u,1u,"SENSE R4 C12",17u));
     CHECK(matches_text(frame,2u,57u,"TAP PAD / < CANCEL O EXIT",25u));
     CHECK(thy_engine_navigate(&engine,THY_STATE_LEFT)==THY_STATE_OK);
     CHECK(!engine.sensitivity_pick);
     return 1;
+}
+
+static int test_resource_clock_and_read_only_screen(void)
+{
+    thy_resources r={0};thy_resource_clock c={0};
+    /* Both MCU counters cross their unsigned boundary in this window. */
+    uint32_t start=UINT32_MAX-500000u, ms=UINT32_MAX-499u;
+    thy_resources_tick(&r,&c,start,ms,1000000u);
+    thy_resources_tick(&r,&c,start+250000u,ms+500u,1000000u);
+    CHECK(!r.timing_valid);
+    thy_resources_tick(&r,&c,start+500000u,ms+1000u,1000000u);
+    CHECK(r.timing_valid && r.cpu_active==50u && r.loop_us==250000u && r.loop_peak_us==250000u);
+    thy_resources_tick(&r,&c,start+1500000u,ms+2000u,1000000u);
+    CHECK(r.cpu_active==100u && r.loop_us==1000000u);
+    thy_resources_tick(&r,&c,start+7500000u,ms+8000u,1000000u);
+    CHECK(!r.timing_valid);
+    thy_resources_tick(&r,&c,start+8500000u,ms+9000u,1000000u);
+    CHECK(r.timing_valid && r.cpu_active==100u);
+    initialize();r.valid=r.stack_valid=1u;r.ram_used=100u*1024u;r.ram_total=128u*1024u;
+    r.ccm_used=48u*1024u;r.ccm_total=64u*1024u;r.flash_used=400u*1024u;r.flash_total=512u*1024u;
+    r.stack_used=3072u;r.stack_total=8192u;still.resources=&r;
+    CHECK(thy_state_focus(&state,thy_menu_rows[THY_ROW_SYSTEM_RESOURCES].group,THY_ROW_SYSTEM_RESOURCES)==THY_STATE_OK);
+    CHECK(thy_engine_navigate(&engine,THY_STATE_RIGHT)==THY_STATE_OK);
+    before_state=state;render(&still,1u,frame);
+    CHECK(matches_text(frame,3u,22u,"RAM 100/128K",24u));
+    CHECK(matches_text(frame,3u,49u,"STACK 3/8K",24u));
+    CHECK(!memcmp(&state,&before_state,sizeof state) && !thy_core_queued(&musical_core));
+    r.stack_used=4096u;render(&still,2u,frame);
+    CHECK(matches_text(frame,3u,49u,"STACK 4/8K",24u));
+    still.resources=NULL;return 1;
 }
 
 static int test_storage_bars_count_real_record_and_song_usage_without_encoding(void)
@@ -1780,7 +1818,7 @@ static int test_pad_target_editor_explains_all_shortcut_without_applying(void)
     CHECK(engine.sensitivity_target==1u && state.editing);
     before_state=state;
     render(&still,1u,frame);
-    CHECK(matches_text(frame,2u,1u,"SENSE L1 C1",20u));
+    CHECK(matches_text(frame,12u,1u,"SENSE L1 C1",17u));
     CHECK(matches_text(frame,2u,57u,"UP ALL DOWN PAD >APPLY",25u));
     CHECK(!memcmp(&state,&before_state,sizeof state) && engine.sensitivity_target==1u);
     CHECK(thy_engine_navigate(&engine,THY_STATE_LEFT)==THY_STATE_OK);
@@ -1809,7 +1847,7 @@ static int test_sensitivity_edit_footer_uses_frozen_allowed_range_and_preserves_
     engine.sensitivity_target=2u;
     static thy_instrument frozen;frozen=instrument;before_state=state;
     render(&still,1u,frame);
-    CHECK(matches_text(frame,2u,1u,"SENSE L1 C1",20u));
+    CHECK(matches_text(frame,12u,1u,"SENSE L1 C1",17u));
     CHECK(matches_text(frame,2u,57u,"0..2199 >APPLY OEXIT",25u));
     CHECK(!memcmp(&state,&before_state,sizeof state) && !memcmp(&instrument,&frozen,sizeof instrument));
     state.notice=THY_NOTICE_RELEASE;before_state=state;
@@ -1951,7 +1989,7 @@ static int test_harmony_workspace_frames_are_live_read_only_and_preview_only(voi
     render(&still, 1000u, guarded.pixels);
     CHECK(thy_studio_ui_scene_key(&state) == UINT32_C(0xD0100));
     char key_label[32];thy_engine_harmony_key_label(&engine,0,key_label);
-    CHECK(matches_text(guarded.pixels, 2u, 1u, key_label, 17u));
+    CHECK(matches_text(guarded.pixels,strlen(key_label)<=15u?12u:2u,1u,key_label,strlen(key_label)<=15u?15u:17u));
     CHECK(matches_text(guarded.pixels, 93u, 1u, "AUTO", 4u));
     CHECK(matches_text(guarded.pixels, 68u, 13u, "NOW", 12u));
     CHECK(matches_text(guarded.pixels, 68u, 21u, "C MAJ", 12u));
@@ -1990,7 +2028,7 @@ static int test_harmony_workspace_frames_are_live_read_only_and_preview_only(voi
     thy_state_open(&state);
     render(&still, 1005u, guarded.pixels);
     CHECK(thy_studio_ui_scene_key(&state) != UINT32_C(0xD0002));
-    CHECK(matches_text(guarded.pixels, 2u, 1u, "SETTINGS", 20u));
+    CHECK(matches_text(guarded.pixels,12u,1u,"SETTINGS",17u));
     return 1;
 }
 
@@ -2146,6 +2184,7 @@ int main(int argc,char **argv)
         !test_track_settings_have_a_dedicated_title_scene_and_return_legend() ||
         !test_left_navigation_and_confirmation_glyphs_are_visible() ||
         !test_scoped_sensitivity_graphs_and_pick_prompt_are_read_only() ||
+        !test_resource_clock_and_read_only_screen() ||
         !test_storage_bars_count_real_record_and_song_usage_without_encoding() ||
         !test_pad_target_editor_explains_all_shortcut_without_applying() ||
         !test_sensitivity_edit_footer_uses_frozen_allowed_range_and_preserves_errors() ||

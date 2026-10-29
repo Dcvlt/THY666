@@ -19,6 +19,13 @@ See the features, screen previews and roadmap, then choose your next step:
 **[Read the user guide](https://dcvlt.github.io/THY666/manual.html)** ·
 **[Releases and downloads](https://github.com/Dcvlt/THY666/releases)**
 
+Open a release’s **Assets** for the standalone `.333` firmware, Windows installer
+and portable ZIP, or macOS disk image. The source-code archives are separate.
+
+New to THY666? Start with the [Quick start guide](https://dcvlt.github.io/THY666/manual.html#getting-started):
+read the screen, learn the controls and find your settings. The same guide is
+available in Client → Documentation.
+
 ## What it brings to the board
 
 - **Musical control:** chords and scales, inversions, strum, voice leading,
@@ -32,7 +39,13 @@ See the features, screen previews and roadmap, then choose your next step:
   backups and a shared firmware-update flow in browser and desktop.
 
 The Client connects only when you ask. The physical board remains the playing
-surface; screen pads inspect its state.
+surface; screen pads inspect its state. On phones, a compact navigation drawer
+keeps pages accessible. Backups separate saving from restoration; Diagnostics
+offers bounded live report charts, including DIN output activity. New firmware
+also exposes CPU timing, fixed RAM allocation, observed stack peak and firmware
+flash in Diagnostics and System → Resources; focused board checks passed. Board feedback adapts
+to active engines; Harmony groups suggestions and playing controls. The guide
+uses illustrations, expandable reference sections and phone-friendly tables.
 
 ## Current status
 

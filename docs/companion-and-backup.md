@@ -273,3 +273,50 @@ Harmony wire version 4 uses 800 bytes: the compatible prefix plus the full
 Older wire versions cannot drive these revised Harmony controls. Settings V18
 appends four bytes after the frozen V17 prefix; migration retains musical data
 and physical calibration while replacing retired Harmony map/view preferences.
+
+## Compact navigation and guided tasks
+
+On narrow screens, use the header menu for application areas and Client pages.
+The guide's **Find a topic** button opens its searchable index. Choosing an
+article closes the index; **On this page** jumps between its sections.
+
+Backups starts with **Back up** and **Restore**. Choose one to reveal its steps.
+Selecting a flow does not read or change the board. Restore still validates the
+file and requires explicit confirmation before applying it.
+
+Diagnostics offers **Start live session** alongside a single **Read report**.
+Live sessions request the selected report at most once per second through the
+existing serialized connection. They pause while hidden and stop when leaving
+Diagnostics, disconnecting, or transferring USB ownership to the updater. The chart retains up to 60 values from the selected report; raw text retains
+only the latest reply. It resets for a new session, report type or disconnect.
+Charts name the measurement, units, scale and last sample time. This is report
+monitoring, not a recording of raw sensor or MIDI traffic.
+
+**MIDI & scanning** charts DIN bytes sent per second between reports. Its totals
+count bytes transmitted and messages accepted; they do not confirm that a synth
+received them. **Backlog** is messages still waiting to be sent. Zero backlog is
+normal while playing. The rate needs two reports and restarts after reconnect or
+counter reset. USB accepted messages are not a USB delivery acknowledgement.
+
+With the resource-enabled firmware, **Activity** also updates CPU activity, loop
+timing, static RAM, CCM, observed stack peak and application-flash gauges. These
+same measurements appear under **System → Resources**. The loop continuously
+polls, so CPU activity near 100% is expected; it is not an overload meter. Mean
+and peak loop times cover the last sampling window (normally one second).
+RAM figures describe fixed allocations and exclude the reserved stack from free
+space. The stack watermark is the deepest observed usage since boot, not a
+worst-case guarantee. Flash is the application partition, not song storage.
+**System → Storage** retains saved-state and song usage. Older firmware still
+supports MIDI activity; resource gauges stay unavailable until updated.
+
+The resource telemetry and System page are host-tested; hardware qualification
+of their values and timing overhead is pending.
+
+Board adds contextual panels for MPE, Arps, Sequencer and Harmony when active.
+Harmony groups the retained chord and physical map, suggestions, exploration
+settings and playing/voicing settings. Capture controls, pad feedback and physical
+shortcuts are expandable. Displayed results always come from device readback.
+
+The guide keeps its first workflow sections open and places deeper reference
+sections in expandable panels. On this page links open and focus the requested
+section. Option tables become labeled rows on narrow screens.

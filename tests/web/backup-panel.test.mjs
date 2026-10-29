@@ -170,3 +170,50 @@ test('destroy removes listeners and ignores an already pending read without down
   assert.equal(f.document.listeners.get('click').length, 0); assert.equal(f.document.listeners.get('keydown').length, 0);
   assert.equal(f.panel.refresh(), null); f.panel.destroy();
 });
+
+test('Backup and Restore choices reveal only their own flow without device access', () => {
+  const f=fixture({connected:true});
+  const save=f.find('backupAction','choose-save'),restore=f.find('backupAction','choose-restore');
+  assert.equal(save.attributes['aria-expanded'],'false');assert.equal(restore.attributes['aria-expanded'],'false');
+  f.fire(save);assert.equal(save.attributes['aria-expanded'],'true');assert.equal(restore.attributes['aria-expanded'],'false');
+  f.fire(restore);assert.equal(save.attributes['aria-expanded'],'false');assert.equal(restore.attributes['aria-expanded'],'true');
+  assert.deepEqual(f.calls,[]);f.panel.destroy();
+});
+
+
+test('choosing another restore file clears the previous completed journey', async () => {
+  const f=fixture({connected:true});f.fire(f.find('backupAction','choose-restore'));
+  f.select();await flush();f.fire(f.find('backupAction','restore'));
+  f.fire(f.find('backupAction','confirm'));await flush();
+  const current=()=>f.all().find(n=>n.attributes['aria-current']==='step')?.textContent;
+  assert.equal(current(),'3 · Verified');
+  f.select(f.bytes,'next.thyb');await flush();assert.equal(current(),'2 · Review & restore');
+  f.panel.destroy();
+});
+
+
+test('flow choices stay enabled through background polls but lock during a backup', async () => {
+  let finish;
+  const f = fixture({ connected: true, read: () => new Promise(resolve => { finish = resolve; }) });
+  const save = f.find('backupAction', 'choose-save');
+  const restore = f.find('backupAction', 'choose-restore');
+  for (const busy of [true, false, true, false]) {
+    f.client.busy = busy; f.panel.refresh();
+    assert.equal(save.disabled, false);
+    assert.equal(restore.disabled, false);
+    f.fire(restore);
+    assert.equal(restore.attributes['aria-expanded'], 'true');
+    f.fire(save);
+    assert.equal(save.attributes['aria-expanded'], 'true');
+  }
+  assert.deepEqual(f.calls, []);
+  f.fire(f.find('backupAction', 'read'));
+  assert.equal(save.disabled, true);
+  assert.equal(restore.disabled, true);
+  f.fire(restore);
+  assert.equal(save.attributes['aria-expanded'], 'true');
+  finish(f.bytes); await flush();
+  assert.equal(save.disabled, false);
+  assert.equal(restore.disabled, false);
+  f.panel.destroy();
+});

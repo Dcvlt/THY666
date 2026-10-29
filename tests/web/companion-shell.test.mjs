@@ -700,7 +700,8 @@ test('connected display tools resize the existing center screen in place without
     assert.deepEqual(doc.querySelectorAll(selector), [node], selector);
     assert.equal(node.parentNode, parent);
   }
-  assert.equal(doc.querySelector('[role="dialog"]'), null);
+  assert.deepEqual(doc.querySelectorAll('[role="dialog"]'), [doc.querySelector('.compact-nav-panel')]);
+  assert.equal(doc.querySelector('.compact-nav-overlay').hidden, true);
   await flush();assert.deepEqual(f.calls, []);
 });
 
@@ -1064,4 +1065,52 @@ test('public site Client exposes Install, Client, User guide and project navigat
   assert.deepEqual(nav.children.map(node=>node.textContent),['Install','Client','User guide','Project']);
   assert.equal(nav.children[3].href,'../index.html');
   assert.deepEqual(f.calls,[]);
+});
+
+test('compact navigation moves existing actions, traps focus and restores desktop layout', async t => {
+  const media={matches:true,addEventListener(type,fn){this.change=fn;},removeEventListener(){this.change=null;}};
+  const original=Object.getOwnPropertyDescriptor(globalThis,'matchMedia');
+  Object.defineProperty(globalThis,'matchMedia',{configurable:true,value:()=>media});
+  const f=fixture(t),doc=f.document;
+  try {
+    const toggle=doc.querySelector('.compact-nav-toggle'),overlay=doc.querySelector('.compact-nav-overlay');
+    const nav=doc.querySelector('.companion-client-nav'),panel=doc.querySelector('.compact-nav-panel');
+    assert.equal(overlay.hidden,true);assert.ok(panel.contains(nav));
+    f.fire(toggle,'click');assert.equal(overlay.hidden,false);assert.equal(doc.body.children[0].inert,true);
+    const close=doc.querySelector('.compact-nav-heading button');assert.equal(doc.activeElement,close);
+    f.fire(close,'keydown',{key:'Escape'});assert.equal(overlay.hidden,true);assert.equal(doc.activeElement,toggle);
+    assert.notEqual(doc.body.children[0].inert,true);
+    f.fire(toggle,'click');f.shell.showArea('documentation');assert.equal(overlay.hidden,true);
+    media.matches=false;media.change();assert.equal(toggle.hidden,true);assert.ok(!panel.contains(nav));
+    assert.deepEqual(f.calls,[]);
+  } finally {await f.cleanup();if(original)Object.defineProperty(globalThis,'matchMedia',original);else delete globalThis.matchMedia;}
+});
+
+test('live telemetry uses bounded polling and stops on leaving Diagnostics or disconnecting', async t => {
+  const clock=manualClock(),f=fixture(t,{clock});
+  f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);
+  f.shell.showPage('diagnostics');f.calls.length=0;
+  f.fire(f.byText('Start live session'),'click');await flush();await clock.advance(1100);
+  const count=()=>f.calls.filter(c=>c[0]==='telemetry').length;
+  assert.ok(count()>=1);const first=count();
+  await clock.advance(100);assert.equal(count(),first);
+  f.document.hidden=true;await clock.advance(2100);assert.equal(count(),first);
+  f.document.hidden=false;f.shell.showPage('board');await clock.advance(2100);assert.equal(count(),first);
+  assert.ok(f.byText('Start live session'));
+  f.shell.showPage('diagnostics');f.fire(f.byText('Start live session'),'click');await flush();
+  await f.client.disconnect();await flush();const stopped=count();await clock.advance(2000);assert.equal(count(),stopped);
+});
+
+
+test('a late failed report from a stopped session cannot stop its replacement',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock});
+  f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);
+  f.shell.showPage('diagnostics');let reject;
+  f.client.telemetry=()=>new Promise((resolve,fail)=>{reject=fail;});
+  f.fire(f.byText('Start live session'),'click');await flush();await clock.advance(1100);
+  assert.equal(typeof reject,'function');
+  f.fire(f.byText('Stop live session'),'click');f.fire(f.byText('Start live session'),'click');
+  reject(new Error('Old session failure'));await flush();
+  assert.ok(f.byText('Stop live session'));
+  assert.doesNotMatch(f.document.querySelector('.telemetry-session').textContent,/Session stopped/);
 });

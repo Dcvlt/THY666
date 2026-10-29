@@ -6,6 +6,26 @@
 #include "thy_calibration.h"
 #include "thy_brand_logo.h"
 
+static void section_icon(uint8_t *out,unsigned x,unsigned y,const char *id);
+static void page_header(uint8_t *out,const char *label,const char *icon,
+    unsigned text_end,unsigned line_width)
+{
+    unsigned x=2u;
+    /* Long headings keep their original readable capacity instead of losing
+     * text to an icon. Counts and mode indicators retain their own area. */
+    if(icon && thy_ui_text_width(label,26u)<=text_end-12u){
+        section_icon(out,1u,0u,icon);x=12u;
+    }
+    unsigned limit=(text_end-x)/5u;
+    thy_ui_draw_text(out,x,1u,label,limit,0);
+    thy_ui_draw_rule(out,9u,line_width,x,label,limit,0);
+}
+static void page_footer(uint8_t *out,unsigned x,unsigned y,const char *label,unsigned limit)
+{
+    thy_ui_draw_rule(out,y-3u,128u,x,label,limit,1);
+    thy_ui_draw_text(out,x,y,label,limit,0);
+}
+
 static unsigned append(char *out, unsigned used, unsigned capacity,
     const char *value)
 {
@@ -279,7 +299,7 @@ static void calibration_review_page(uint8_t *out,const thy_engine *e,const thy_c
     (void)number(text,used,sizeof text,w->review_outlier_count);
     thy_ui_draw_text(out,2u,1u,w->scope_first?"RIGHT 48/48":"LEFT 48/48",15u,0);
     thy_ui_draw_text(out,86u,1u,text,8u,0);
-    thy_ui_draw_rectangle(out,0u,8u,128u,1u,1);calibration_map(out,w,w->selected);
+    thy_ui_draw_rule(out,8u,128u,2u,w->scope_first?"RIGHT 48/48":"LEFT 48/48",15u,0);calibration_map(out,w,w->selected);
     for(unsigned row=0u;row<4u;++row){
         unsigned y=25u+row*8u;int selected=row==e->calibration_review_cursor;
         used=0u;
@@ -292,11 +312,11 @@ static void calibration_review_page(uint8_t *out,const thy_engine *e,const thy_c
         if(selected){thy_ui_draw_rectangle(out,1u,y-1u,126u,7u,1);thy_ui_draw_text(out,2u,y,">",1u,1);}
         thy_ui_draw_text(out,10u,y,text,23u,selected);
     }
-    thy_ui_draw_rectangle(out,0u,55u,128u,1u,1);
-    if(w->reason)thy_ui_draw_text(out,2u,58u,thy_calibration_reason_text(w->reason),25u,0);
-    else if(e->calibration_review_editing)thy_ui_draw_text(out,2u,58u,"UP/DN >SET <CANCEL",25u,0);
-    else if(e->calibration_review_cursor==1u)thy_ui_draw_text(out,2u,58u,"RIGHT ADJUST SENSITIVITY",25u,0);
-    else if(e->calibration_review_cursor>1u)thy_ui_draw_text(out,2u,58u,"RELEASE PADS >DO",25u,0);
+
+    if(w->reason)page_footer(out,2u,58u,thy_calibration_reason_text(w->reason),25u);
+    else if(e->calibration_review_editing)page_footer(out,2u,58u,"UP/DN >SET <CANCEL",25u);
+    else if(e->calibration_review_cursor==1u)page_footer(out,2u,58u,"RIGHT ADJUST SENSITIVITY",25u);
+    else if(e->calibration_review_cursor>1u)page_footer(out,2u,58u,"RELEASE PADS >DO",25u);
     else {
         used=append(text,0u,sizeof text,w->selected<48u?"L R":"R R");
         used=number(text,used,sizeof text,w->selected%4u+1u);used=append(text,used,sizeof text," C");
@@ -304,7 +324,7 @@ static void calibration_review_page(uint8_t *out,const thy_engine *e,const thy_c
         if(thy_calibration_leak_outlier(w,w->selected))(void)append(text,used,sizeof text,"NEARBY RESPONSE");
         else {used=number(text,used,sizeof text,thy_calibration_strength_percent(w,w->selected));
             (void)append(text,used,sizeof text,"% MEDIAN");}
-        thy_ui_draw_text(out,2u,58u,text,25u,0);
+        page_footer(out,2u,58u,text,25u);
     }
 }
 
@@ -321,10 +341,11 @@ static void calibration_page(uint8_t *out,const thy_state *state)
     used=append(text,used,sizeof text," C");
     (void)number(text,used,sizeof text,(selected%48u)/4u+1u);
     thy_ui_draw_text(out,2u,1u,text,19u,0);
+    thy_ui_draw_rule(out,8u,128u,2u,text,19u,0);
     used=number(text,0u,sizeof text,w->completed_count);used=append(text,used,sizeof text,"/");
     (void)number(text,used,sizeof text,w->scope_count);
     thy_ui_draw_text(out,128u-5u*(w->completed_count<10u?4u:5u),1u,text,6u,0);
-    thy_ui_draw_rectangle(out,0u,8u,128u,1u,1);
+
     calibration_map(out,w,selected);
     {
         if(w->state==THY_CALIBRATION_READY){
@@ -355,19 +376,54 @@ static void calibration_page(uint8_t *out,const thy_state *state)
         }
     }
     calibration_capture_actions(out,w->action_cursor);
-    thy_ui_draw_rectangle(out,0u,55u,128u,1u,1);
+
     const char *help=e->calibration_pick==1u?"PRESS PAD TO SELECT":
         e->calibration_pick==2u?"RELEASE SELECTED PAD":
         w->state==THY_CALIBRATION_COLLECT && w->stage==THY_CALIBRATION_PRESSURE?
         "HOLD SOFT 1S THEN FIRM":"UP/DN >DO OEXIT";
-    thy_ui_draw_text(out,2u,58u,w->reason?thy_calibration_reason_text(w->reason):help,25u,0);
+    page_footer(out,2u,58u,w->reason?thy_calibration_reason_text(w->reason):help,25u);
 }
 
-static void information(uint8_t *out, const thy_state *state, uint16_t row)
+static void resource_line(uint8_t *out,unsigned y,const char *label,uint32_t used,uint32_t total)
+{
+    char text[32];unsigned at=append(text,0u,sizeof text,label);
+    at=number(text,at,sizeof text,(used+1023u)/1024u);at=append(text,at,sizeof text,"/");
+    at=number(text,at,sizeof text,total/1024u);(void)append(text,at,sizeof text,"K");
+    thy_ui_draw_text(out,3u,y,text,25u,0);
+    /* Bounded byte counts from the target; saturation also handles bad inputs. */
+    unsigned filled=total?(unsigned)(((uint64_t)used*24u+total-1u)/total):0u;
+    if(filled>24u)filled=24u;
+    for(unsigned n=0u;n<24u;++n)
+        thy_ui_draw_rectangle(out,3u+n*5u,y+6u,n<filled?4u:1u,1u,1);
+}
+static void resource_information(uint8_t *out,const thy_resources *r)
+{
+    page_header(out,"RESOURCES","system",128u,128u);
+    if(!r || !r->valid){
+        thy_ui_draw_text(out,2u,20u,"DEVICE METRICS UNAVAILABLE",25u,0);
+        page_footer(out,2u,58u,"O EXIT  < BACK",25u);return;
+    }
+    char text[32];unsigned at=append(text,0u,sizeof text,"CPU ");
+    if(r->timing_valid){at=number(text,at,sizeof text,r->cpu_active);(void)append(text,at,sizeof text,"% ACTIVE");}
+    else (void)append(text,at,sizeof text,"MEASURING");
+    thy_ui_draw_text(out,3u,13u,text,25u,0);
+    resource_line(out,22u,"RAM ",r->ram_used,r->ram_total);
+    resource_line(out,31u,"CCM ",r->ccm_used,r->ccm_total);
+    resource_line(out,40u,"FLASH ",r->flash_used,r->flash_total);
+    if(r->stack_valid)resource_line(out,49u,"STACK ",r->stack_used,r->stack_total);
+    else thy_ui_draw_text(out,3u,49u,"STACK MEASURING",25u,0);
+    at=append(text,0u,sizeof text,"LOOP AVG/MAX ");
+    if(r->timing_valid){at=number(text,at,sizeof text,r->loop_us);at=append(text,at,sizeof text,"/");
+        at=number(text,at,sizeof text,r->loop_peak_us);(void)append(text,at,sizeof text,"us");}
+    else (void)append(text,at,sizeof text,"--");
+    thy_ui_draw_text(out,3u,58u,text,25u,0);
+}
+static void information(uint8_t *out, const thy_state *state, uint16_t row,const thy_studio_ui *ui)
 {
     if(state->engine && (row==THY_ROW_SENSITIVITY_CUSTOMCURVE || row==THY_ROW_SENSITIVITY_SCOPE)) {
         sensitivity_graph(out,state,row==THY_ROW_SENSITIVITY_SCOPE);return;
     }
+    if(row==THY_ROW_SYSTEM_RESOURCES){resource_information(out,ui->resources);return;}
     if(row==THY_ROW_SYSTEM_STORAGE && state->engine){storage_information(out,state);return;}
     char text[97];
     unsigned used = 0u;
@@ -438,7 +494,7 @@ static void section_icon(uint8_t *out, unsigned x, unsigned y, const char *id)
                 thy_ui_draw_pixel(out, x + col, y + row, 1);
 }
 
-static void menu(uint8_t *out, const thy_state *state)
+static void menu(uint8_t *out, const thy_state *state,const thy_studio_ui *ui)
 {
     unsigned group_index = state->group_index;
     if (group_index >= THY_MENU_GROUP_COUNT) group_index = 0u;
@@ -460,13 +516,16 @@ static void menu(uint8_t *out, const thy_state *state)
         }
     }
     if (cursor >= count) cursor = 0u;
+    if(!groups && count && visible[cursor]==THY_ROW_SYSTEM_RESOURCES && state->info_open){
+        resource_information(out,ui->resources);return;
+    }
     char value[32];
     if (track_options) {
         unsigned title_used = append(value, 0u, sizeof value, "T");
         title_used = number(value, title_used, sizeof value,
             state->engine->sequencer_ui.options_track + 1u);
         (void)append(value, title_used, sizeof value, " SETTINGS");
-        thy_ui_draw_text(out, 2, 1, value, 20, 0);
+        page_header(out,value,"sequencer",100u,128u);
     } else if(!groups && state->engine && group_index==thy_menu_rows[THY_ROW_SENSITIVITY_TARGET].group) {
         unsigned at=append(value,0u,sizeof value,"SENSE ");
         uint8_t instance=sensitivity_instance(state);
@@ -476,19 +535,18 @@ static void menu(uint8_t *out, const thy_state *state)
             at=number(value,at,sizeof value,instance%4u+1u);at=append(value,at,sizeof value," C");
             (void)number(value,at,sizeof value,(instance%48u)/4u+1u);
         }
-        thy_ui_draw_text(out,2u,1u,value,20u,0);
-    } else thy_ui_draw_text(out, 2, 1, groups ? "SETTINGS" : group->label, 20, 0);
+        page_header(out,value,"sensitivity",100u,128u);
+    } else page_header(out,groups?"SETTINGS":group->label,groups?"system":group->id,100u,128u);
     unsigned used = number(value, 0, sizeof value, count ? cursor + 1u : 0u);
     used = append(value, used, sizeof value, "/");
     used = number(value, used, sizeof value, count);
     unsigned count_x = 128u - used * 5u;
     thy_ui_draw_rectangle(out, count_x - 1u, 0, 128u - count_x + 1u, 8, 0);
     thy_ui_draw_text(out, count_x, 1, value, 6, 0);
-    thy_ui_draw_rectangle(out, 0, 9, 128, 1, 1);
 
     int showing_info = !groups && count &&
         thy_menu_rows[visible[cursor]].type == THY_MENU_INFO && state->info_open;
-    if (showing_info) information(out, state, visible[cursor]);
+    if (showing_info) information(out, state, visible[cursor],ui);
     unsigned start = window_start(cursor, count);
     unsigned section_offset = 0u;
     for (unsigned i = 0; !showing_info && i < 5u && start + i < count; ++i) {
@@ -530,7 +588,7 @@ static void menu(uint8_t *out, const thy_state *state)
         thy_ui_draw_text(out, 2, 22, "FUTURE ENGINE PENDING", 25, 0);
         thy_ui_draw_text(out, 2, 34, "NO LIVE CONTROLS YET", 25, 0);
     }
-    thy_ui_draw_rectangle(out, 0, 53, 128, 1, 1);
+
     const char *footer = state->editing ? "> APPLY O EXIT < CANCEL" :
         groups ? "> OPEN  O EXIT" : "> EDIT  O EXIT  < BACK";
     if (!groups && !count) footer = "O EXIT  < BACK";
@@ -584,7 +642,7 @@ static void menu(uint8_t *out, const thy_state *state)
     }
     if(state->engine && state->engine->sensitivity_pick)
         footer=state->engine->sensitivity_picked?"RELEASE PAD / O EXIT":"TAP PAD / < CANCEL O EXIT";
-    thy_ui_draw_text(out, 2, 57, footer, 25, 0);
+    page_footer(out,2u,57u,footer,25u);
 }
 
 static void arp_quick(uint8_t *out, const thy_state *state)
@@ -598,8 +656,8 @@ static void arp_quick(uint8_t *out, const thy_state *state)
     used = append(text, used, sizeof text, arp->config.enabled ? " ON  " : " OFF ");
     (void)append(text, used, sizeof text, engine->musical_clock.source == THY_CLOCK_SOURCE_INTERNAL ?
         "INT" : engine->musical_clock.status == THY_CLOCK_LOCKED ? "USB" : "USB WAIT");
-    thy_ui_draw_text(out, 2u, 1u, text, 25u, 0);
-    thy_ui_draw_rectangle(out, 0u, 9u, 128u, 1u, 1);
+    thy_ui_draw_text(out,2u,1u,text,25u,0);
+    thy_ui_draw_rule(out,9u,128u,2u,text,25u,0);
     unsigned playhead = 8u;
     for (unsigned n = 0u; n < THY_ARP_PHRASES; ++n)
         if (arp->phrases[n].active && arp->phrases[n].ordinal) {
@@ -677,12 +735,12 @@ static void sequencer_help(uint8_t *out, const thy_sequencer_ui *ui)
     used = append(text, used, sizeof text, " ");
     used = number(text, used, sizeof text, page + 1u);
     (void)append(text, used, sizeof text, "/5");
-    thy_ui_draw_text(out, 1u, 1u, text, 25u, 0);
-    thy_ui_draw_rectangle(out, 0u, 9u, 128u, 1u, 1);
+    thy_ui_draw_text(out,1u,1u,text,25u,0);
+    thy_ui_draw_rule(out,9u,128u,1u,text,25u,0);
     for (unsigned line = 0u; line < 5u; ++line)
         thy_ui_draw_text(out, 1u, 13u + line * 8u, pages[page].lines[line], 25u, 0);
-    thy_ui_draw_rectangle(out, 0u, 54u, 128u, 1u, 1);
-    thy_ui_draw_text(out, 1u, 58u, "UP/DN PAGE < BACK O MENU", 25u, 0);
+
+    page_footer(out,1u,58u,"UP/DN PAGE < BACK O MENU",25u);
 }
 
 static void sequencer_tracks(uint8_t *out, const thy_sequencer_ui *ui)
@@ -825,8 +883,8 @@ static void sequencer_canvas(uint8_t *out, const thy_state *state)
         used = append(text, used, sizeof text, " ");
         (void)number(text, used, sizeof text, ui->clock->tempo_milli_bpm / 1000u);
     }
-    thy_ui_draw_text(out, 1u, 1u, text, 25u, 0);
-    thy_ui_draw_rectangle(out, 0u, 9u, 128u, 1u, 1);
+    thy_ui_draw_text(out,1u,1u,text,25u,0);
+    thy_ui_draw_rule(out,9u,128u,1u,text,25u,0);
     if (ui->delete_pending) {
         used = append(text, 0u, sizeof text, "DELETE TRACK ");
         used = number(text, used, sizeof text, seq->selected_track + 1u);
@@ -836,7 +894,7 @@ static void sequencer_canvas(uint8_t *out, const thy_state *state)
         thy_ui_draw_text(out, 1u, 42u, "> YES   < NO", 25u, 0);
     } else if (ui->view == THY_SEQ_VIEW_TRACKS) sequencer_tracks(out, ui);
     else sequencer_steps(out, ui);
-    thy_ui_draw_rectangle(out, 0u, 54u, 128u, 1u, 1);
+
     const char *footer = ui->view == THY_SEQ_VIEW_TRACKS ?
         (ui->track_new ? "> CREATE O MENU" : "> OPEN < DELETE O MENU") : "M1 SOLO M2 CLEAR M7 HELP";
     if (ui->delete_pending) footer = "> DELETE < CANCEL O MENU";
@@ -844,7 +902,7 @@ static void sequencer_canvas(uint8_t *out, const thy_state *state)
         "SONG SAVE PENDING" : state->engine->song_status == 2u ? "SONG SAVED" : "SONG SAVE FAILED";
     if (ui->last_error) footer = ui->last_error == THY_SEQ_FULL ? "EVENT LIMIT / UNDO OR TRIM" :
         ui->last_error == THY_SEQ_NO_HISTORY ? "NO UNDO / REDO HISTORY" : "EDIT ERROR / CHECK OPTIONS";
-    thy_ui_draw_text(out, 1u, 58u, footer, 25u, 0);
+    page_footer(out,1u,58u,footer,25u);
 }
 
 typedef struct play_snapshot {
@@ -1550,11 +1608,14 @@ static void harmony_workspace_page(uint8_t *out, const thy_state *state,
         page==THY_HARMONY_SCALES?"HARMONY / SCALES":"HARMONY / KEY",25u,0);
     if(page==THY_HARMONY_CHORDS){
         thy_ui_draw_rectangle(out,0u,0u,128u,8u,0);
-        thy_engine_harmony_key_label(engine,0,label);thy_ui_draw_text(out,2u,1u,label,17u,0);
+        thy_engine_harmony_key_label(engine,0,label);page_header(out,label,"harmony",88u,128u);
         thy_ui_draw_text(out,93u,1u,h->lock_map?"LOCK":h->palette==1u?"BASIC":h->palette==2u?"SUS":h->palette==3u?"COLOUR":h->palette==4u?"EXTEND":h->direction==1u?"HOME":h->direction==2u?"COLOUR":h->direction==3u?"TRAVEL":"AUTO",6u,0);
     }
-    thy_ui_draw_rectangle(out, 0u, 9u, 128u, 1u, 1);
-    for (unsigned y = 13u; y < 56u; y += 4u) thy_ui_draw_pixel(out, 64u, y, 1);
+    if(page!=THY_HARMONY_CHORDS)
+        thy_ui_draw_rule(out,9u,128u,2u,page==THY_HARMONY_SCALES?"HARMONY / SCALES":"HARMONY / KEY",25u,0);
+    thy_ui_draw_rectangle(out,64u,14u,1u,13u,1);thy_ui_draw_pixel(out,65u,27u,1);
+    thy_ui_draw_rectangle(out,66u,28u,1u,11u,1);thy_ui_draw_pixel(out,65u,39u,1);
+    thy_ui_draw_rectangle(out,64u,40u,1u,15u,1);
     uint16_t selected = 0u;
     if (page == THY_HARMONY_CHORDS) {
         thy_ui_draw_text(out, 68u, 13u, "NOW", 12u, 0);
@@ -1620,7 +1681,8 @@ static void guidance_page(uint8_t *out,const thy_instrument *i)
 {
     const thy_guidance_ui *u=&i->guidance;char line[32];
     static const char *const titles[]={"HARMONY / SNAPSHOT","CHORD SUGGESTIONS","SCALES / TOP 24","MODULATION / ADVICE"};
-    thy_ui_draw_text(out,2,1,titles[u->page],25,0);thy_ui_draw_rectangle(out,0,9,128,1,1);
+    thy_ui_draw_text(out,2,1u,titles[u->page],25,0);
+    thy_ui_draw_rule(out,9u,128u,2,titles[u->page],25,0);
     unsigned count=thy_guidance_ui_count(u),first=u->cursor>1u?u->cursor-1u:0u;
     if(first+3u>count)first=count>3u?count-3u:0u;
     for(unsigned n=0;n<3u && (first+n<count||(!count&&!n));++n){
@@ -1630,14 +1692,14 @@ static void guidance_page(uint8_t *out,const thy_instrument *i)
     }
     if(u->page==3u && (u->cursor<2u||u->cursor==5u)){
         thy_ui_draw_text(out,2,48,u->cursor==5u?"Shared pivot triad":u->modulation.current_fits?"Captured notes fit both":"Compare; no key applied",25,0);
-        thy_ui_draw_text(out,2,58,"<> BACK/EDIT  C:PLAY",25,0);
+        page_footer(out,2,58u,"<> BACK/EDIT  C:PLAY",25u);
     }else {
         uint16_t mask=u->page==3u?(u->cursor==2u?u->modulation.common:u->cursor==3u?u->modulation.added:u->modulation.removed):
             u->page==1u&&u->count?u->rows.chords[u->cursor].mask:u->notes;
         thy_guidance_notes_text(mask,line);unsigned length=0;while(line[length])++length;
         /* All twelve pitch classes must remain readable, including chromatic. */
         thy_ui_draw_text(out,2,48,line,23,0);
-        thy_ui_draw_text(out,2,58,length>23u?line+23:"<> BACK/OPEN  C:PLAY",25,0);
+        page_footer(out,2,58u,length>23u?line+23:"<> BACK/OPEN  C:PLAY",25u);
     }
 }
 
@@ -1645,7 +1707,8 @@ static void library_page(uint8_t *out,const thy_instrument *instrument)
 {
     const thy_library_ui *ui=&instrument->library_editor;char line[32];
     (void)thy_library_ui_title(ui,line,sizeof line);
-    thy_ui_draw_text(out,2,1,line,25,0);thy_ui_draw_rectangle(out,0,9,128,1,1);
+    thy_ui_draw_text(out,2,1u,line,25,0);
+    thy_ui_draw_rule(out,9u,128u,2,line,25,0);
     unsigned selected=thy_library_ui_selected(ui),count=thy_library_ui_row_count(ui);
     unsigned first=selected>1u?selected-1u:0u;
     if(first+3u>count)first=count>3u?count-3u:0u;
@@ -1657,7 +1720,7 @@ static void library_page(uint8_t *out,const thy_instrument *instrument)
     if(ui->page==THY_LIBRARY_UI_NAME&&ui->name_cursor<12u)
         thy_ui_draw_rectangle(out,8u+ui->name_cursor*5u,23,4,1,1);
     thy_ui_draw_text(out,2,49,thy_library_ui_status(ui),25,0);
-    thy_ui_draw_text(out,2,58,thy_library_ui_legend(ui),25,0);
+    page_footer(out,2,58u,thy_library_ui_legend(ui),25u);
 }
 static void reset_confirmation(uint8_t *out,const thy_state *state)
 {
@@ -1666,7 +1729,8 @@ static void reset_confirmation(uint8_t *out,const thy_state *state)
     section_icon(out,2u,1u,"reset");
     unsigned used=append(line,0u,sizeof line,"RESET ");
     used=append(line,used,sizeof line,thy_menu_groups[group].short_label);(void)append(line,used,sizeof line,"?");
-    thy_ui_draw_text(out,12u,1u,line,23u,0);thy_ui_draw_rectangle(out,0u,9u,128u,1u,1);
+    thy_ui_draw_text(out,12u,1u,line,23u,0);
+    thy_ui_draw_rule(out,9u,128u,12u,line,23u,0);
     const char *scope="MENU OPTIONS",*kept="SAVED CONTENT KEPT";
     if(state->reset_track<THY_SEQ_TRACKS){
         used=append(line,0u,sizeof line,"TRACK ");(void)number(line,used,sizeof line,state->reset_track+1u);
@@ -1701,8 +1765,8 @@ static void reset_confirmation(uint8_t *out,const thy_state *state)
     thy_ui_draw_text(out,2u,15u,scope,25u,0);thy_ui_draw_text(out,2u,24u,kept,25u,0);
     thy_ui_draw_text(out,4u,36u,state->reset_confirm?"  CANCEL":"> CANCEL",20u,0);
     thy_ui_draw_text(out,4u,45u,state->reset_confirm?"> RESET OPTIONS":"  RESET OPTIONS",24u,0);
-    thy_ui_draw_rectangle(out,0u,54u,128u,1u,1);
-    thy_ui_draw_text(out,2u,58u,state->notice==THY_NOTICE_RELEASE?"RELEASE PADS / STOP":"UP/DN > OK O EXIT < BACK",25u,0);
+
+    page_footer(out,2u,58u,state->notice==THY_NOTICE_RELEASE?"RELEASE PADS / STOP":"UP/DN > OK O EXIT < BACK",25u);
 }
 static void studio_play(uint8_t *out, const thy_state *state,
     const char *scale_name, int din_ready, int usb_ready, uint32_t now_ms,
@@ -1717,9 +1781,8 @@ static void studio_play(uint8_t *out, const thy_state *state,
     for (unsigned note = 0u; !musical && note < 128u; ++note)
         musical = snapshot.pool[note] != 0u;
     if (config->header || musical) {
-        thy_ui_draw_text(out, 2u, 1u, musical ? snapshot.musical_name :
-            scale_name != NULL ? scale_name : "THY666", 21u, 0);
-        thy_ui_draw_rectangle(out, 0u, 9u, 108u, 1u, 1);
+        page_header(out,musical?snapshot.musical_name:
+            scale_name!=NULL?scale_name:"THY666","performance",108u,108u);
     }
     connection_icons(out, state, din_ready, usb_ready);
     if (view == THY_VIEW_DETAILED) {
@@ -1740,7 +1803,14 @@ static void studio_play(uint8_t *out, const thy_state *state,
         waves_pattern(out, &snapshot, instrument->performance.root, now_ms, motion);
     else simple_pattern(out, &snapshot);
     draw_view_line(out, 48u, state, &snapshot, config->slots[0], scale_name, din_ready, usb_ready);
+    char footer[32];
+    view_line(state,&snapshot,config->slots[1],scale_name,din_ready,usb_ready,footer);
+    if(footer[0])thy_ui_draw_rule(out,55u,108u,2u,footer,21u,1);
     draw_view_line(out, 58u, state, &snapshot, config->slots[1], scale_name, din_ready, usb_ready);
+    if(view==THY_VIEW_SIMPLE){
+        thy_ui_draw_rectangle(out,107u,17u,1u,23u,1);
+        thy_ui_draw_pixel(out,106u,16u,1);thy_ui_draw_pixel(out,106u,40u,1);
+    }
 }
 
 void thy_studio_ui_init(thy_studio_ui *ui)
@@ -1845,7 +1915,7 @@ static void credits(uint8_t *out, const thy_studio_ui *ui)
     thy_ui_draw_text(out, 73, 44, "+ OPENAI", 16, 0);
     if (ui->build_identity != NULL)
         thy_ui_draw_text(out, 2, 50, ui->build_identity, 25, 0);
-    thy_ui_draw_text(out, 2, 59, "O EXIT  < BACK", 25, 0);
+    page_footer(out,2u,59u,"O EXIT  < BACK",25u);
 }
 
 static void boot_brand(uint8_t *out, const thy_studio_ui *ui, int motion,
@@ -1999,8 +2069,8 @@ void thy_studio_ui_render(thy_studio_ui *ui, const thy_state *state,
             else studio_play(out, state, scale_name, din_ready, usb_ready, now_ms,
                 motion_enabled);
         } else {
-            thy_ui_draw_text(out, 2, 1, "THY666 / PLAY", 25, 0);
-            thy_ui_draw_rectangle(out, 0, 9, 128, 1, 1);
+            thy_ui_draw_text(out,2,1u,"THY666 / PLAY",25,0);
+    thy_ui_draw_rule(out,9u,128u,2,"THY666 / PLAY",25,0);
             thy_ui_draw_text(out, 2, 23, scale_name, 25, 0);
             thy_ui_draw_text(out, 2, 58, "O MENU", 25, 0);
         }
@@ -2047,12 +2117,12 @@ void thy_studio_ui_render(thy_studio_ui *ui, const thy_state *state,
                 motion_enabled);
         }
         else {
-            thy_ui_draw_text(out, 2, 1, "THY666 / PLAY", 25, 0);
-            thy_ui_draw_rectangle(out, 0, 9, 128, 1, 1);
+            thy_ui_draw_text(out,2,1u,"THY666 / PLAY",25,0);
+    thy_ui_draw_rule(out,9u,128u,2,"THY666 / PLAY",25,0);
             thy_ui_draw_text(out, 2, 23, scale_name, 25, 0);
             thy_ui_draw_text(out, 2, 58, "O MENU", 25, 0);
         }
-    } else menu(out, state);
+    } else menu(out, state,ui);
 
     /* Unsigned subtraction handles the caller's 32-bit millisecond wrap. */
     uint32_t elapsed = ui->transition_elapsed_ms;

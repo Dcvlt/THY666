@@ -36,6 +36,9 @@ function pixels(frame) {
   return result;
 }
 const definitions = [
+  ['quickstart-play', 'Simple Play · default idle screen', async engine => {
+    okay(engine.state.set(row('lights.view'), 4));
+  }],
   ...[['detailed', 'Detailed', 'notes'], ['chladni', 'Chladni', 'chladni'],
       ['orbit', 'Orbit', 'orbit'], ['waves', 'Waves', 'waves']].map(([id, label, value]) =>
     [id, `${label} · C major held`, async engine => {

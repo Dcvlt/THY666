@@ -13,10 +13,11 @@ not another engine. Arp is a processor alongside Play: its Engines shortcut
 enables the selected instance and opens the quick page without replacing the
 musical playing layout. Opening Sequencer does not start transport.
 
-Harmony retains the ordinary chord map by default; optional Exploration reserves
-nine pads for suggestions. It adds temporary melody contributions and explicit
-destination-key previews. Fifths is the default view, with Focus, Suggestions
-and Details alternatives and contextual controls; see
+Harmony uses all 48 chord pads, with fixed C–B root columns and four chord
+qualities per column. Its default Adaptive bank updates qualities after both
+halves are released; highlighted pads suggest next chords. The Fifths view
+shows the retained chord, selected suggestion and their relationship. Melody
+contributions and destination-key previews provide more ways to explore; see
 [Harmony](harmony.md). Arps remain processors alongside it.
 
 System → **Swap clusters** exchanges musical roles for left-handed playing.

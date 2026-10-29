@@ -34,6 +34,37 @@ test('the guide has substantial workflows, valid cross-links and a home for each
   assert.ok(productText.includes("THY666"));
 });
 
+test('Quick start teaches the default physical flow in three visible parts with working guide links', () => {
+  const item = getHelpTopic('getting-started');
+  assert.equal(item.title, 'Quick start');
+  assert.equal(item.sections.length, 3);
+  const map = item.sections[0].figures[0];
+  assert.equal(map.kind, 'screen');
+  assert.equal(map.label, HELP_SCREEN_FRAMES['quickstart-play'].label);
+  assert.deepEqual(map.navigation.map(({ control }) => control), ['LEFT', 'UP', 'CENTER', 'DOWN', 'RIGHT']);
+  for (const shortcut of map.navigation.filter(item => item.control !== 'CENTER'))
+    assert.equal(shortcut.destination.toLowerCase(), MENU_ROWS.find(row => row.id === `controls.${shortcut.control.toLowerCase()}`).default);
+  assert.equal(map.navigation.find(item => item.control === 'CENTER').destination, 'Settings');
+  assert.match(JSON.stringify(item.sections[0].steps), /RIGHT again applies/);
+  assert.match(JSON.stringify(item.sections[0].steps), /discards any unapplied draft/);
+  assert.match(JSON.stringify(item.sections[1]), /Arp keeps running/);
+  assert.match(JSON.stringify(item.sections[1]), /seven lower diamonds add octave layers/i);
+  const ids = new Set(HELP_TOPICS.map(topic => topic.id));
+  const domains = item.sections[2].table.rows;
+  assert.deepEqual(domains.map(row => row[0]), ['Engines', 'Performance', 'Chords', 'Arps', 'Expression', 'Sensitivity', 'MIDI', 'Lights', 'Views', 'Controls', 'Profiles', 'System']);
+  for (const row of domains) assert.ok(ids.has(row[2].topic), row[0]);
+  const f = fixture();
+  assert.equal(f.all().filter(node => node.className === 'thy-help-section' && node.tagName === 'SECTION').length, 3);
+  assert.ok(f.byClass('thy-help-nav-keys'));
+  const midi = f.all().find(node => node.tagName === 'A' && node.dataset.helpTopic === 'midi-routing');
+  assert.ok(midi); const event = f.fire(midi, 'click');
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(f.help.selected, 'midi-routing');
+  assert.deepEqual(f.navigations, ['midi-routing']);
+  assert.equal(f.all().some(node => node.tagName === 'IFRAME' || node.tagName === 'CANVAS'), false);
+  f.help.destroy();
+});
+
 test('context links distinguish scopes, views, track settings and expression applications', () => {
   for (const [context, expected] of [
     ['performance.routeTarget', 'aftertouch'], ['performance.pressureMode', 'aftertouch'],
@@ -76,6 +107,11 @@ class FakeElement {
   get textContent() { return this._text + this.children.map(node => node.textContent).join(''); }
   set innerHTML(_) { throw new Error('Help must never use innerHTML.'); }
   setAttribute(key, value) { this.attributes[key] = String(value); }
+  getAttribute(key) { return this.attributes[key] ?? null; }
+  get classList() { return {
+    remove: name => { this.className = this.className.split(/\s+/).filter(value => value !== name).join(' '); },
+    toggle: (name, enabled) => { const names = new Set(this.className.split(/\s+/).filter(Boolean)); if(enabled) names.add(name); else names.delete(name); this.className = [...names].join(' '); },
+  }; }
   append(...children) {
     for (const child of children) {
       child.remove(); child.parentNode = this; this.children.push(child);
@@ -90,6 +126,10 @@ class FakeElement {
     this.parentNode = null;
   }
   contains(node) { return node === this || this.children.some(child => child.contains(node)); }
+  querySelector(selector) {
+    const visit=node=>node.children.flatMap(child=>[child,...visit(child)]);
+    return visit(this).find(node=>selector===`#${node.id}`)||null;
+  }
   closest(selector) {
     const match = /^\[data-([a-z-]+)\]$/.exec(selector);
     if (!match) return null;
@@ -167,7 +207,7 @@ test('documentation navigation and search render real articles using text nodes'
 
 test('documentation examples reproduce the current C renderer with synthetic musical input', () => {
   assert.deepEqual(Object.keys(HELP_SCREEN_FRAMES), [
-    'detailed', 'chladni', 'orbit', 'waves',
+    'quickstart-play', 'detailed', 'chladni', 'orbit', 'waves',
     'simple', 'piano', 'fifths', 'engines', 'arp', 'steps', 'track',
     'performance', 'chords', 'chord-advice', 'scale-discovery', 'modulation-advice',
     'harmony-fifths', 'harmony-settings', 'reset-options', 'library', 'midi', 'aftertouch', 'mpe',
@@ -178,7 +218,7 @@ test('documentation examples reproduce the current C renderer with synthetic mus
     [fileURLToPath(new URL('../../tools/render_help_examples.mjs', import.meta.url)), '--check'],
     { cwd: fileURLToPath(new URL('../../', import.meta.url)), encoding: 'utf8' });
   assert.equal(checked.status, 0, checked.stderr);
-  assert.match(checked.stdout, /33 shared C documentation screenshots verified/);
+  assert.match(checked.stdout, /34 shared C documentation screenshots verified/);
 });
 
 test('instruction diagrams preserve physical counts and distinguish step selection from input', () => {
@@ -302,4 +342,25 @@ test('help cleanup removes delegated listeners and cannot act on a device or sta
   assert.equal(f.document.listeners.get('click').length, 0);
   assert.equal(f.document.listeners.get('keydown').length, 0);
   f.help.destroy();
+});
+
+test('guide index opens on request and closes after choosing an article', () => {
+  const f=fixture(),toggle=f.byClass('thy-help-index-toggle');
+  assert.equal(toggle.getAttribute('aria-expanded'),'false');
+  f.fire(toggle,'click');assert.equal(toggle.getAttribute('aria-expanded'),'true');
+  f.fire(f.find('helpTopic','sequencer-editor'),'click');
+  assert.equal(toggle.getAttribute('aria-expanded'),'false');
+  assert.ok(f.byClass('thy-help-contents'));f.help.destroy();
+});
+
+
+test('article links expand deeper sections and option tables retain mobile labels', () => {
+  const f=fixture();f.help.open('sequencer-editor');
+  const sections=f.all().filter(n=>n.className==='thy-help-section');
+  assert.ok(sections.length>2);assert.equal(sections[0].tagName,'SECTION');
+  assert.equal(sections[2].tagName,'DETAILS');assert.ok(!sections[2].open);
+  const link=f.all().find(n=>n.tagName==='A'&&n.href===`#${sections[2].id}`);
+  assert.ok(link);f.fire(link,'click');assert.equal(sections[2].open,true);
+  const cells=f.all().filter(n=>n.tagName==='TD');assert.ok(cells.length);
+  assert.ok(cells.every(n=>n.dataset.label));f.help.destroy();
 });

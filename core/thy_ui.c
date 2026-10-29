@@ -87,6 +87,33 @@ void thy_ui_draw_text(uint8_t *out, unsigned x, unsigned y,
     const char *label, unsigned limit, int inverse)
 { if (out != NULL) text(out, x, y, label, limit, inverse); }
 
+unsigned thy_ui_text_width(const char *label, unsigned limit)
+{
+    unsigned count=0u;
+    if(limit>26u)limit=26u;
+    if(label)while(count<limit && label[count])++count;
+    return count?count*5u-1u:0u;
+}
+void thy_ui_draw_rule(uint8_t *out,unsigned center_y,unsigned width,
+    unsigned text_x,const char *label,unsigned limit,int below)
+{
+    if(!out || !width || !center_y || center_y>=THY_UI_HEIGHT-1u)return;
+    if(width>THY_UI_WIDTH)width=THY_UI_WIDTH;
+    unsigned visible=text_x<width?(width-text_x+1u)/5u:0u;
+    if(limit>visible)limit=visible;
+    unsigned span=thy_ui_text_width(label,limit);
+    unsigned start=text_x>2u?text_x-2u:0u;
+    unsigned end=span?text_x+span+2u:0u;
+    if(end>=width)end=width-1u;
+    rectangle(out,0u,center_y-1u,width,3u,0);
+    for(unsigned x=0u;x<width;++x){
+        unsigned depth=2u;
+        if(span && x>=start && x<=end)depth=0u;
+        else if(span && ((start && x==start-1u)||x==end+1u))depth=1u;
+        pixel(out,x,below?center_y+1u-depth:center_y-1u+depth,1);
+    }
+}
+
 static unsigned number(char *out, unsigned used, unsigned capacity, int value)
 {
     char reverse[10];
@@ -174,7 +201,7 @@ static void menu(uint8_t *out, const thy_instrument *state, const char *scale_na
     used = append(value, used, sizeof value, "/");
     (void)number(value, used, sizeof value, THY_INSTRUMENT_MENU_ROWS);
     text(out, 100, 1, value, 5, 0);
-    rectangle(out, 0, 9, 128, 1, 1);
+    thy_ui_draw_rule(out,9u,128u,2u,row>=19u?"LIGHTING":row>=14u?"RESPONSE":"PERFORMANCE",18u,0);
     for (unsigned i = 0; i < 3u; ++i) {
         unsigned item = start + i, y = 16u + i * 12u;
         int selected = item == row;
@@ -188,7 +215,8 @@ static void menu(uint8_t *out, const thy_instrument *state, const char *scale_na
             rectangle(out, 126, y, 1, 5, 1);
         }
     }
-    rectangle(out, 0, 51, 128, 1, 1);
+    thy_ui_draw_rule(out,54u,128u,2u,state->menu_notice?"RELEASE PADS  O PLAY":
+        state->menu_editing?"> DONE O PLAY < BACK":"> EDIT O PLAY < BACK",25u,1);
     text(out, 2, 57, state->menu_notice ? "RELEASE PADS  O PLAY" :
         state->menu_editing ? "> DONE O PLAY < BACK" : "> EDIT O PLAY < BACK", 25, 0);
 }
@@ -200,7 +228,7 @@ static void play(uint8_t *out, const thy_instrument *state, const char *scale_na
     uint8_t pitches[128] = {0};
     unsigned held = 0, notes = 0, shown = 0;
     text(out, 2, 1, scale_name != NULL ? scale_name : "THY666", 25, 0);
-    rectangle(out, 0, 9, 128, 1, 1);
+    thy_ui_draw_rule(out,9u,128u,2u,scale_name?scale_name:"THY666",25u,0);
     unsigned used = append(line, 0, sizeof line, "ROOT ");
     used = append(line, used, sizeof line, pitch_class(state->performance.root));
     used = append(line, used, sizeof line, state->selected_pad < 48u ? "   CHORD " : "   MELODY ");
@@ -241,11 +269,12 @@ static void play(uint8_t *out, const thy_instrument *state, const char *scale_na
     used = append(line, used, sizeof line, usb_ready ? "  USB ON  V" : "  USB --  V");
     (void)number(line, used, sizeof line, state->fixed_velocity);
     text(out, 2, 48, line, 25, 0);
-    rectangle(out, 0, 55, 128, 1, 1);
+
     used = number(line, 0, sizeof line, (int)held);
     used = append(line, used, sizeof line, " PADS / ");
     used = number(line, used, sizeof line, (int)notes);
     (void)append(line, used, sizeof line, " NOTES   O MENU");
+    thy_ui_draw_rule(out,55u,128u,2u,line,25u,1);
     text(out, 2, 58, line, 25, 0);
 }
 

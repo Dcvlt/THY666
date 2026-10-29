@@ -25,7 +25,8 @@ Reset, and RIGHT executes that choice. LEFT cancels; CENTER cancels and returns
 to the active workspace. Musical content and calibration are retained. See
 [Reset options](reset-options.md) for each menu's scope.
 
-In Harmony, LEFT opens its view picker, RIGHT opens Harmony settings and CENTER
-opens global Settings. In Sequencer, CENTER opens global Settings from the
-workspace and returns to the editor from track settings. The selected engine
-and editor position are retained. Select another workspace in Engines.
+In Harmony, LEFT cycles chord banks; from key preview it first returns to the
+main view. UP/DOWN selects suggestions silently, RIGHT opens Harmony settings
+and CENTER opens global Settings. In Sequencer, CENTER opens global Settings
+from the workspace and returns to the editor from track settings. The selected
+engine and editor position are retained. Select another workspace in Engines.

@@ -320,6 +320,7 @@ const centerLight = lightGroup.rows.find(item=>item.id==='lights.center'); Objec
 const systemRows=STUDIO_MENU.groups.find(group=>group.id==='system').rows;
 systemRows[systemRows.findIndex(item=>item.id==='system.about')]=action('system.about','Credits',['system.about'],'THY666 logo, build identity and community credits. LEFT returns without changing settings.',live('system.about'));
 systemRows.push(info('system.storage','Storage','Current-state record and song event usage',['storage.format-migration'],'Read-only usage of the current encoded settings/song record and the song event pool. The 256 KiB rotating journal is not a named collection; external NOR is not allocated library space.',live('system.storage')));
+systemRows.push(info('system.resources','Resources','Live timing and memory usage',['system.about'],'CPU activity includes polling. RAM is statically allocated; stack is the observed high-water mark. Flash is application capacity, separate from Storage.',live('system.resources')));
 const sensitivityRows=STUDIO_MENU.groups.find(group=>group.id==='sensitivity').rows;
 const sense=id=>sensitivityRows.find(item=>item.id===`sensitivity.${id}`);
 sensitivityRows.unshift(

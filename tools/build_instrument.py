@@ -49,7 +49,7 @@ def main():
     flags = ['-target', 'thumb-freestanding-eabi', '-mcpu=cortex_m4', '-mfloat-abi=soft',
         '-ffreestanding', '-fno-builtin', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables',
         '-fdata-sections', '-ffunction-sections', '-flto', '-Oz', '-g', '-Wall', '-Wextra', '-Werror',
-        '-std=c11', '-DSTM32F405xx', '-DTHY_DIAG_WITH_USB=1']
+        '-std=c11', '-DSTM32F405xx', '-DTHY_DIAG_WITH_USB=1', '-DTHY_INSTRUMENT_STACK_WATERMARK=1']
     flags.extend(source_prefix_flags())
     includes = [app, board, ROOT / 'core', output, TINYUSB_ROOT / 'src',
         DEPS / 'cmsis-core', DEPS / 'cmsis-device-f4', board / 'freestanding']

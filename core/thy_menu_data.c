@@ -13,10 +13,10 @@ const thy_menu_group thy_menu_groups[THY_MENU_GROUP_COUNT] = {
     {"views", "Views", "VIEWS", 212, 13},
     {"controls", "Controls", "CONTROLS", 225, 9},
     {"storage", "Profiles", "FILES", 234, 13},
-    {"system", "System", "SYS", 247, 13},
-    {"engineSettings", "Engine settings", "ENGINE SETTINGS", 260, 2},
-    {"harmony", "Harmony", "HARMONY", 262, 32},
-    {"sequencer", "Sequencer", "SEQ", 294, 53},
+    {"system", "System", "SYS", 247, 14},
+    {"engineSettings", "Engine settings", "ENGINE SETTINGS", 261, 2},
+    {"harmony", "Harmony", "HARMONY", 263, 32},
+    {"sequencer", "Sequencer", "SEQ", 295, 53},
 };
 const thy_menu_option thy_menu_options[THY_MENU_OPTION_COUNT] = {
     {"0", "Both"},
@@ -792,6 +792,7 @@ const thy_menu_row thy_menu_rows[THY_MENU_ROW_COUNT] = {
     {"system.futureUpdater", "THY666 updater roadmap", "THY666 updater roadmap", NULL, "Verification · backup · restore", 0, 0, 0, 1, 419, 0, 65535, 65535, 11, 5, 0, 0, 0, 48, 1},
     {"system.rollback", "Rollback boundary", "Rollback boundary", NULL, "Device support must be established", 0, 0, 0, 1, 419, 0, 65535, 65535, 11, 5, 0, 0, 0, 48, 1},
     {"system.menuContract", "Navigation contract", "Navigation contract", NULL, "Five controls · cursor history", 0, 0, 0, 1, 419, 0, 65535, 65535, 11, 5, 0, 0, 0, 48, 1},
+    {"system.resources", "Resources", "Resources", "system.resources", "Live timing and memory usage", 0, 0, 0, 1, 419, 0, 65535, 65535, 11, 5, 1, 0, 0, 48, 1},
     {"system.resetOptions", "Reset options", "Reset options", "menu.reset", NULL, 0, 0, 0, 1, 419, 0, 65535, 65535, 11, 4, 1, 0, 0, 48, 1},
     {"engineSettings.harmony", "Harmony", "Harmony", "engineSettings.harmony", NULL, 0, 0, 0, 1, 419, 0, 65535, 65535, 12, 4, 1, 0, 0, 48, 0},
     {"engineSettings.sequencer", "Sequencer", "Sequencer", "engineSettings.sequencer", NULL, 0, 0, 0, 1, 419, 0, 65535, 65535, 12, 4, 1, 0, 0, 48, 0},

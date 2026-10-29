@@ -68,6 +68,12 @@ for publishing-source and environment configuration.
 
 ## Keep the guide useful
 
+The opening **Quick start** keeps the stable `getting-started` topic link. It has
+three visible parts: the default C-rendered Play screen and navigation diagram,
+physical controls and engine roles, then a settings-domain table linking to
+detailed articles. Keep its default shortcuts aligned with the C/menu defaults;
+its examples and links never operate a device.
+
 Edit `web/help-topics.js`, not a second website manual. `web/help.js` renders the
 same topic data in the Client and public site. Use original descriptions that
 answer: what is it for, when would I use it, what do I press, what should happen,
@@ -89,7 +95,7 @@ npm run build:site
 
 The Install page links to [GitHub Releases](https://github.com/Dcvlt/THY666/releases)
 and source build instructions. The historical v0.1.0 release provides source;
-v0.2.0 is staged as a Musical Expansion prerelease with standalone firmware,
+v0.2.0 is available as a Musical Expansion prerelease with standalone firmware,
 matching source/input and unsigned Client installers. Only assets visible in a
 published release are available to visitors; draft assets are not public.
 See [Release procedure](releases.md) for packaging and qualification boundaries.

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { initializeCockpit } from '../../web/cockpit.js';
+import { initializeCockpit, initializeDiagnostics } from '../../web/cockpit.js';
 import { decodeCompanionSnapshot } from '../../web/companion-protocol.js';
 
 const dataKey = key => key.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
@@ -239,4 +239,79 @@ test('cockpit presentation provides a static reduced-motion policy for its entry
   assert.match(policies, /\.cockpit/);
   assert.match(policies, /animation(?:-duration)?\s*:\s*(?:none|0(?:s|ms)|0?\.0*1ms)/);
   assert.match(policies, /transition(?:-duration)?\s*:\s*(?:none|0(?:s|ms)|0?\.0*1ms)/);
+});
+
+
+test('contextual panels follow active modes and do not invent track numbers', t => {
+  const f=fixture(t), data=snapshot();
+  f.cockpit.update({...data,mpe:false,arp1:false,arp2:false,running:false,recording:false,engine:1},{connected:true});
+  assert.ok(f.mount.querySelectorAll('.cockpit-context').every(n=>n.hidden));
+  f.cockpit.update({...data,engine:6},{connected:true});
+  assert.equal(f.mount.querySelectorAll('.cockpit-context').filter(n=>!n.hidden).length,4);
+  assert.equal(f.value('harmony-home'),'DORIAN A');
+  f.cockpit.update({...data,engine:2,selectedTrack:-1},{connected:true});
+  assert.equal(f.value('seq-track'),'—');assert.equal(f.hardwareCalls(),0);
+});
+
+test('diagnostic charts use real report fields, bound history and clear stale values', t => {
+  const f=fixture(t), health=initializeDiagnostics(f.mount);
+  assert.equal(health.report('status','STATUS voices=4'),false);
+  health.snapshot({heldPads:2,generated:9},true);
+  const meters=f.mount.querySelectorAll('meter');
+  assert.equal(meters[0].value,2);assert.equal(meters[1].value,9);
+  for(let i=0;i<100;i++)health.report('status',`STATUS uptime_ms=${i*1000} voices=${i%9} errors=0`);
+  const chart=f.mount.querySelector('.diagnostics-trend'),line=chart.querySelector('polyline');
+  assert.equal(line.getAttribute('points').split(' ').length,60);
+  assert.match(chart.getAttribute('aria-label'),/60 samples/);
+  assert.match(f.mount.querySelector('.diagnostics-unavailable').textContent,/does not expose/);
+  assert.equal(health.report('io','STATUS voices=1'),false);
+  health.report('display','DISPLAY last_render_us=450 last_duration_ms=12');
+  assert.match(chart.getAttribute('aria-label'),/450 µs; 1 samples/);
+  health.report('display','DISPLAY version=2');
+  assert.equal(line.getAttribute('points'),'');
+  assert.match(f.mount.querySelector('.diagnostics-metrics').textContent,/Unavailable/);
+  health.snapshot({heldPads:100,generated:-1},true);assert.ok(meters.every(m=>m.hidden));
+  health.reset();assert.equal(chart.getAttribute('aria-label'),'No report samples');
+  health.snapshot(null,false);assert.equal(health.report('io','IO din_pending=9'),false);
+  assert.equal(line.getAttribute('points'),'');
+  health.destroy();assert.equal(f.mount.querySelector('.diagnostics-dashboard'),null);
+});
+
+
+test('DIN output measures sent bytes even when queues stay empty and resets after reboot', t => {
+  const f=fixture(t), health=initializeDiagnostics(f.mount);
+  health.snapshot({heldPads:1,generated:0},true);
+  const chart=f.mount.querySelector('.diagnostics-trend');
+  health.report('io','IO uptime_ms=1000 din_tx=100 din_pending=0 usb_pending=0');
+  assert.match(chart.getAttribute('aria-label'),/unavailable/);
+  health.report('io','IO uptime_ms=2000 din_tx=160 din_pending=0 usb_pending=0');
+  assert.match(chart.getAttribute('aria-label'),/DIN output: 60 bytes\/s/);
+  assert.match(f.mount.querySelector('.diagnostics-metrics').textContent,/DIN transmitted160 bytes/);
+  assert.match(f.mount.querySelector('.diagnostics-metrics').textContent,/DIN backlog0 events/);
+  health.report('io','IO uptime_ms=500 din_tx=6 din_pending=0');
+  assert.match(chart.getAttribute('aria-label'),/unavailable/);
+  health.report('io','IO uptime_ms=1500 din_tx=18 din_pending=0');
+  assert.match(chart.getAttribute('aria-label'),/DIN output: 12 bytes\/s/);
+  health.snapshot(null,false);
+  health.snapshot({heldPads:0,generated:0},true);
+  health.report('io','IO uptime_ms=2500 din_tx=24');
+  assert.match(chart.getAttribute('aria-label'),/unavailable/);
+});
+
+test('resource gauges require target values and valid timing or stack samples', t => {
+  const f=fixture(t),health=initializeDiagnostics(f.mount);
+  health.snapshot({heldPads:0,generated:0},true);
+  const report='STATUS resources=1 resource_ms=1000 cpu_active=100 timing_valid=1 stack_valid=1 ram_used=102400 ram_total=131072 ccm_used=49152 ccm_total=65536 stack_used=3072 stack_total=8192 flash_used=409600 flash_total=524288';
+  health.report('status',report);
+  const meter=label=>f.mount.querySelector(`meter[aria-label="${label}"]`);
+  assert.equal(meter('CPU active').value,100);assert.equal(meter('CPU active').hidden,false);
+  assert.equal(meter('Observed stack peak').value,3072);
+  assert.equal(meter('Firmware flash').max,524288);
+  assert.match(f.mount.textContent,/20.0 KiB free/,'RAM free excludes the reserved 8 KiB stack');
+  health.report('status',report.replace('timing_valid=1','timing_valid=0').replace('stack_valid=1','stack_valid=0'));
+  assert.equal(meter('CPU active').hidden,true);assert.equal(meter('Observed stack peak').hidden,true);
+  health.report('status','STATUS uptime_ms=3000 voices=0');
+  assert.match(f.mount.textContent,/This firmware does not expose resources/);
+  assert.equal(meter('Firmware flash').hidden,true);
+  health.snapshot(null,false);assert.equal(health.report('status',report),false);
 });

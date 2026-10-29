@@ -15,7 +15,7 @@ import { initializeUpdaterPanel } from './updater-panel.js';
 import { createBrowserUpdaterClient } from './browser-updater-client.js';
 import { initializeAppSettings } from './app-settings.js';
 import { initializeHarmonyGuide } from './harmony-guide.js';
-import { initializeCockpit } from './cockpit.js';
+import { initializeCockpit, initializeDiagnostics } from './cockpit.js';
 
 const icons={board:'▦',harmony:'◇',parameters:'◈',library:'♫',backups:'⇅',diagnostics:'⌁'};
 const devicePages=new Set(['parameters','harmony','library','backups','diagnostics']);
@@ -25,7 +25,7 @@ const el=(tag,className='',text)=>{
 const button=(text,className='',action)=>{const node=el('button',className,text);node.type='button';if(action)node.addEventListener('click',action);return node;};
 const clear=node=>{if(node)node.replaceChildren();return node;};
 const sameValues=(a,b)=>a===b||Boolean(a&&b&&a.length===b.length&&a.every((value,index)=>value===b[index]));
-const cockpitFields=['heldPads','noteCount','tempo','scale','harmony','root','clockSource','clockStatus','mpe','arp1','arp2','running','recording'];
+const cockpitFields=['heldPads','noteCount','tempo','scale','harmony','root','clockSource','clockStatus','mpe','arp1','arp2','running','recording','engine','sequenceOpen','selectedTrack','capture','generated'];
 function sameCockpit(a,b){
   return Boolean(a&&b&&cockpitFields.every(key=>a[key]===b[key])&&a.inspect?.logical===b.inspect?.logical&&
     ['held','pressure','aftertouchStage','sounding','pool'].every(key=>sameValues(a[key],b[key])));
@@ -34,6 +34,61 @@ function expandIcon(){
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
   const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d','M14 4h6v6M20 4l-6 6M10 20H4v-6M4 20l6-6');
   path.setAttribute('fill','none');path.setAttribute('stroke','currentColor');path.setAttribute('stroke-width','1.6');svg.append(path);return svg;
+}
+
+/** Move existing navigation into a compact drawer; never duplicate device actions. */
+export function initializeCompactNavigation({top,mainNav,clientNav,headerActions,rail}) {
+  const doc=top.ownerDocument, media=globalThis.matchMedia?.('(max-width: 900px)');
+  const toggle=button('', 'button compact-nav-toggle',()=>open());
+  toggle.setAttribute('aria-label','Open navigation');toggle.setAttribute('aria-expanded','false');
+  toggle.setAttribute('aria-controls','compact-navigation');
+  const icon=doc.createElementNS('http://www.w3.org/2000/svg','svg');
+  icon.setAttribute('viewBox','0 0 28 24');icon.setAttribute('aria-hidden','true');
+  const path=doc.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d','M2 5h15l3-3h6M2 12h8l3 3h13M2 21h18l3-3h3');
+  path.setAttribute('fill','none');path.setAttribute('stroke','currentColor');path.setAttribute('stroke-width','1.5');
+  icon.append(path);toggle.append(icon);top.prepend(toggle);
+  const overlay=el('div','compact-nav-overlay');overlay.hidden=true;
+  const panel=el('section','compact-nav-panel');panel.id='compact-navigation';
+  panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label','Navigation');
+  const heading=el('div','compact-nav-heading'),closeButton=button('×','button',()=>close());
+  closeButton.setAttribute('aria-label','Close navigation');heading.append(el('strong','','Navigate'),closeButton);
+  const applications=el('div','compact-nav-group'),pages=el('div','compact-nav-group');
+  applications.append(el('p','eyebrow','Application'));pages.append(el('p','eyebrow','Client'));
+  panel.append(heading,applications,pages);overlay.append(panel);doc.body.append(overlay);
+  let compact=false,opened=false;
+  const suspended=new Map();
+  function open(){
+    if(!compact||opened)return;opened=true;overlay.hidden=false;
+    for(const sibling of doc.body.children)if(sibling!==overlay){suspended.set(sibling,sibling.inert);sibling.inert=true;}
+    toggle.setAttribute('aria-expanded','true');doc.body.classList.add('compact-nav-open');closeButton.focus();
+  }
+  function close(){
+    if(!opened)return;opened=false;overlay.hidden=true;toggle.setAttribute('aria-expanded','false');
+    for(const [node,inert] of suspended)node.inert=inert;suspended.clear();
+    doc.body.classList.remove('compact-nav-open');toggle.focus();
+  }
+  function sync(){
+    const next=Boolean(media?.matches);if(next===compact){toggle.hidden=!next;return;}
+    close();compact=next;toggle.hidden=!compact;
+    rail.classList.toggle('compact-nav-hidden',compact);
+    if(compact){applications.append(mainNav);pages.append(clientNav);}
+    else{headerActions.prepend(mainNav);rail.append(clientNav);}
+  }
+  const key=event=>{
+    if(!opened)return;
+    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();}
+    if(event.key==='Tab'){
+      const items=[...panel.querySelectorAll('button,a[href]')].filter(node=>!node.disabled&&!node.hidden);
+      const first=items[0],last=items.at(-1),active=doc.activeElement;
+      if(event.shiftKey&&(active===first||!panel.contains(active))){event.preventDefault();last?.focus();}
+      else if(!event.shiftKey&&(active===last||!panel.contains(active))){event.preventDefault();first?.focus();}
+    }
+  };
+  const backdrop=event=>{if(event.target===overlay)close();};
+  overlay.addEventListener('click',backdrop);doc.addEventListener('keydown',key,true);
+  media?.addEventListener('change',sync);sync();
+  return {close,destroy(){close();media?.removeEventListener('change',sync);doc.removeEventListener('keydown',key,true);overlay.removeEventListener('click',backdrop);headerActions.prepend(mainNav);rail.append(clientNav);rail.classList.remove('compact-nav-hidden');overlay.remove();toggle.remove();}};
 }
 
 function buildBoardOutline(){
@@ -121,6 +176,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   const noticeClose=button('×','button companion-notice-close',()=>tell(''));noticeClose.setAttribute('aria-label','Dismiss message');
   notice.append(noticeIcon,noticeText,noticeClose);
   oldMain.before(notice,workspace,updatePane,docsMount);
+  const compactNavigation=initializeCompactNavigation({top,mainNav,clientNav,headerActions,rail});
   const resetOverlay=el('div','companion-reset-overlay');resetOverlay.hidden=true;
   const resetDialog=el('section','companion-reset-dialog'),resetTitle=el('h2','','Reset options'),resetDescription=el('p','','Review the device’s captured reset scope below. Nothing is reset until you explicitly confirm this request.'),resetScreen=el('div','companion-reset-screen'),resetError=el('p','companion-reset-error');
   resetTitle.id='companion-reset-title';resetDescription.id='companion-reset-description';
@@ -181,22 +237,34 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   panes.get('library').append(libraryHead,libraryNote,libraryTabs,songMount,libraryMount);
   const debugHead=el('div','companion-page-head');debugHead.append(el('div','',''));debugHead.firstChild.append(el('p','eyebrow','OBSERVE & UNDERSTAND'),el('h1','','Diagnostics'));
   const debugHelp=button('Telemetry guide','button button-quiet');debugHelp.dataset.help='companion';debugHead.append(debugHelp);panes.get('diagnostics').append(debugHead);
+  const diagnostics=initializeDiagnostics(panes.get('diagnostics'));
   const telemetry=el('div','client-telemetry'),telemetryText=el('pre','telemetry-output','Connect to read device telemetry.');
   const telemetryControls=el('div','telemetry-controls'),telemetryPick=el('select','');telemetryPick.setAttribute('aria-label','Telemetry report');
-  for(const name of ['status','io','settings','display']){const option=el('option','',name);option.value=name;telemetryPick.append(option);}
-  let telemetryReading=false;
+  for(const [name,label] of [['status','Activity'],['io','MIDI & scanning'],['settings','Saved settings'],['display','Display timing']]){const option=el('option','',label);option.value=name;telemetryPick.append(option);}
+  let telemetryReading=false,telemetryLive=false,telemetrySamples=0,telemetryLastRead=0,telemetryEpoch=0;
+  const telemetrySession=el('p','telemetry-session','');telemetrySession.setAttribute('role','status');
+  function stopTelemetry(){telemetryEpoch++;if(telemetryLive)telemetrySession.textContent=`Stopped · ${telemetrySamples} reports`;telemetryLive=false;liveTelemetry.textContent='Start live session';liveTelemetry.setAttribute('aria-pressed','false');}
+  const liveTelemetry=button('Start live session','button',()=>{
+    if(telemetryLive){stopTelemetry();return;}
+    if(!client.connected||updater?.usbBusy)return;
+    telemetryEpoch++;telemetryLive=true;telemetrySamples=0;telemetryLastRead=0;diagnostics.reset();
+    liveTelemetry.textContent='Stop live session';liveTelemetry.setAttribute('aria-pressed','true');
+    telemetrySession.textContent='Live · updates once per second while this page is visible.';
+    void poll();
+  });
   const readTelemetry=button('Read report','button',()=>{
     if(telemetryReading||!client.connected||updater?.usbBusy)return;
     const command=telemetryPick.value;telemetryReading=true;readTelemetry.disabled=true;telemetryPick.disabled=true;
     telemetryText.textContent='Reading…';
     void run(async()=>{
-      try{telemetryText.textContent=await client.telemetry(command);}
+      try{telemetryText.textContent=await client.telemetry(command);diagnostics.report(command,telemetryText.textContent);}
       catch(error){telemetryText.textContent='Read failed. Try again.';throw error;}
       finally{telemetryReading=false;readTelemetry.disabled=!client.connected||Boolean(updater?.usbBusy);telemetryPick.disabled=readTelemetry.disabled;}
     });
   });
-  telemetryControls.append(telemetryPick,readTelemetry);telemetry.append(el('h2','','Device telemetry'),telemetryControls,telemetryText);panes.get('diagnostics').append(telemetry);
-  const debugTabs=el('div','client-local-tabs'),debugPanels=el('div','debug-panels');panes.get('diagnostics').append(debugTabs,debugPanels);
+  const rawTelemetry=el('details','diagnostics-raw');rawTelemetry.append(el('summary','','Raw report'),telemetryText);
+  telemetryControls.append(telemetryPick,readTelemetry,liveTelemetry);telemetry.append(el('h2','','Monitor'),telemetryControls,telemetrySession,rawTelemetry);panes.get('diagnostics').insertBefore(telemetry,panes.get('diagnostics').querySelector('.diagnostics-dashboard'));
+  const debugTabs=el('div','client-local-tabs'),debugPanels=el('div','debug-panels');const advancedDiagnostics=el('details','diagnostics-advanced');advancedDiagnostics.append(el('summary','','Advanced inspection'),debugTabs,debugPanels);panes.get('diagnostics').append(advancedDiagnostics);
   const debugEntries=[['ownership','Ownership & events',[]],['sensors','Sensors',[document.querySelector('#firmware-studio')]],['arps','Arps',[document.querySelector('#arp-lab')]],['expression','MPE',[document.querySelector('#mpe-lab')]],['clock','Clock',[document.querySelector('#rhythm-lab')]],['reference','Reference tools',[]]];
   for(const [id,label,nodes] of debugEntries){
     const pane=el('div','debug-panel');pane.dataset.debug=id;pane.hidden=id!=='ownership';
@@ -276,6 +344,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     toolbar.hidden=!state.connected;displayTools.hidden=!state.connected;
     for(const node of face.querySelectorAll('button'))node.disabled=!state.connected||updateBusy;
     cockpit.update(state.connected?snapshot:null,{connected:state.connected});
+    if(!state.connected)diagnostics.snapshot(null,false);
     if(!state.connected){expanded=false;cockpitMount.classList.remove('screen-expanded');expand.setAttribute('aria-expanded','false');}
     resizeBoard();
     for(const [id,nav] of subButtons){nav.disabled=updateBusy||devicePages.has(id)&&!state.connected;nav.title=updateBusy?'The updater owns USB. Wait for it to finish.':nav.disabled?`${nav.dataset.label} — Connect your board to use this page`:nav.dataset.label;nav.setAttribute('aria-disabled',String(nav.disabled));}
@@ -284,6 +353,8 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     // flicker this control disabled on every background poll: a pointer click
     // can otherwise lose its mouse-up while the next snapshot starts.
     readTelemetry.disabled=!state.connected||telemetryReading||updateBusy;telemetryPick.disabled=!state.connected||telemetryReading||updateBusy;
+    liveTelemetry.disabled=!state.connected||updateBusy;
+    if(!state.connected||updateBusy)stopTelemetry();
     if(state.connected!==pollConnectionActive){pollConnectionActive=state.connected;if(state.connected)schedulePolling(0);else cancelPolling();}
     if(updateBusy)cancelPolling();else if(state.connected)schedulePolling(0);
     for(const host of [songMount,libraryMount,debugPanels]){
@@ -314,6 +385,8 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     selectArea(next);location.hash=next;if(next==='update')updater.refresh();
   }
   function selectArea(next){
+    if(next!=='client')stopTelemetry();
+    compactNavigation.close();
     area=next;workspace.hidden=next!=='client';docsMount.hidden=next!=='documentation';updatePane.hidden=next!=='update';
     for(const [id,nav] of [['update',updateAreaButton],['client',clientAreaButton],['documentation',docsAreaButton]]){
       nav.classList.toggle('is-selected',next===id);nav.setAttribute('aria-pressed',String(next===id));
@@ -322,6 +395,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     syncResetConfirmation();
   }
   function showPage(next){
+    if(next!=='diagnostics')stopTelemetry();
     // Keep existing links/API callers working while Update is a separate area.
     if(next==='update'){showArea('update');return;}
     if(updater?.usbBusy){tell('The updater owns USB. Wait for it to finish before opening Client.');return;}
@@ -329,7 +403,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     if(!panes.has(next))next='board';if(page==='board'&&next!=='board'&&!client.connected)onPreviewStart?.();page=next;selectArea('client');
     for(const [id,pane] of panes)pane.hidden=id!==next;
     for(const [id,nav] of subButtons){nav.classList.toggle('is-selected',id===next);nav.setAttribute('aria-current',id===next?'page':'false');}
-    location.hash=`client/${next}`;if(next==='board'){resizeBoard();render();}if(next==='harmony'){harmonyNeedsRefresh=true;void poll();}if(next==='parameters')void refreshRecords(currentRows()).catch(error=>tell(error.message));backup.refresh();updater.refresh();
+    location.hash=`client/${next}`;if(next==='diagnostics')diagnostics.snapshot(snapshot,client.connected);if(next==='board'){resizeBoard();render();}if(next==='harmony'){harmonyNeedsRefresh=true;void poll();}if(next==='parameters')void refreshRecords(currentRows()).catch(error=>tell(error.message));backup.refresh();updater.refresh();
   }
   function setRailCollapsed(collapsed,persist=true){
     workspace.classList.toggle('rail-collapsed',collapsed);railToggle.setAttribute('aria-expanded',String(!collapsed));
@@ -440,8 +514,18 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     if(polling||!client.connected||client.busy||updater?.usbBusy||disposed||!hostActive||document.hidden||area==='update')return;polling=true;
     try{
       const packet=await client.snapshot();if(disposed)return;snapshot=decodeCompanionSnapshot(packet.bytes,client.identity);
+      if(area==='client'&&page==='diagnostics')diagnostics.snapshot(snapshot,true);
       syncResetConfirmation();
       if(!hostActive||document.hidden||area==='update'||updater?.usbBusy)return;
+      if(telemetryLive&&area==='client'&&page==='diagnostics'&&!telemetryReading&&Date.now()-telemetryLastRead>=1000){
+        telemetryReading=true;telemetryLastRead=Date.now();
+        const command=telemetryPick.value||'status',epoch=telemetryEpoch;
+        try{
+          const report=await client.telemetry(command);
+          if(!disposed&&telemetryLive&&client.connected&&epoch===telemetryEpoch&&command===(telemetryPick.value||'status')){telemetryText.textContent=report;diagnostics.report(command,report);telemetrySession.textContent=`Live · ${++telemetrySamples} reports · latest ${new Date().toLocaleTimeString()}`;}
+        }catch(error){if(epoch===telemetryEpoch){stopTelemetry();telemetrySession.textContent='Session stopped. Read a report to retry.';throw error;}}
+        finally{telemetryReading=false;}
+      }
       if(area==='client'&&page==='backups')return; // Monitor modal state without background configuration exports.
       const signature=`${snapshot.instrumentRevision}:${snapshot.stateRevision}:${snapshot.layoutRevision}`;
       if(lastGeneration===null&&!configurationPending)lastGeneration=snapshot.savedGeneration;
@@ -608,6 +692,6 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     client,help,updater,get connected(){return client.connected;},get snapshot(){return snapshot;},
     updatePreview(){/* The disconnected board has no playable preview. */},
     render,showPage,showArea,setHostActive,
-    destroy(){disposed=true;cancelPolling();resizeObserver?.disconnect();window.removeEventListener('hashchange',route);window.removeEventListener('beforeunload',unloadUpdate);document.removeEventListener('visibilitychange',visibility);for(const type of ['pointerdown','pointerup','pointercancel','lostpointercapture','click','beforeinput','input','change'])document.removeEventListener(type,intercept,true);document.removeEventListener('keydown',keyGuard,true);document.removeEventListener('keyup',keyGuard,true);help.destroy();backup.destroy();updater.destroy();appSettings.destroy();cockpit.destroy();resetOverlay.remove();void client.disconnect();},
+    destroy(){disposed=true;compactNavigation.destroy();cancelPolling();resizeObserver?.disconnect();window.removeEventListener('hashchange',route);window.removeEventListener('beforeunload',unloadUpdate);document.removeEventListener('visibilitychange',visibility);for(const type of ['pointerdown','pointerup','pointercancel','lostpointercapture','click','beforeinput','input','change'])document.removeEventListener(type,intercept,true);document.removeEventListener('keydown',keyGuard,true);document.removeEventListener('keyup',keyGuard,true);help.destroy();backup.destroy();updater.destroy();appSettings.destroy();diagnostics.destroy();cockpit.destroy();resetOverlay.remove();void client.disconnect();},
   };
 }
