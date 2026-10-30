@@ -24,6 +24,7 @@ void thy_mpe_defaults(thy_mpe_config *config)
     config->glide = 0u;
     config->pad_window = 1u;
     config->semitone_window = 2u;
+    config->pressure_output[0] = config->pressure_output[1] = THY_MPE_PRESSURE;
 }
 
 int thy_mpe_config_valid(const thy_mpe_config *config)
@@ -33,7 +34,9 @@ int thy_mpe_config_valid(const thy_mpe_config *config)
         config->bend_range >= 1u && config->bend_range <= 96u &&
         config->manager_bend_range >= 1u && config->manager_bend_range <= 96u &&
         config->glide <= 1u && config->pad_window >= 1u && config->pad_window <= 11u &&
-        config->semitone_window >= 1u && config->semitone_window <= 24u;
+        config->semitone_window >= 1u && config->semitone_window <= 24u &&
+        config->pressure_output[0] <= THY_MPE_CC1 &&
+        config->pressure_output[1] <= THY_MPE_CC1;
 }
 
 uint8_t thy_mpe_manager(const thy_mpe_config *config)
@@ -121,23 +124,27 @@ static int channel_busy(const thy_core *core, uint8_t channel, uint8_t destinati
 }
 
 static size_t controls(thy_midi_event events[9], uint8_t destinations,
-    uint8_t channel, int pressure, uint16_t bend, int send_bend, int timbre)
+    uint8_t channel, int pressure, uint16_t bend, int send_bend, int timbre,
+    uint8_t output)
 {
     uint8_t destination;
     size_t count = 0u;
     for (destination = 0u; destination < THY_DEST_COUNT; ++destination) {
         if (!(destinations & (1u << destination))) continue;
         if (pressure >= 0) {
-            events[count++] = (thy_midi_event){destination, (uint8_t)(0xd0u | channel),
-                (uint8_t)pressure, 0u};
+            events[count++] = output == THY_MPE_PRESSURE ?
+                (thy_midi_event){destination, (uint8_t)(0xd0u | channel), (uint8_t)pressure, 0u} :
+                (thy_midi_event){destination, (uint8_t)(0xb0u | channel),
+                    output == THY_MPE_CC74 ? 74u : 1u, (uint8_t)pressure};
         }
         if (send_bend) {
             events[count++] = (thy_midi_event){destination, (uint8_t)(0xe0u | channel),
                 (uint8_t)(bend & 127u), (uint8_t)(bend >> 7u)};
         }
         if (timbre >= 0) {
-            events[count++] = (thy_midi_event){destination, (uint8_t)(0xb0u | channel),
-                74u, (uint8_t)timbre};
+            events[count++] = output == THY_MPE_PRESSURE ?
+                (thy_midi_event){destination, (uint8_t)(0xb0u | channel), 74u, (uint8_t)timbre} :
+                (thy_midi_event){destination, (uint8_t)(0xd0u | channel), (uint8_t)timbre, 0u};
         }
     }
     return count;
@@ -150,7 +157,9 @@ static int retire_one(thy_mpe *mpe, thy_mpe_voice *voice)
     if (voice->state != THY_MPE_RETIRING ||
         channel_busy(mpe->core, voice->channel, voice->destinations)) return THY_OK;
     result = thy_core_emit_batch(mpe->core, events,
-        controls(events, voice->destinations, voice->channel, 0, 8192u, 1, 64));
+        controls(events, voice->destinations, voice->channel,
+            voice->pressure_output == THY_MPE_CC74 ? 64 : 0, 8192u, 1,
+            voice->pressure_output == THY_MPE_PRESSURE ? 64 : 0, voice->pressure_output));
     if (result == THY_OK) voice->state = THY_MPE_FREE;
     return result;
 }
@@ -244,7 +253,8 @@ int thy_mpe_press(thy_mpe *mpe, uint8_t pad, uint8_t logical,
     int *out_consumed)
 {
     return thy_mpe_press_ex(mpe, pad, logical, reference, notes, count,
-        destinations, velocity, strum_ms, out_consumed, 64u);
+        destinations, velocity, strum_ms, out_consumed,
+        mpe && logical < THY_PAD_COUNT && mpe->config.pressure_output[logical / 48u] != THY_MPE_PRESSURE ? 0u : 64u);
 }
 
 int thy_mpe_press_ex(thy_mpe *mpe, uint8_t pad, uint8_t logical,
@@ -298,7 +308,8 @@ int thy_mpe_press_ex(thy_mpe *mpe, uint8_t pad, uint8_t logical,
     }
     if (found != count) return THY_OWNER_LIMIT;
     for (i = 0u; i < count; ++i) {
-        event_count += controls(events + event_count, destinations, channels[i], 0, 8192u, 1, initial_timbre);
+        event_count += controls(events + event_count, destinations, channels[i], 0, 8192u, 1,
+            initial_timbre, mpe->config.pressure_output[logical / 48u]);
     }
     /* Only queue bytes are touched by initialization. Restore its logical tail
      * if the complete reserved attack cannot fit; no prefix reaches a sink. */
@@ -324,6 +335,7 @@ int thy_mpe_press_ex(thy_mpe *mpe, uint8_t pad, uint8_t logical,
         voice->pitch = (uint8_t)notes[i];
         voice->channel = channels[i];
         voice->destinations = destinations;
+        voice->pressure_output = mpe->config.pressure_output[logical / 48u];
         voice->state = THY_MPE_HELD;
     }
     if (out_consumed != NULL) *out_consumed = 0;
@@ -425,7 +437,8 @@ int thy_mpe_service(thy_mpe *mpe)
             size_t count = controls(events, voice->destinations, voice->channel,
                 voice->pressure != voice->sent_pressure ? voice->pressure : -1,
                 voice->bend, voice->bend != voice->sent_bend,
-                voice->timbre != voice->sent_timbre ? voice->timbre : -1);
+                voice->timbre != voice->sent_timbre ? voice->timbre : -1,
+                voice->pressure_output);
             result = thy_core_emit_batch(mpe->core, events, count);
             if (result == THY_OK) {
                 voice->sent_pressure = voice->pressure;

@@ -106,6 +106,41 @@ class PublicSiteTests(unittest.TestCase):
                 actual = self.files["assets/fonts/" + asset["path"]]
                 self.assertEqual(hashlib.sha256(actual).hexdigest(), asset["sha256"])
 
+    def test_shared_interface_and_reference_are_staged_from_the_same_sources(self):
+        for name in ("typography.css", "ui-system.css", "ui-system.js",
+                     "design-system.html", "design-system.js", "design-system.css"):
+            with self.subTest(asset=name):
+                self.assertEqual(self.files[name], (ROOT / "web" / name).read_bytes())
+        for name in ("typography.css", "ui-system.css", "ui-system.js"):
+            self.assertEqual(self.files[name], self.files["client/" + name])
+        self.assertEqual(self.files["assets/thy666-web-logo.svg"], self.files["assets/logo.svg"])
+        self.assertEqual(self.files["assets/thy666-web-logo.svg"],
+                         self.files["client/assets/thy666-web-logo.svg"])
+
+    def test_component_reference_has_no_device_or_musical_runtime_dependencies(self):
+        # Traverse actual imports so a future helper cannot silently bring a
+        # connection or the musical runtime into the read-only reference.
+        pending = ["design-system.js"]
+        visited = set()
+        forbidden = {"app.js", "core.js", "device-client.js", "desktop-runtime.js",
+                     "browser-hid.js", "browser-updater-client.js", "controller.js"}
+        while pending:
+            name = pending.pop()
+            if name in visited:
+                continue
+            visited.add(name)
+            self.assertNotIn(PurePosixPath(name).name, forbidden, name)
+            source = self.files[name].decode()
+            self.assertNotRegex(source, r"navigator\.(?:hid|serial|requestMIDIAccess)")
+            self.assertNotRegex(source, r"\b(?:fetch|WebSocket|Worker)\s*\(")
+            imports = re.findall(r"\bfrom\s+['\"]([^'\"]+)['\"]|\bimport\s*(?:\(\s*)?['\"]([^'\"]+)['\"]", source)
+            for static, direct in imports:
+                target = static or direct
+                self.assertTrue(target.startswith("./"), (name, target))
+                resolved = str(PurePosixPath(name).parent / target)
+                self.assertIn(resolved, self.files, (name, target))
+                pending.append(resolved)
+
     def test_browser_policy_cannot_be_packaged_with_tampered_bytes_or_stale_sources(self):
         original = browser_core_assets()
         wasm = original["browser-updater.wasm"]

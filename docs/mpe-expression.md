@@ -1,23 +1,24 @@
 # MPE and ordinary expression
 
-Optional MPE and pressure glide are OFF by default. Ordinary MIDI routes also
-provide Aftertouch and pressure-to-bend. Fixed/Strike velocity stays independent.
+Optional MPE and pressure glide are OFF by default. Performance groups the
+controls you use while playing; Sensitivity holds the detailed response curves
+and calibration. Fixed/Strike velocity stays independent of held pressure.
 
 ## Pressure and Aftertouch profiles
 
-In **Settings → Sensitivity**, select Left, Right or one pad. **Aftertouch stage** is
-OFF by default. When OFF, the existing floor, ceiling and legacy curve give the
-same response as before; MPE sends this value as member Channel Pressure (D0),
-with no upper Aftertouch movement. Ordinary Poly or Channel Aftertouch uses the
-existing response too.
+In **Settings → Performance**, choose **Settings for: Both / Left / Right**,
+then enable **Aftertouch stage** for that physical half or both. The same switch
+is available in Sensitivity, alongside per-pad overrides and **AT start %**.
+The stage is OFF by default. When OFF, primary pressure uses the full configured
+floor-to-ceiling span; ordinary Aftertouch uses that same response.
 
 When Aftertouch stage is ON, **AT start %** places a boundary inside that pad's
 configured raw floor-to-ceiling span. The default is 70%, adjustable from 10% to
 90%. Pressure rises from 0 to 127 below the boundary and stays at 127 above it.
 Upper Aftertouch stays at zero below the boundary and rises from 0 to 127 above
-it. Independent Linear, Soft and Firm curves shape each stage. In MPE, Pressure
-is D0 and upper Aftertouch is per-member CC74. Ordinary Aftertouch uses the upper
-stage; optional ordinary pressure-to-bend uses the lower stage.
+it. Independent Linear, Soft and Firm curves shape each stage. MPE sends them
+through the selected pair of member-channel messages below. Ordinary Aftertouch
+uses the upper stage; ordinary pressure-to-bend uses the lower stage.
 
 Both stages use their complete **0–127** output range. With AT start at 70%,
 the lower 70% of the calibrated span is rescaled to 0–127 pressure; the upper
@@ -35,29 +36,57 @@ pads released. The web Sensor Lab previews both curves and live values.
 
 ## Ordinary MIDI expression
 
-Performance exposes **Response for**, **Aftertouch** and **Bend** below Default
-velocity. They edit the same route policies as **MIDI & Routing**. Choose the
-side/zone before editing its ordinary Aftertouch mode:
+In **Performance**, **Settings for** selects the physical Both, Left or Right
+scope for these controls:
 
-- **Off:** that pad contributes no Aftertouch.
-- **Poly:** per-pitch Poly Pressure (A0), preserving the existing behavior.
-- **Channel:** Channel Pressure (D0), taking the maximum of held contributors
-  on the same destination/channel.
+| Control | Choices or effect |
+| --- | --- |
+| Velocity mode | Fixed or Strike |
+| Default velocity | Fixed attack value, 1–127 |
+| AT output | Off, Poly or Channel |
+| Aftertouch stage | Enable the upper pressure stage |
+| Bend | Off, Up or Down |
+| Bend range | 1–24 semitones for ordinary pressure bend |
+| MPE output | Pressure, CC74 or CC1 for primary pressure |
+
+**Mixed** means the selected pads have different effective values. An explicit
+edit applies one value across the selected scope. The selector is temporary;
+its applied values are saved. It is independent of the MIDI route editor and
+Sensitivity's pad picker, and follows the physical halves when musical roles
+are swapped. **MPE** and context-pad controls remain labeled **Global**.
+
+Ordinary Aftertouch offers:
+
+- **Off:** no contribution from that pad.
+- **Poly:** per-pitch Poly Pressure (A0).
+- **Channel:** Channel Pressure (D0), using the maximum held contributor on
+  each destination/channel.
+
+Older configurations retain their MIDI route's fixed velocity and expression
+policies until a Performance edit sets a physical-half override. Editing
+Performance leaves those stored route policies intact. The current source
+retires their former MIDI editors; use Performance for new velocity and
+expression edits. This menu cleanup follows the installed `db14dace` test build
+and has not yet been checked on the device.
 
 Choose an application directly; no additional pressure master switch is needed.
 Aftertouch has no automatic audible effect: the receiving synth/patch must
 support that message and assign it to volume, filter, vibrato or another
 parameter. Strike velocity only describes the attack; these controls keep
 responding while a pad is held. Use MPE OFF with a receiver in ordinary MIDI
-mode. MPE ON uses its own member-channel pressure/CC74 path instead of these
+mode. MPE ON uses its own member-channel expression mapping instead of these
 ordinary route policies.
 
-Advanced **Pressure bend** offers Off, Up or Down. The newest held bend-enabled
+**Bend** offers Off, Up or Down. The newest held bend-enabled
 pad controls a shared destination/channel; releasing it returns to the previous
 held contributor or center. The 1–24-semitone **Bend range** defaults to 2.
-**Send bend setup** explicitly transmits Pitch Bend Sensitivity (RPN 0) on the
-selected route's channel and outputs. Match the receiver's range; changing the
-number alone does not reconfigure it. Setup requires quiet playing and MPE OFF.
+**Send bend setup** in Performance explicitly sends Pitch Bend Sensitivity
+(RPN 0) to the selected halves' channels and outputs. It requires quiet playing
+and MPE OFF. If selected halves share an output/channel but request different
+ranges, setup is blocked: set Both to one range, or use separate channels.
+Changing a range alone never configures the receiver; match its setting before
+playing. The current source also retires the former route-level MIDI setup
+entry; that cleanup is not part of the `db14dace` device result below.
 
 Channel Pressure and bend affect every note sharing that MIDI channel,
 including notes whose own pad has expression Off. Sustain extends notes, not
@@ -76,8 +105,7 @@ request those receiver settings. Changing a preference, booting or restoring
 settings sends no automatic configuration messages.
 
 Every resolved chord tone or melody note gets one member channel. A chord's
-voices share the originating pad's measured pressure. MPE member pressure is
-Channel Pressure, rather than ordinary MIDI polyphonic key pressure. DIN and USB
+voices share the originating pad's measured pressure. DIN and USB
 destinations still come from the pad's route; the ordinary route channel is
 replaced by member-channel allocation while MPE is enabled.
 
@@ -85,6 +113,31 @@ The first version provides one whole-board zone, Lower or Upper, with 1–15
 members. It never steals an occupied or sustained voice. An attack requiring
 more members than are free is rejected as a whole. Each future strum tone also
 reserves a member before the attack begins.
+
+## MPE pressure destination
+
+Choose **Performance → MPE output** for the selected physical half or both.
+This changes the message carrying the continuous pressure gesture; it does not
+change the MPE zone or member allocation.
+
+| MPE output | Primary pressure | Upper Aftertouch, when enabled |
+| --- | --- | --- |
+| Pressure (default) | Channel Pressure (D0) | CC74 |
+| CC74 | CC74 | Channel Pressure (D0) |
+| CC1 | CC1 | Channel Pressure (D0) |
+
+The two stages use distinct messages, so the upper stage cannot overwrite
+primary CC74. Both retain their full 0–127 range. With the stage OFF, only
+primary pressure moves. Pressure glide still reads the lower pressure gesture,
+regardless of the chosen outgoing message. Change mappings with all pads
+released; existing voices keep their captured expression destination.
+
+The maintainer reports receiver tests with **Osmose, Micromonsta 2, Hydrasynth
+and Vital**. Their patches and expression assignments respond differently.
+Match the receiver's MPE mode, zone, member count and bend range, then assign the
+chosen pressure message in its patch. These observations do not qualify every
+preset, mapping or routing combination. Focused device checks have now confirmed
+CC74/CC1 message output and upper-stage separation; see the qualification below.
 
 ## Pressure glide
 
@@ -113,16 +166,13 @@ profile can therefore reach full glide pressure before upper Aftertouch rises.
 
 Basic controls are MPE, Zone, Voices, Bend range and Pressure glide. A separator
 puts Neighbor pads, Glide interval, Manager range, Send setup and Quick help
-below them. All settings use the shared C transaction system: RIGHT edits or
-applies, LEFT cancels or returns, CENTER returns to Play.
+below them. RIGHT edits/applies, LEFT cancels or returns, and CENTER returns to
+the active playing workspace.
 
-Performance also provides **Velocity for: Both / Left / Right** and
-**Velocity mode: Fixed / Strike**. This selector is separate from the Sensitivity
-pad picker and MIDI route editor. A mode change preserves calibrated curves,
-ranges and per-pad settings; only the selected half or halves change mode.
-Both shows **Mixed** when their effective modes differ, until an explicit edit
-sets one mode for both. MPE remains a whole-board mode, independent of this
-velocity target.
+**Settings for** does not change the whole-board MPE zone. Velocity mode
+edits preserve each pad's calibrated curves, ranges and overrides; only the
+chosen half or halves change mode. A draft retains its original scope if a
+selector changes elsewhere.
 
 Send setup transmits MPE Configuration (RPN 6) and Pitch Bend Sensitivity (RPN 0)
 only after that explicit action. It can change the connected receiver's channel
@@ -138,12 +188,12 @@ channels or using its internal sound engine for that input.
 
 Member leases retain their captured channel, note and destinations. Releasing a
 pad cancels pending strum attacks and releases its existing notes. Sustain keeps
-the relevant member occupied until the deferred notes end. Pressure-zero,
-CC74-zero and bend-center cleanup are retained under queue backpressure, and a member is not
+the relevant member occupied until the deferred notes end. Expression-neutral
+and bend-center cleanup are retained under queue backpressure. A member is not
 reused until the reset batch has entered the ordered output queue. A new attack
 also initializes expression before its Note On. Foreground updates coalesce
-pressure/CC74/bend and service at most two members per 8 ms, leaving DIN bandwidth
-for note traffic. The consumed neighbor receives held-pad light feedback.
+primary pressure, upper Aftertouch and bend, servicing at most two members per
+8 ms to leave DIN bandwidth for note traffic. The consumed neighbor receives held-pad light feedback.
 
 This initial mode is for live pads. Enabling Arps, opening/starting the sequencer
 or recording while MPE is enabled is blocked, instead of allowing ordinary
@@ -155,22 +205,66 @@ provide per-note expression identities.
 Ordinary Channel Pressure and pressure-to-bend are live controls too. The song
 codec retains its existing per-pitch Poly Pressure (A0) stream; with a split
 profile, that stream captures upper Aftertouch. It does not record/replay the
-new D0, bend or MPE CC74 axes as an expression timeline. Generated notes receive
-channel cleanup before attack, but do not acquire physical pressure ownership.
+new D0, bend or MPE controller axes as an expression timeline. Generated notes
+receive channel cleanup before attack, but do not acquire physical pressure ownership.
 
-## Saved configuration
+## Play-screen indicators
 
-Current **V13** settings retain MPE configuration, nine ordinary route policies,
-two cluster stage profiles and 96 override/literal-profile pairs in the
-**5,013-byte** parameter/library block. The maximum journal record is
-**13,860 bytes**. Performance aliases edit those same fields rather than storing
-duplicates. The independently versioned song follows the parameter block.
-Runtime pointers, member leases, consumed contacts, expression values and held
-notes are never saved.
+The installed `db14dace` build's USB, DIN, MPE and Arp indicators, ordinary AT
+P/C markers, VEL L/R markers and Simple's dotted separator passed visual checks
+on the board.
 
-V1–V10 import retains its previous parameters and defaults the new profile OFF,
-split 70%, both curves Linear, ordinary Aftertouch inherited, bend OFF/range 2.
-V1–V9 also initialize MPE and glide OFF. V11 rejects invalid ranges and combinations that enable both
-MPE and an Arp or the sequencer workspace. Restore requires quiet inputs, a quiet
-core and, when enabling MPE, a bound expression workspace. Restore itself emits
-no notes, expression or RPN messages.
+The following transport-marker revision is host-tested source and has not yet
+been installed for a device check. The side rail shows USB only when its output
+is enabled and a host is mounted.
+DIN appears when its output is enabled and its driver is ready; the board cannot
+sense whether a DIN cable or receiving synth is connected. Each icon covers all
+active routes: changing one side does not disable the other side's output. Ticks
+on either side of an icon identify the physical half: one tick means all of its
+active zones use that output; split ticks mean only some do; no tick means none.
+Cluster inversion moves these route markers to the corresponding physical side.
+MPE and Arp indicators
+show their enabled modes. **VEL** marks Strike velocity, with side ticks showing
+the physical halves. Ordinary **AT** uses P/C markers for Poly/Channel and is
+hidden while MPE is active. Mixed scopes retain a distinct mixed marker.
+
+## Saved configuration and qualification
+
+**V19** adds ten bytes after the unchanged V18 preferences: four playing
+policies for each physical half and two MPE pressure destinations. Its parameter
+and library block is **5,042 bytes**; the maximum journal record is **13,888
+bytes**. The independent song codec follows this block. Runtime voices,
+expression values, held notes and the temporary Settings for selector are not
+saved.
+
+V18 and earlier import with the new half policies inheriting their existing
+routes and MPE output set to Pressure. Legacy velocity modes, calibration,
+profiles, songs and musical libraries retain their supported values. Invalid
+fields and combinations enabling MPE with Arps or Sequencer are rejected before
+mutation. Restore requires released inputs and quiet ownership; enabling MPE
+also requires its bound workspace. Restore sends no notes, expression or RPN.
+
+The `db14dace` build was installed and the following focused playing checks
+passed. Peaks describe the recorded gestures, not limits on the available
+0–127 range.
+
+| Check | Observed result |
+| --- | --- |
+| Ordinary MIDI, physical Left | Velocity 80, Poly AT and upward bend; C/E/G produced three Note Ons and three Note Offs, with expression returning to neutral. |
+| Ordinary MIDI, physical Right | Velocity 96, Channel AT and downward bend; one Note On/Off pair, with expression returning to neutral. |
+| MPE CC1, both physical halves | Primary CC1 and upper Channel Pressure worked with Aftertouch stage ON. |
+| MPE CC74, physical Left | Three voices on member channels 2/3/4; primary CC74 reached 127 and upper Channel Pressure reached 59. Releases were clean; CC74 reset to 64. |
+| MPE CC1, physical Right, stage OFF | Primary CC1 reached 118; Channel Pressure stayed at neutral 0. |
+| MPE CC1, physical Right, stage ON | Primary CC1 reached 127 and upper Channel Pressure reached 101, with clean release. |
+
+A MIDI ledger snapshot contained **190 Note Ons and 190 Note Offs**, with no
+drops, errors, unmatched releases or remaining notes. This supports the tested
+gestures and mappings, not every receiver patch or routing combination.
+
+Complete power-off and normal startup passed, with no automatic notes. Native
+post-boot checks verified the running `db14dace` build and healthy operation.
+The player deliberately changed settings between snapshots, so their comparison
+does not establish byte-identical persistence of unchanged settings. The current
+configuration was kept at the player's request; no backup restoration was
+performed. The later transport side-tick revision and MIDI-row retirement
+remain host-tested only.

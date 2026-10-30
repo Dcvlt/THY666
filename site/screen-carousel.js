@@ -14,6 +14,7 @@ for (const mount of document.querySelectorAll('[data-screen-carousel]')) {
   const buttons = screenViews.map((view, index) => {
     const button = document.createElement('button');
     button.type = 'button';
+    button.className = 'hud-action hud-action--compact';
     button.textContent = String(index + 1).padStart(2, '0');
     button.setAttribute('aria-label', view.label.split(' · ')[0]);
     button.addEventListener('click', () => show(index));

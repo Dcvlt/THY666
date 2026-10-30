@@ -140,6 +140,9 @@ examples, and preserve the physical 96-pad / 43-control arrangement. Use tables
 for choices and short actionable explanations. The default visual identity is
 pure black/red, angular circuit/HUD lines, the current logo and bundled licensed
 fonts. Reuse editable vector assets instead of substituting a new logo.
+For Client and site changes, use `docs/design-system.md` and the shared
+`web/ui-system.*` components. Keep new variants and states in the read-only
+`web/design-system.html` reference; avoid page-specific copies of their geometry.
 
 The native Windows Rust updater has passed one same-build THY666 installation,
 including captured payload/CRC and application checks. Configuration reset to

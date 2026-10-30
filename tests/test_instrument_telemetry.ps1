@@ -18,6 +18,25 @@ $fields=ConvertFrom-ThyInstrumentReply $status status
 Check ($fields.layout -ceq 'C Major (Ionian)') 'Layout spaces were lost'
 Check ($fields.presses -eq 3) 'Numeric field lost'
 Assert-ThyInstrumentStatus $fields $build $null
+$resources='resources=1 cpu_active=97 timing_valid=1 resource_ms=11000 loop_us=520 loop_peak_us=6800 ram_used=101000 ram_total=131072 ccm_used=55000 ccm_total=65536 stack_used=5300 stack_total=8192 stack_valid=1 flash_used=455000 flash_total=524288'
+$resourceStatus=$status.Replace(' layout=',(' '+$resources+' layout='))
+$resourceFields=ConvertFrom-ThyInstrumentReply $resourceStatus status
+Check ($resourceFields.resources -eq 1 -and $resourceFields.cpu_active -eq 97 -and $resourceFields.ram_used -eq 101000 -and $resourceFields.stack_used -eq 5300 -and $resourceFields.layout -ceq 'C Major (Ionian)') 'Current resource status lost values or layout'
+Assert-ThyInstrumentStatus $resourceFields $build $null
+Reject {Assert-ThyInstrumentStatus $resourceFields ('f'*16) $null} 'Resource status bypassed exact build binding'
+Check ((ConvertFrom-ThyInstrumentReply $resourceStatus.Replace('cpu_active=97','cpu_active=100').Replace('timing_valid=1','timing_valid=0').Replace('stack_valid=1','stack_valid=0') status).cpu_active -eq 100) 'Valid pending resource measurements rejected'
+foreach($bad in @(
+    $resourceStatus.Replace('resources=1','resources=2'),$resourceStatus.Replace('cpu_active=97','cpu_active=101'),
+    $resourceStatus.Replace('timing_valid=1','timing_valid=2'),$resourceStatus.Replace('stack_valid=1','stack_valid=2'),
+    $resourceStatus.Replace('resource_ms=11000','resource_ms=4294967296'),$resourceStatus.Replace('loop_us=520','loop_us=6801'),
+    $resourceStatus.Replace('ram_total=131072','ram_total=0'),$resourceStatus.Replace('ram_total=131072','ram_total=131073'),
+    $resourceStatus.Replace('ram_used=101000','ram_used=131073'),$resourceStatus.Replace('ccm_total=65536','ccm_total=65537'),
+    $resourceStatus.Replace('ccm_used=55000','ccm_used=65537'),$resourceStatus.Replace('stack_total=8192','stack_total=131073'),
+    $resourceStatus.Replace('stack_used=5300','stack_used=8193'),$resourceStatus.Replace('flash_total=524288','flash_total=524289'),
+    $resourceStatus.Replace('flash_used=455000','flash_used=524289'),$resourceStatus.Replace(' flash_total=524288',''),
+    $resourceStatus.Replace(' loop_us=520',''),$resourceStatus.Replace(' cpu_active=97',' cpu_active=-1'),
+    $resourceStatus.Replace(' resources=1',' cpu_active=97 resources=1'),$resourceStatus+' cpu_active=97'
+)) {Reject {ConvertFrom-ThyInstrumentReply $bad status} 'Malformed/incomplete/unsupported resource status accepted'}
 foreach($bad in @($status.Replace(' ready=1',''),$status+' errors=0',$status.Replace('uptime_ms=12000','uptime_ms=4294967296'),$status.Replace('voices=0','voices=-1'),$status.Replace('build='+$build,'build=host-test'),$status.Replace(' ready=1',' ready=2'),$status.Replace(' layout=C Major (Ionian)',' layout='))) {
     Reject {ConvertFrom-ThyInstrumentReply $bad status} 'Malformed/ambiguous/truncated status accepted'
 }

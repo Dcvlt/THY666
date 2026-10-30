@@ -25,6 +25,8 @@
  * V13 extends the view-info enum with Musical names without adding bytes.
  * V14 extends the voicing policy with automatic leading, without adding bytes.
  * V15 adds octave fold and guitar register without adding bytes.
+ * V16-V18 append Harmony preferences; V19 appends physical-half playing
+ * policies and MPE pressure destinations after those unchanged preferences.
  * Every prior field/song offset is frozen for its original version. */
 _Static_assert(THY_SETTINGS_RECORD_BYTES<=THY_SETTINGS_WRITE_SLOT_SPAN*THY_SETTINGS_SLOT_BYTES,
     "settings record must fit its reserved journal region");
@@ -78,6 +80,7 @@ typedef struct config {
     thy_instrument_release_policy cluster_release_policy[2];
     uint16_t sensitivity_guard[THY_PAD_COUNT];
     thy_mpe_config expression;
+    thy_engine_performance_config playing[2];
     thy_engine_channel_config channel_routes[THY_INSTRUMENT_ROUTE_TARGETS];
     thy_expression_profile expression_profiles[2],pad_expression_profiles[THY_PAD_COUNT];
     uint8_t expression_profile_overridden[THY_PAD_COUNT];
@@ -136,6 +139,20 @@ static void config_defaults(config *c) {
 }
 static void expression_profile_parameters(stream *s,thy_expression_profile *p) {
     byte(s,&p->enabled);byte(s,&p->split);byte(s,&p->pressure_curve);byte(s,&p->aftertouch_curve);
+}
+static void playing_parameters(stream *s,config *c) {
+    for(unsigned n=0;n<2u;++n){
+        thy_engine_performance_config *p=&c->playing[n];
+        byte(s,&p->velocity);byte(s,&p->aftertouch);byte(s,&p->bend);byte(s,&p->range);
+    }
+    for(unsigned n=0;n<2u;++n)byte(s,&c->expression.pressure_output[n]);
+}
+static int playing_valid(const config *c) {
+    for(unsigned n=0;n<2u;++n){
+        const thy_engine_performance_config *p=&c->playing[n];
+        if(p->velocity>127u||p->aftertouch>3u||p->bend>3u||p->range>24u)return 0;
+    }
+    return thy_mpe_config_valid(&c->expression);
 }
 static void performance_tail(stream *s, thy_instrument_performance *p) {
     byte(s,&p->shortcut); byte(s,&p->melody_layout);
@@ -363,12 +380,12 @@ static int valid_config(const config *c, uint16_t scales, unsigned version) {
     for(unsigned n=0;n<2u;++n)if(!thy_expression_profile_valid(&c->expression_profiles[n]))return 0;
     for(unsigned n=0;n<THY_PAD_COUNT;++n)
         if(c->expression_profile_overridden[n]>1u || !thy_expression_profile_valid(&c->pad_expression_profiles[n]))return 0;
-    if(!thy_mpe_config_valid(&c->expression) || (c->expression.enabled &&
+    if(!playing_valid(c) || (c->expression.enabled &&
         (c->arps[0].enabled || c->arps[1].enabled || c->engine_kind==THY_PLAY_ENGINE_SEQUENCER)))return 0;
     return 1;
 }
 static size_t parameter_bytes(unsigned version) {
-    return version>=18u?THY_SETTINGS_V18_PARAMETER_BYTES:version>=17u?THY_SETTINGS_V17_PARAMETER_BYTES:version>=16u?THY_SETTINGS_V16_PARAMETER_BYTES:version>=12u?THY_SETTINGS_V12_PARAMETER_BYTES:version>=11u?THY_SETTINGS_V11_PARAMETER_BYTES:version>=10u?THY_SETTINGS_V10_PARAMETER_BYTES:version>=9u?THY_SETTINGS_V9_PARAMETER_BYTES:version>=8u?THY_SETTINGS_V8_PARAMETER_BYTES:version>=7u?THY_SETTINGS_V7_PARAMETER_BYTES:THY_SETTINGS_V6_PARAMETER_BYTES;
+    return version>=19u?THY_SETTINGS_V19_PARAMETER_BYTES:version>=18u?THY_SETTINGS_V18_PARAMETER_BYTES:version>=17u?THY_SETTINGS_V17_PARAMETER_BYTES:version>=16u?THY_SETTINGS_V16_PARAMETER_BYTES:version>=12u?THY_SETTINGS_V12_PARAMETER_BYTES:version>=11u?THY_SETTINGS_V11_PARAMETER_BYTES:version>=10u?THY_SETTINGS_V10_PARAMETER_BYTES:version>=9u?THY_SETTINGS_V9_PARAMETER_BYTES:version>=8u?THY_SETTINGS_V8_PARAMETER_BYTES:version>=7u?THY_SETTINGS_V7_PARAMETER_BYTES:THY_SETTINGS_V6_PARAMETER_BYTES;
 }
 int thy_settings_payload_version(const uint8_t *in,size_t count) {
     if(!in) return 0u;
@@ -407,6 +424,8 @@ int thy_settings_payload_version(const uint8_t *in,size_t count) {
         in[3]==0xf2u && in[4]==0x54u && in[5]==0x48u && in[6]==18u) return 18u;
     if(count>=THY_SETTINGS_V17_PARAMETER_BYTES+32u && count<=THY_SETTINGS_PAYLOAD_MAX &&
         in[3]==0xf2u && in[4]==0x54u && in[5]==0x48u && in[6]==17u) return 17u;
+    if(count>=THY_SETTINGS_V19_PARAMETER_BYTES+32u && count<=THY_SETTINGS_PAYLOAD_MAX &&
+        in[3]==0xf2u && in[4]==0x54u && in[5]==0x48u && in[6]==19u) return 19u;
     return 0u;
 }
 /* Read the validated byte projection directly. No 740-byte automatic library
@@ -451,7 +470,8 @@ static int decode(config *c,const uint8_t *in,size_t count,uint16_t scales) {
         HARMONY_V18_BYTES(FIELD)
 #undef FIELD
     }
-    return s.at==parameters &&
+    if(version>=19u)playing_parameters(&s,c);
+    return s.valid && playing_valid(c) && s.at==parameters &&
         (version<6u || thy_sequencer_validate(in+parameters,count-parameters)==THY_OK);
 }
 /* Legacy presentation flags remain part of the frozen byte stream. Convert
@@ -492,6 +512,7 @@ THY_SETTINGS_NOINLINE int thy_settings_encode(const thy_engine *e,uint8_t *out,s
     c.velocity=i->velocity_response;
     c.release_policy=i->release_policy;
     c.expression=e->expression_config;
+    for(unsigned n=0;n<2u;++n)c.playing[n]=e->performance[n];
     for(unsigned n=0;n<2u;++n)c.expression_profiles[n]=i->expression_profiles[n];
     for(unsigned n=0;n<THY_PAD_COUNT;++n){
         c.expression_profile_overridden[n]=i->expression_profile_overridden[n];
@@ -560,7 +581,7 @@ THY_SETTINGS_NOINLINE int thy_settings_encode(const thy_engine *e,uint8_t *out,s
     HARMONY_BYTES(FIELD) HARMONY_V17_BYTES(FIELD) HARMONY_V18_BYTES(FIELD)
 #undef FIELD
     if(c.cluster_swap>1u||c.harmony_low_note>c.harmony_high_note||
-        capacity<THY_SETTINGS_V18_PARAMETER_BYTES+thy_sequencer_song_size(&e->sequencer)) return 0;
+        capacity<THY_SETTINGS_V19_PARAMETER_BYTES+thy_sequencer_song_size(&e->sequencer)) return 0;
     stream s={out,NULL,capacity,0,1}; transfer(&s,&c,THY_SETTINGS_VERSION);
     if(!s.valid || s.at!=THY_SETTINGS_V12_LIBRARY_OFFSET ||
         thy_library_payload_encode(&i->library,out+s.at,capacity-s.at)!=THY_LIBRARY_OK) return 0;
@@ -572,6 +593,7 @@ THY_SETTINGS_NOINLINE int thy_settings_encode(const thy_engine *e,uint8_t *out,s
 #define FIELD(name,max) byte(&s,&c.harmony_##name);
     HARMONY_V17_BYTES(FIELD) HARMONY_V18_BYTES(FIELD)
 #undef FIELD
+    playing_parameters(&s,&c);
     size_t song_bytes=0u;
     if(thy_sequencer_encode(&e->sequencer,out+s.at,capacity-s.at,&song_bytes)!=THY_OK) return 0;
     *used=s.at+song_bytes; return 1;
@@ -753,6 +775,7 @@ THY_SETTINGS_NOINLINE int thy_settings_apply(thy_engine *e,const uint8_t *in,siz
     /* Preflight above and the strict saved-mode dependency checks guarantee
      * this quiet configuration restore; it emits no RPN or musical messages. */
     (void)thy_engine_expression_configure(e,&c.expression);
+    for(unsigned n=0;n<2u;++n)e->performance[n]=c.playing[n];
     e->velocity_target=0u; /* Transient Performance scope always reopens Both. */
     e->state.cursors[thy_menu_rows[THY_ROW_PERFORMANCE_VELOCITY].group]=0u;
     e->state.cursors[thy_menu_rows[THY_ROW_SENSITIVITY_TARGET].group]=0u;

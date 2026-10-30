@@ -138,19 +138,29 @@ test('unsupported appearance/accent values safely fall back without erasing stor
   assert.equal(blocked.settings.appearance,'light');assert.equal(blocked.settings.theme,'cyan');
 });
 
-test('every spectrum accent has a readable Dark and Light variant, while framebuffer ink remains white on black',async()=>{
+test('spectrum accents and themed Web display stay readable while hardware OLED stays black',async()=>{
   const css=await readFile(new URL('../../web/companion-theme.css',import.meta.url),'utf8');
+  const palette=await readFile(new URL('../../web/ui-system.css',import.meta.url),'utf8');
   const display=await readFile(new URL('../../web/companion-display.css',import.meta.url),'utf8');
   const luminance=rgb=>rgb.map(value=>value/255).map(value=>value<=.04045?value/12.92:((value+.055)/1.055)**2.4).reduce((sum,value,n)=>sum+value*[.2126,.7152,.0722][n],0);
   const contrast=(a,b)=>{const la=luminance(a),lb=luminance(b);return(Math.max(la,lb)+.05)/(Math.min(la,lb)+.05);};
   for(const {id} of APP_THEMES){
-    const match=css.match(new RegExp(`data-theme="${id}"[^\\n]+--accent-dark-rgb: ([\\d ]+); --accent-light-rgb: ([\\d ]+);`));
+    const match=palette.match(new RegExp(`data-theme="${id}"[^\\n]+--accent-dark-rgb:\\s*([\\d ]+);\\s*--accent-light-rgb:\\s*([\\d ]+);`));
     assert.ok(match,`Palette includes ${id}`);
     const dark=match[1].split(' ').map(Number),light=match[2].split(' ').map(Number);
     assert.ok(contrast(dark,[0,0,0])>=4.5,`${id} Dark foreground contrast`);
     assert.ok(contrast(light,[229,226,218])>=4.5,`${id} Light foreground contrast`);
   }
-  assert.match(display,/--display-ink: #fff;/);assert.match(display,/--display-paper: #000;/);
+  assert.match(display,/--display-ink:\s*var\(--ui-ink,\s*#fff\)/);
+  assert.match(display,/--display-paper:\s*var\(--ui-paper,\s*#000\)/);
+  assert.match(display,/> \.companion-web-screen\s*\{\s*background:\s*var\(--ui-paper,\s*#000\)/);
+  assert.match(display,/\.hardware-display > canvas\s*\{[^}]*background:\s*#000/);
+  const lightRule=css.match(/body\.companion-app\[data-appearance="light"\]\s*\{([^}]+)\}/)[1];
+  const rgb=hex=>[1,3,5].map(at=>Number.parseInt(hex.slice(at,at+2),16));
+  const paper=rgb(lightRule.match(/--ui-paper:\s*(#[a-f\d]{6})/)[1]);
+  const ink=rgb(lightRule.match(/--ui-ink:\s*(#[a-f\d]{6})/)[1]);
+  const alpha=Number(display.match(/data-appearance="light"[^}]+\.is-dim\s*\{\s*opacity:\s*([.\d]+)/)[1]);
+  assert.ok(contrast(ink.map((value,n)=>value*alpha+paper[n]*(1-alpha)),paper)>=4.5,'Dim Web labels remain readable in Light mode.');
 });
 
 test('accent listbox previews every color and keyboard navigation commits only on Enter or Space',t=>{

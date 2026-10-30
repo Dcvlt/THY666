@@ -31,12 +31,12 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
   };
   const root = el('section', 'thy-help');
   root.dataset.helpRoot = '';
-  const rail = el('nav', 'thy-help-rail');
+  const rail = el('nav', 'thy-help-rail hud-frame hud-frame--inset');
   rail.setAttribute('aria-label', 'Documentation topics');
   rail.append(el('p', 'thy-help-eyebrow', 'THY666 GUIDE'), el('h2', 'thy-help-title', 'Documentation'));
   const searchLabel = el('label', 'thy-help-search-label', 'Find a feature or control');
   searchLabel.htmlFor = `${prefix}-search`;
-  const searchInput = el('input', 'thy-help-search');
+  const searchInput = el('input', 'thy-help-search hud-field');
   searchInput.id = `${prefix}-search`;
   searchInput.type = 'search';
   searchInput.placeholder = 'Try “track channel” or “aftertouch”';
@@ -45,7 +45,7 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
   resultStatus.setAttribute('role', 'status');
   resultStatus.setAttribute('aria-live', 'polite');
   const links = el('div', 'thy-help-topic-list');
-  const indexToggle = button('Find a topic', 'thy-help-index-toggle');
+  const indexToggle = button('Find a topic', 'thy-help-index-toggle hud-action');
   indexToggle.setAttribute('aria-expanded', 'false');
   indexToggle.setAttribute('aria-controls', `${prefix}-index`);
   const indexContent = el('div', 'thy-help-index-content');indexContent.id = `${prefix}-index`;
@@ -76,7 +76,7 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
       const groupNode = el('section', 'thy-help-nav-group');
       groupNode.append(el('h3', '', group.title));
       for (const item of entries) {
-        const link = button(item.title, 'thy-help-topic-link');
+        const link = button(item.title, 'thy-help-topic-link hud-choice hud-choice--nav');
         link.dataset.helpTopic = item.id;
         if (item.id === selected) link.setAttribute('aria-current', 'page');
         groupNode.append(link);
@@ -126,7 +126,7 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
         for (const illustration of part.figures) {
           if (!['screen', 'surface'].includes(illustration.kind) ||
               !illustration.src.startsWith('data:image/svg+xml;charset=utf-8,')) continue;
-          const figure = el('figure', `thy-help-figure thy-help-figure-${illustration.kind}`);
+          const figure = el('figure', `thy-help-figure thy-help-figure-${illustration.kind} hud-frame hud-frame--inset`);
           figure.dataset.helpFigure = illustration.kind;
           if (illustration.navigation) figure.className += ' thy-help-figure-navigation';
           figure.append(el('h3', 'thy-help-figure-label', illustration.label));
@@ -183,7 +183,7 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
     }
     const reference = getHelpReference(item.id);
     if (reference.length) {
-      const details = el('details', 'thy-help-reference');
+      const details = el('details', 'thy-help-reference hud-frame hud-frame--inset hud-disclosure');
       details.append(el('summary', '', `Setting reference · ${reference.length} controls`));
       const list = el('dl');
       for (const row of reference) {
@@ -200,7 +200,7 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
       related.append(el('h2', '', 'Continue with'));
       const list = el('div', 'thy-help-related-links');
       for (const id of item.related) {
-        const destination = getHelpTopic(id), link = button(destination.title, 'thy-help-related-link');
+        const destination = getHelpTopic(id), link = button(destination.title, 'thy-help-related-link hud-action');
         link.dataset.helpTopic = destination.id;
         list.append(link);
       }
@@ -242,13 +242,13 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
     restoreFocus = anchor || doc.activeElement;
     overlay = el('div', 'thy-help-overlay');
     overlay.dataset.helpOverlay = '';
-    const dialog = el('section', 'thy-help-dialog');
+    const dialog = el('section', 'thy-help-dialog hud-frame hud-frame--dialog');
     dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
     dialog.setAttribute('aria-labelledby', `${prefix}-context-title`);
     dialog.setAttribute('aria-describedby', `${prefix}-context-summary`);
     const top = el('div', 'thy-help-dialog-top');
     top.append(el('p', 'thy-help-eyebrow', 'CONTROL GUIDE'));
-    const close = button('Close', 'thy-help-close');
+    const close = button('Close', 'thy-help-close hud-action hud-action--quiet');
     close.setAttribute('aria-label', 'Close help'); close.dataset.helpAction = 'close';
     top.append(close);
     const title = el('h2', '', info.title); title.id = `${prefix}-context-title`;
@@ -257,7 +257,7 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
     if (info.options.length) dialog.append(el('p', 'thy-help-choices', `Choices: ${info.options.join(' · ')}`));
     if (info.unavailable) dialog.append(el('p', 'thy-help-boundary', 'This control is planned or unavailable in the current implementation.'));
     const articleHint = el('p', 'thy-help-context-related', `Full guide: ${info.topic.title}`);
-    const read = button('Open full guide', 'thy-help-read'); read.dataset.helpAction = 'read';
+    const read = button('Open full guide', 'thy-help-read hud-action hud-action--primary'); read.dataset.helpAction = 'read';
     read.dataset.helpDestination = info.topic.id;
     dialog.append(articleHint, read, el('p', 'thy-help-escape', 'Esc closes this guide. Reading help never changes the instrument.'));
     overlay.append(dialog); doc.body.append(overlay);

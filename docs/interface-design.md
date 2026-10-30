@@ -6,6 +6,10 @@ Sequencer expansion starts with a workflow proposal before implementation.
 
 ## Client
 
+The [interface system](design-system.md) records the asset/component audit,
+shared geometry, variants, state and motion contracts. Its read-only component
+reference uses the same production CSS and icons as the Client and public site.
+
 The Client pass is implemented and covered by browser regressions and synthetic
 layout review. It does not change firmware or authorize hardware operations.
 

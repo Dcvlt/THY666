@@ -10,6 +10,16 @@ const bytes = await readFile(new URL('../../web/generated/core.wasm', import.met
 const rows = MENU_ROWS;
 const editable = row => !['action', 'info'].includes(row.type);
 const index = id => rows.findIndex(row => row.id === id);
+const sideResponses = [
+  [1,{velocity:62,pressureMode:'poly',profileEnabled:false,mpeOutput:1,pressureBend:'up',bendRange:4}],
+  [2,{velocity:112,pressureMode:'channel',profileEnabled:true,mpeOutput:2,pressureBend:'down',bendRange:17}],
+];
+function configurePerformance(model) {
+  for(const [scope,values] of sideResponses) {
+    assert.ok(model.set('performance.velocityTarget',scope).ok);
+    for(const [id,value] of Object.entries(values)) assert.ok(model.set(`performance.${id}`,value).ok,id);
+  }
+}
 async function harness() {
   const engine = await createCore({ bytes });
   assert.ok(engine.state.catalog(0, 2).ok);
@@ -115,7 +125,8 @@ test('Center returns to Play from categories, rows and drafts; Right applies bef
   assert.equal(model.snapshot().level, 'play');
   assert.equal(model.snapshot().editing, false);
   assert.equal(model.get(id), original);
-  assert.equal(engine.firmware.state().velocity, original);
+  assert.equal(state.instance(index(id),1), original);
+  assert.equal(state.instance(index(id),2), original);
   model.focus('performance', id);
   model.beginEdit(id);
   model.adjust(1);
@@ -124,7 +135,8 @@ test('Center returns to Play from categories, rows and drafts; Right applies bef
   model.navigate('select');
   assert.equal(model.snapshot().level, 'play');
   assert.equal(model.get(id), original + 1);
-  assert.equal(engine.firmware.state().velocity, original + 1);
+  assert.equal(state.instance(index(id),1), original + 1);
+  assert.equal(state.instance(index(id),2), original + 1);
 });
 
 test('web edits use C drafts; cancellation never applies a value and commit applies once', async () => {
@@ -136,14 +148,16 @@ test('web edits use C drafts; cancellation never applies a value and commit appl
   assert.equal(state.info().editRow, index(id));
   assert.equal(state.info().editValue, original + 1);
   assert.equal(model.get(id), original);
-  assert.equal(engine.firmware.state().velocity, original);
+  assert.equal(state.instance(index(id),1), original);
+  assert.equal(state.instance(index(id),2), original);
   assert.equal(model.cancelEdit(), true);
   assert.equal(model.get(id), original);
   model.beginEdit(id);
   model.setEditValue(original + 2);
   const before = state.info().revision;
   assert.equal(model.commitEdit().ok, true);
-  assert.equal(engine.firmware.state().velocity, original + 2);
+  assert.equal(state.instance(index(id),1), original + 2);
+  assert.equal(state.instance(index(id),2), original + 2);
   assert.equal(model.get(id), original + 2);
   assert.equal(state.info().revision, before + 1);
   assert.equal(model.snapshot().editing, false);
@@ -151,16 +165,18 @@ test('web edits use C drafts; cancellation never applies a value and commit appl
   assert.equal(state.info().revision, before + 1);
 });
 
-test('external C settings remain authoritative in the web projection', async () => {
+test('C Performance overrides remain authoritative without changing legacy route defaults', async () => {
   const { model, state, engine } = await harness();
   assert.ok(state.set(index('performance.velocity'), 77).ok);
   assert.equal(model.get('performance.velocity'), 77);
-  assert.equal(engine.firmware.state().velocity, 77);
+  assert.equal(state.instance(index('performance.velocity'),1),77);
+  assert.equal(state.instance(index('performance.velocity'),2),77);
   assert.equal(model.beginEdit('performance.velocity'), true);
   assert.equal(model.snapshot().edit.value, 77);
   model.cancelEdit();
   assert.ok(engine.firmware.expression(84, true).ok);
-  assert.equal(model.get('performance.velocity'), 84);
+  assert.equal(engine.firmware.state().velocity,84);
+  assert.equal(model.get('performance.velocity'),77,'A route default cannot replace an explicit physical-half override.');
   assert.equal(model.get('performance.aftertouch'), true);
 });
 
@@ -239,144 +255,135 @@ test('Performance velocity scope, Mixed drafts and MPE aliases share C state',as
   assert.deepEqual(engine.drain(),[]);
 });
 
-test('Performance response controls share MIDI route state in both directions without changing other scopes', async () => {
-  const { model, engine, state } = await harness();
-  assert.ok(model.set('sensitivity.target', 12).ok);
-  assert.ok(model.set('performance.velocityTarget', 2).ok);
-  assert.ok(model.set('performance.routeTarget', 'left').ok);
-  assert.equal(model.get('midi.routeTarget'), 'left');
-  for (const [alias, canonical, value] of [
-    ['performance.pressureMode', 'midi.pressure', 'channel'],
-    ['performance.pressureBend', 'midi.pressureBend', 'up'],
-    ['performance.bendRange', 'midi.bendRange', 12],
+test('Performance scopes physical halves independently across Whole, Split and Zones without changing MIDI routes', async () => {
+  for(const [profile,targets] of [
+    ['whole-board',['whole-board']], ['split-sides',['left','right']],
+    ['six-zones',['left-1','left-2','left-3','right-1','right-2','right-3']],
   ]) {
-    assert.equal(state.instanceCount(index(alias)), 9, alias);
-    assert.ok(model.set(alias, value).ok, alias);
-    assert.equal(model.get(canonical), value, canonical);
+    const {model,engine,state}=await harness();
+    assert.ok(model.set('midi.routingProfile',profile).ok);
+    for(const [n,target] of targets.entries()) {
+      assert.ok(model.set('midi.routeTarget',target).ok);
+      for(const [id,value] of [['channel',n+3],['velocity',70+n],['pressure',['off','poly','channel'][n%3]],
+        ['pressureBend',['off','up','down'][n%3]],['bendRange',n+3]])
+        assert.ok(model.set('midi.'+id,value).ok,id);
+    }
+    const routeTarget=model.get('midi.routeTarget'), routes=model.exportDraft().instances.routes;
+    const inherited=targets.length===1?[70,70]:targets.length===2?[70,71]:[-1,-1];
+    for(const scope of [1,2]) {
+      assert.ok(model.set('performance.velocityTarget',scope).ok);
+      assert.equal(model.get('performance.velocity'),inherited[scope-1],profile+': effective inherited velocity');
+    }
+    assert.ok(model.set('sensitivity.target',12).ok);
+    configurePerformance(model);
+    for(const [scope,values] of sideResponses) {
+      assert.ok(model.set('performance.velocityTarget',scope).ok);
+      for(const [id,value] of Object.entries(values)) {
+        assert.equal(state.instanceCount(index('performance.'+id)),3,id);
+        assert.equal(model.get('performance.'+id),value,profile+': '+id);
+      }
+    }
+    assert.ok(model.set('performance.velocityTarget',0).ok);
+    for(const id of Object.keys(sideResponses[0][1])) {
+      const row=model.definitions.get('performance.'+id);
+      assert.equal(model.get(row.id),-1,id);
+      assert.equal(model.format(row),'Mixed',id);
+    }
+    assert.deepEqual(model.options(model.definitions.get('performance.velocityTarget')).map(option=>option.value),[0,1,2]);
+    assert.equal(model.get('sensitivity.target'),12);
+    assert.equal(model.get('midi.routeTarget'),routeTarget);
+    assert.deepEqual(model.exportDraft().instances.routes,routes,'Performance edits preserve all raw MIDI route policies.');
+    const draft=model.exportDraft();
+    assert.equal(draft.instances.performanceSides.left['performance.velocity'],62);
+    assert.equal(draft.instances.performanceSides.right['performance.velocity'],112);
+    assert.equal(draft.instances.performanceSides.both['performance.profileEnabled'],-1);
+    assert.equal(draft.instances.routes['whole-board']['performance.velocity'],undefined);
+    assert.ok(model.focus('performance','performance.velocity'));
+    assert.ok(!model.visibleRows(model.groups.find(group=>group.id==='performance')).some(row=>row.id==='performance.routeTarget'));
+    assert.deepEqual(engine.drain(),[],'Policy edits emit no notes or receiver setup.');
+    assert.ok(engine.firmware.layout(Array.from({length:96},()=>({notes:[60,0,0,0,0,0,0],mask:1,color:1}))).ok);
+    for(const [pad,velocity] of [[0,62],[48,112]]) {
+      assert.ok(engine.firmware.pressPad(pad).ok);
+      const noteOns=engine.drain().filter(event=>(event.status&0xf0)===0x90&&event.data2>0);
+      assert.ok(noteOns.length>0,profile+': physical pad '+pad);
+      assert.ok(noteOns.every(event=>event.data2===velocity),profile+': fixed velocity follows the physical half.');
+      assert.ok(engine.release(pad).ok);
+      assert.ok(engine.drain().some(event=>(event.status&0xf0)===0x80));
+    }
+    assert.equal(engine.stats().heldPads,0);
   }
-  assert.ok(model.set('midi.routeTarget', 'right').ok);
-  assert.equal(model.get('performance.routeTarget'), 'right');
-  assert.equal(model.get('performance.pressureMode'), 'off');
-  assert.equal(model.get('performance.pressureBend'), 'off');
-  assert.equal(model.get('performance.bendRange'), 2);
-  assert.ok(model.set('midi.pressure', 'poly').ok);
-  assert.ok(model.set('midi.pressureBend', 'down').ok);
-  assert.ok(model.set('midi.bendRange', 7).ok);
-  assert.equal(model.get('performance.pressureMode'), 'poly');
-  assert.equal(model.get('performance.pressureBend'), 'down');
-  assert.equal(model.get('performance.bendRange'), 7);
-  assert.ok(model.set('performance.routeTarget', 'left').ok);
-  assert.equal(model.get('performance.pressureMode'), 'channel');
-  assert.equal(model.get('performance.pressureBend'), 'up');
-  assert.equal(model.get('performance.bendRange'), 12);
-  assert.equal(model.get('sensitivity.target'), 12);
-  assert.equal(model.get('performance.velocityTarget'), 2);
-  const draft = model.exportDraft();
-  for (const route of ['left', 'right']) {
-    const values = draft.instances.routes[route];
-    assert.equal(values['performance.pressureMode'], values['midi.pressure'], route);
-    assert.equal(values['performance.pressureBend'], values['midi.pressureBend'], route);
-    assert.equal(values['performance.bendRange'], values['midi.bendRange'], route);
-  }
-  assert.equal(draft.instances.routes.left['performance.pressureMode'], 'channel');
-  assert.equal(draft.instances.routes.right['performance.pressureMode'], 'poly');
-  assert.deepEqual(engine.drain(), [], 'Editing response policies never sends receiver setup or notes.');
 });
 
-test('Performance Response for follows all routing-profile filters and retains independent route policies', async () => {
-  const { model, engine } = await harness();
-  const alias = model.definitions.get('performance.routeTarget');
-  const canonical = model.definitions.get('midi.routeTarget');
-  for (const [profile, allowed] of [
-    ['whole-board', ['whole-board']],
-    ['split-sides', ['left', 'right']],
-    ['six-zones', ['left-1', 'left-2', 'left-3', 'right-1', 'right-2', 'right-3']],
-  ]) {
-    assert.ok(model.set('midi.routingProfile', profile).ok);
-    assert.deepEqual(model.options(alias).map(option => option.value), allowed, profile);
-    assert.deepEqual(model.options(alias).map(option => option.value), model.options(canonical).map(option => option.value), profile);
-    for (const option of alias.options) {
-      const before = model.get(alias.id);
-      const result = model.set(alias.id, option.value);
-      assert.equal(result.ok, allowed.includes(option.value), `${profile}: ${option.value}`);
-      assert.equal(model.get(canonical.id), result.ok ? option.value : before);
-    }
-    for (const [n, target] of allowed.entries()) {
-      assert.ok(model.set(alias.id, target).ok);
-      assert.ok(model.set('performance.pressureMode', ['off', 'poly', 'channel'][n % 3]).ok);
-      assert.ok(model.set('performance.pressureBend', ['off', 'up', 'down'][n % 3]).ok);
-      assert.ok(model.set('performance.bendRange', n + 3).ok);
-    }
+test('Mixed Performance values are read-only summaries and start concrete drafts without treating Mixed as ON', async () => {
+  const {model,engine}=await harness();
+  configurePerformance(model);
+  assert.ok(model.set('performance.velocityTarget',0).ok);
+  const saved=engine.settings.encode();
+  for(const id of Object.keys(sideResponses[0][1])) {
+    const row=model.definitions.get('performance.'+id);
+    assert.equal(model.get(row.id),-1,id);
+    assert.equal(model.format(row),'Mixed',id);
+    assert.equal(model.set(row.id,-1).ok,false,id);
+    assert.ok(model.beginEdit(row.id),id);
+    assert.equal(model.edit.value,row.default,id);
+    assert.equal(model.format(row,model.edit.value),model.format(row,row.default),id);
+    assert.ok(model.cancelEdit());
+    assert.equal(model.get(row.id),-1,id);
   }
-  for (const [profile, targets] of [
-    ['whole-board', ['whole-board']], ['split-sides', ['left', 'right']],
-    ['six-zones', ['left-1', 'left-2', 'left-3', 'right-1', 'right-2', 'right-3']],
-  ]) {
-    assert.ok(model.set('midi.routingProfile', profile).ok);
-    for (const [n, target] of targets.entries()) {
-      assert.ok(model.set('midi.routeTarget', target).ok);
-      assert.equal(model.get('performance.pressureMode'), ['off', 'poly', 'channel'][n % 3], target);
-      assert.equal(model.get('performance.pressureBend'), ['off', 'up', 'down'][n % 3], target);
-      assert.equal(model.get('performance.bendRange'), n + 3, target);
-    }
-  }
-  assert.deepEqual(engine.drain(), []);
+  assert.deepEqual(engine.settings.encode(),saved);
+  assert.deepEqual(engine.drain(),[]);
 });
 
-test('Performance response drafts cancel cleanly and commit to the route captured at entry', async () => {
-  const { model, engine } = await harness();
-  assert.ok(model.set('performance.routeTarget', 'left').ok);
-  const saved = engine.settings.encode();
+test('Performance response drafts cancel cleanly and commit to the physical scope captured at entry', async () => {
+  const {model,engine}=await harness();
+  assert.ok(model.set('performance.velocityTarget',1).ok);
+  const saved=engine.settings.encode();
   assert.ok(model.beginEdit('performance.pressureMode'));
   assert.ok(model.setEditValue('channel'));
-  assert.equal(model.get('midi.pressure'), 'off');
+  assert.equal(model.get('performance.pressureMode'),'off');
   assert.ok(model.cancelEdit());
-  assert.equal(model.get('performance.pressureMode'), 'off');
-  assert.deepEqual(engine.settings.encode(), saved);
+  assert.deepEqual(engine.settings.encode(),saved);
   assert.ok(model.beginEdit('performance.pressureMode'));
   assert.ok(model.setEditValue('poly'));
-  assert.ok(model.set('midi.routeTarget', 'right').ok);
+  assert.ok(model.set('performance.velocityTarget',2).ok);
+  assert.ok(model.set('midi.routeTarget','right').ok);
   assert.ok(model.commitEdit().ok);
-  assert.equal(model.get('performance.pressureMode'), 'off', 'Changing the selector does not retarget the LEFT draft.');
-  assert.ok(model.set('performance.routeTarget', 'left').ok);
-  assert.equal(model.get('midi.pressure'), 'poly');
-  const beforeInvalid = engine.settings.encode();
-  for (const [id, value] of [
-    ['performance.pressureMode', 'pitch-bend'], ['performance.pressureBend', 'channel'],
-    ['performance.bendRange', 0], ['performance.bendRange', 25],
-  ]) assert.equal(model.set(id, value).ok, false, id);
-  assert.deepEqual(engine.settings.encode(), beforeInvalid);
-  assert.deepEqual(engine.drain(), []);
+  assert.equal(model.get('performance.pressureMode'),'off','Changing either selector cannot retarget the captured LEFT draft.');
+  assert.ok(model.set('performance.velocityTarget',1).ok);
+  assert.equal(model.get('performance.pressureMode'),'poly');
+  assert.equal(model.get('midi.pressure'),'off');
+  const beforeInvalid=engine.settings.encode();
+  for(const [id,value] of [
+    ['performance.pressureMode','pitch-bend'],['performance.pressureBend','channel'],
+    ['performance.bendRange',0],['performance.bendRange',25],['performance.velocity',0],
+    ['performance.profileEnabled',1],['performance.mpeOutput',3],
+  ]) assert.equal(model.set(id,value).ok,false,id);
+  assert.deepEqual(engine.settings.encode(),beforeInvalid);
+  assert.deepEqual(engine.drain(),[]);
 });
 
-test('Performance response aliases restore through the existing V15 route codec without extra storage', async () => {
-  const source = await harness();
-  for (const [target, pressure, bend, range] of [
-    ['left', 'poly', 'up', 4], ['right', 'channel', 'down', 17],
-  ]) {
-    assert.ok(source.model.set('performance.routeTarget', target).ok);
-    assert.ok(source.model.set('performance.pressureMode', pressure).ok);
-    assert.ok(source.model.set('performance.pressureBend', bend).ok);
-    assert.ok(source.model.set('performance.bendRange', range).ok);
+test('saved Performance halves restore independently while MIDI route settings stay unchanged', async () => {
+  const source=await harness();
+  assert.ok(source.model.set('midi.routeTarget','left').ok);
+  assert.ok(source.model.set('midi.pressure','channel').ok);
+  assert.ok(source.model.set('midi.velocity',83).ok);
+  assert.ok(source.model.set('midi.routeTarget','right').ok);
+  assert.ok(source.model.set('midi.pressureBend','up').ok);
+  assert.ok(source.model.set('midi.bendRange',7).ok);
+  const routes=source.model.exportDraft().instances.routes;
+  configurePerformance(source.model);
+  const payload=source.engine.settings.encode();
+  assert.equal(source.engine.settings.payloadVersion(payload),CURRENT_SETTINGS_VERSION);
+  assert.equal(payload.length,CURRENT_EMPTY_SETTINGS_BYTES);
+  const cold=await harness();
+  assert.equal(cold.engine.settings.apply(payload),true);
+  for(const [scope,values] of sideResponses) {
+    assert.ok(cold.model.set('performance.velocityTarget',scope).ok);
+    for(const [id,value] of Object.entries(values)) assert.equal(cold.model.get('performance.'+id),value,id);
   }
-  const payload = source.engine.settings.encode();
-  assert.equal(source.engine.settings.payloadVersion(payload), CURRENT_SETTINGS_VERSION);
-  assert.equal(payload.length, CURRENT_EMPTY_SETTINGS_BYTES);
-  const cold = await harness();
-  assert.equal(cold.engine.settings.apply(payload), true);
-  for (const [target, pressure, bend, range] of [
-    ['left', 'poly', 'up', 4], ['right', 'channel', 'down', 17],
-  ]) {
-    assert.ok(cold.model.set('midi.routeTarget', target).ok);
-    assert.equal(cold.model.get('performance.pressureMode'), pressure);
-    assert.equal(cold.model.get('midi.pressure'), pressure);
-    assert.equal(cold.model.get('performance.pressureBend'), bend);
-    assert.equal(cold.model.get('midi.pressureBend'), bend);
-    assert.equal(cold.model.get('performance.bendRange'), range);
-    assert.equal(cold.model.get('midi.bendRange'), range);
-  }
-  assert.deepEqual(cold.engine.settings.encode(), payload);
-  assert.deepEqual(cold.engine.drain(), [], 'Restoring saved expression policies emits no MIDI.');
+  assert.deepEqual(cold.model.exportDraft().instances.routes,routes);
+  assert.deepEqual(cold.engine.settings.encode(),payload);
+  assert.deepEqual(cold.engine.drain(),[],'Restoring response policies emits no MIDI.');
 });
 
 test('the scale shortcut picker exposes the catalog and layout cycling through canonical C assignments', async () => {

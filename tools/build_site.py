@@ -27,6 +27,10 @@ def site_assets() -> dict[str, bytes]:
 
     for name in ("index.html", "manual.html", "install.html", "site.css", "site.js", "screen-carousel.js", "guide.js", "install.js", "releases.json"):
         add(SITE / name, name, parent=SITE)
+    # The public pages and read-only reference use the Client's exact foundation.
+    for name in ("typography.css", "ui-system.css", "ui-system.js",
+                 "design-system.html", "design-system.js", "design-system.css"):
+        add(ROOT / "web" / name, name, parent=ROOT / "web")
     for name in ("help.js", "help.css", "help-topics.js", "studio-menu.js"):
         add(ROOT / "web" / name, "guide/" + name, parent=ROOT / "web")
     for name in ("browser-updater-client.js", "browser-hid.js", "device-client.js",
@@ -37,6 +41,7 @@ def site_assets() -> dict[str, bytes]:
         files["installer/" + name] = data
     for source, name in (("thy666-web-logo.svg", "logo.svg"),):
         add(ROOT / "web/assets" / source, "assets/" + name, parent=ROOT / "web/assets")
+    add(ROOT / "web/assets/thy666-web-logo.svg", "assets/thy666-web-logo.svg", parent=ROOT / "web/assets")
     add(ROOT / "web/assets/thy333-logo.svg", "installer/assets/thy333-logo.svg", parent=ROOT / "web/assets")
     add(ROOT / "docs/assets/thy666-icon.svg", "assets/icon.svg", parent=ROOT / "docs/assets")
     add(SITE / "assets/client-preview.png", "assets/client-preview.png", parent=SITE)

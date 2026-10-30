@@ -301,3 +301,19 @@ there is no second file chooser. It checks the board UID before writing and
 requires explicit confirmation after firmware verification. Unchecking the toggle
 or skipping backup omits restoration. Reloading the app loses this in-memory
 selection; retain the downloaded backup for a later manual recovery.
+
+Settings verification uses the same bounded version contract as backup inspection
+and migration, checked against the generated shared C codec. The settings report
+must agree with the connected backup service's version, board and running build;
+an unknown future format remains unsupported. When an older retained backup needs
+conversion, verification prepares it off-device through the same isolated C codec
+used by Restore. This changes neither the board nor the original backup file.
+Conversion failure leaves firmware health separate and blocks restoration; it
+does not substitute factory defaults. Writing still requires the separate restore
+confirmation and complete saved-payload readback.
+
+Reloading a direct-browser updater loses its completed operation as well as the
+retained backup. Do not install again to recover the verification screen. Reconnect
+the application, independently check the intended full build and board identity
+and read its startup, I/O, settings and display reports. Use Client → Backups for
+an explicit restore from the downloaded file.

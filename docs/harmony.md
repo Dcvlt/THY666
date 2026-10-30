@@ -114,7 +114,7 @@ center: C major and A natural minor, for example, share pitch classes.
 
 The Client projects the same C map, history and advice. Its pad clicks inspect;
 selection is silent. It requires an explicit compatible device connection.
-Settings V18 saves preferences, not running history or adaptive assignments.
+Settings V19 saves preferences, not running history or adaptive assignments.
 Older settings migrate without changing songs, library or physical overrides.
 
 ## Design references and qualification

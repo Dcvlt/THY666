@@ -1,9 +1,10 @@
 import { StudioModel } from './studio-model.js';
+import { createUIIcon } from './ui-system.js';
 
 const studioText = (tag, text, className = '') => {
   const element = document.createElement(tag);
   element.textContent = text;
-  element.className = className;
+  element.className = tag==='button'&&!className.includes('hud-choice')?`hud-action ${className}`.trim():className;
   return element;
 };
 
@@ -36,6 +37,7 @@ export class ConnectedParameterEditor {
     const raw = this.encode(row, value);
     if (!Number.isInteger(raw) || raw < -2147483648 || raw > 2147483647)
       throw new Error('Choose a valid device value.');
+    if(raw<0&&row.id.startsWith('performance.'))throw new Error('Choose a value to apply to the selected half.');
     if (row.id === 'sensitivity.velocityMode' && raw === 2) throw new Error('Mixed describes the current pads. Choose Fixed or Strike.');
     this.draft = { id: row.id, value, raw, instance: source.instance };
     return this.draft;
@@ -74,6 +76,7 @@ function deviceFormat(model, row, record) {
   if (row.type === 'action') return 'Run';
   if (row.type === 'info') return 'Info';
   if (!record) return 'Reading…';
+  if(record.raw===-1&&row.id.startsWith('performance.'))return 'Mixed';
   if (row.type === 'toggle') return record.value ? 'ON' : 'OFF';
   if (row.id === 'sensitivity.velocityMode' && record.raw === 2) return 'Mixed';
   if (row.dynamic) return model.scales.find(scale => scale.index === record.raw)?.name || String(record.value ?? record.raw);
@@ -96,16 +99,16 @@ export function initializeEngineStudio({ engine, groups, getContext, onChange, o
   const device = new ConnectedParameterEditor((row, value) => model.encode(row, value));
   engine.state.designMode(false);
   const panel = document.createElement('section');
-  panel.className = 'panel engine-studio';
+  panel.className = 'panel engine-studio hud-frame hud-frame--task';
   panel.id = 'engine-studio';
   panel.setAttribute('aria-label', 'Approved engine and menu preview');
   panel.innerHTML = `
-    <div class="engine-heading"><div><p class="eyebrow">THY666 / SHARED C ENGINE</p><h2>Engine & menus</h2><p>One state model and OLED renderer for the browser and STM32.</p></div><span class="engine-scope-badge">C / WebAssembly</span></div>
-    <div class="engine-intro"><span><i class="engine-live-dot"></i> Live controls shape the playable core.</span><label class="engine-design-toggle"><input type="checkbox" id="engine-future-controls"> Show future designs & notes</label><button type="button" id="engine-export" class="button button-small">Export UI draft</button></div>
+    <div class="engine-heading"><div><p class="eyebrow">THY666 / SHARED C ENGINE</p><h2>Engine & menus</h2><p>One state model and OLED renderer for the browser and STM32.</p></div><span class="engine-scope-badge hud-chip">C / WebAssembly</span></div>
+    <div class="engine-intro"><span><i class="engine-live-dot"></i> Live controls shape the playable core.</span><label class="engine-design-toggle hud-toggle-label" for="engine-future-controls"><input class="hud-checkbox" type="checkbox" id="engine-future-controls"> Show future designs & notes</label><button type="button" id="engine-export" class="button hud-action hud-action--compact">Export UI draft</button></div>
     <nav class="engine-groups" aria-label="Firmware menu categories"></nav>
-    <div class="engine-layout"><div><div class="engine-list-heading"><h3 id="engine-group-title"></h3><span id="engine-group-count"></span><button type="button" id="engine-track-back" class="button button-small" hidden>Back to track</button></div><div class="engine-menu-list" aria-label="Settings in selected category"></div></div>
+    <div class="engine-layout"><div><div class="engine-list-heading"><h3 id="engine-group-title"></h3><span id="engine-group-count"></span><button type="button" id="engine-track-back" class="button hud-action hud-action--compact" hidden>Back to track</button></div><div class="engine-menu-list" aria-label="Settings in selected category"></div></div>
       <div class="engine-editor" aria-label="Selected setting editor"></div>
-      <aside class="engine-state" aria-label="Engine state overview"><h3>State boundaries</h3><p>Configuration shapes future events. Held notes keep the pitches and routes captured at their attack.</p><dl><div><dt>Playing</dt><dd id="engine-state-playing">Play</dd></div><div><dt>Transport</dt><dd id="engine-state-transport">Stopped</dd></div><div><dt>Tracks</dt><dd>21 maximum · 48 steps each</dd></div><div><dt>Routing profile</dt><dd id="engine-state-routing">Split Sides</dd></div><div><dt>Active ownership</dt><dd id="engine-state-voices">0 voices</dd></div><div><dt>UI draft</dt><dd id="engine-state-drafts">0 changes</dd></div></dl><p class="engine-state-foot">Settings, performance, clock, tracks and storage have separate lifecycles. No device connection.</p><details><summary>Recent state changes</summary><ol id="engine-event-log"></ol></details></aside>
+      <aside class="engine-state" aria-label="Engine state overview"><h3>State boundaries</h3><p>Configuration shapes future events. Held notes keep the pitches and routes captured at their attack.</p><dl><div><dt>Playing</dt><dd id="engine-state-playing">Play</dd></div><div><dt>Transport</dt><dd id="engine-state-transport">Stopped</dd></div><div><dt>Tracks</dt><dd>21 maximum · 48 steps each</dd></div><div><dt>Routing profile</dt><dd id="engine-state-routing">Split Sides</dd></div><div><dt>Active ownership</dt><dd id="engine-state-voices">0 voices</dd></div><div><dt>UI draft</dt><dd id="engine-state-drafts">0 changes</dd></div></dl><p class="engine-state-foot">Settings, performance, clock, tracks and storage have separate lifecycles. No device connection.</p><details class="hud-disclosure"><summary>Recent state changes</summary><ol id="engine-event-log"></ol></details></aside>
     </div><div class="engine-footer"><p id="engine-notice" role="status" aria-live="polite">Center toggles Settings / Play. Right opens, edits or applies; up/down moves or changes values; left goes back or cancels.</p><span>Live settings save locally · future designs stay in this session</span></div>`;
   document.querySelector('.instrument').insertAdjacentElement('afterend', panel);
   const find = selector => panel.querySelector(selector);
@@ -117,10 +120,11 @@ export function initializeEngineStudio({ engine, groups, getContext, onChange, o
   const activate = () => onActivate?.();
   const changed = (force = false) => { lastIdentity = ''; forceEditor ||= force; refresh(); if (!device.connected) onChange?.(); };
   for (const group of model.groups.filter(group=>!group.nested)) {
-    const button = studioText('button', group.label);
-    const icons = { engines: '⚙', performance: '◇', chords: '♬', arps: '↗', sequencer: '▥', midi: '⇄', sensitivity: '◉', lights: '☼', storage: '▣', system: '⚙', views: '▤', controls: '✥' };
-    const icon = studioText('span', icons[group.id] || '◇', 'engine-group-icon');
-    icon.setAttribute('aria-hidden', 'true'); button.prepend(icon);
+    const button = studioText('button', group.label, 'hud-choice hud-choice--nav');
+    button.dataset.traceOrigin='bottom';
+    const icons={engines:'settings',performance:'parameters',chords:'harmony',arps:'library',sequencer:'board',midi:'backups',sensitivity:'parameters',lights:'settings',storage:'backups',system:'settings',views:'board',controls:'parameters',expression:'parameters',profiles:'library'};
+    const icon=studioText('span','','engine-group-icon');
+    icon.append(createUIIcon(icons[group.id]||'parameters',{document}));button.prepend(icon);
     button.type = 'button';
     button.dataset.group = group.id;
     button.addEventListener('click', () => {
@@ -144,8 +148,9 @@ export function initializeEngineStudio({ engine, groups, getContext, onChange, o
     const editable = !['action', 'info'].includes(row.type);
     const connected = device.connected;
     editor.append(studioText('span', row.type === 'info' ? 'FEATURE HELP' : connected ? 'CONNECTED DEVICE' : row.status === 'live' ? 'LIVE / PLAYABLE CORE' : 'FUTURE / CONFIGURATION ONLY', 'engine-capability ' + (row.status === 'live' ? 'is-live' : '')),
-      studioText('h3', row.label), studioText('p', row.description || 'A setting from the approved feature set.', 'engine-description'));
-    const help = studioText('button', '? Help', 'button button-small');
+      studioText('h3', row.label), studioText('p', row.description || 'A setting from the approved feature set.', 'engine-description hud-field-help hud-type-body'));
+    const help = studioText('button', 'Help', 'button hud-action--quiet hud-action--compact');
+    help.prepend(createUIIcon('help',{document}));
     help.type = 'button'; help.dataset.help = row.id;
     editor.append(help);
     if (connected && !device.compatible) {
@@ -158,7 +163,7 @@ export function initializeEngineStudio({ engine, groups, getContext, onChange, o
     }
     if (row.type === 'action' && row.status === 'live') {
       const instance = connected ? device.actionInstance(row) : null;
-      const run = studioText('button', (row.group === 'engines' && ['engines.play','engines.harmony','engines.sequencer'].includes(row.id) ? 'Select ' : row.group === 'engines' || row.group === 'engineSettings' ? 'Open ' : '') + row.label, 'button engine-apply');
+      const run = studioText('button', (row.group === 'engines' && ['engines.play','engines.harmony','engines.sequencer'].includes(row.id) ? 'Select ' : row.group === 'engines' || row.group === 'engineSettings' ? 'Open ' : '') + row.label, 'button engine-apply hud-action--primary');
       run.type = 'button';
       run.disabled = connected && (instance === null || device.pending);
       run.addEventListener('click', async () => {
@@ -174,7 +179,7 @@ export function initializeEngineStudio({ engine, groups, getContext, onChange, o
       editor.append(studioText('p', row.type === 'info' ? connected ? String(row.default ?? row.description ?? '') : model.format(row) : 'Not implemented. This action cannot run until its engine or storage service exists.', 'engine-draft-note'));
       if (row.type === 'info') editor.append(studioText('p', row.status === 'live' ? 'This describes the current engine. It has no editable value.' : 'This is a design reference. It has no editable value or device command.', 'engine-draft-note'));
       if (row.type === 'info' && !connected) {
-        const show = studioText('button','Show on OLED','button button-small');
+        const show = studioText('button','Show on OLED','button hud-action--compact');
         show.type='button';show.addEventListener('click',()=>{activate();model.beginEdit(row.id);changed();});editor.append(show);
       }
       return;
@@ -190,9 +195,9 @@ export function initializeEngineStudio({ engine, groups, getContext, onChange, o
     }
     const form = document.createElement('form');
     form.noValidate=true;
-    const label = studioText('label', row.type === 'toggle' ? 'Enabled' : 'Value');
+    const label = studioText('label', row.type === 'toggle' ? 'Enabled' : 'Value', 'hud-field-label');
     const input = document.createElement(row.type === 'select' || row.type === 'toggle' ? 'select' : 'input');
-    input.id = 'engine-setting-value';
+    input.id = 'engine-setting-value';input.className='hud-field';
     input.setAttribute('aria-label', row.label + ' value');
     const value = connected ? device.draft?.id === row.id ? device.draft.value : displayed.value : snapshot.edit?.id === row.id ? snapshot.edit.value : model.get(row.id);
     if (input.tagName === 'SELECT') {
@@ -215,7 +220,8 @@ export function initializeEngineStudio({ engine, groups, getContext, onChange, o
         const bounds=(connected ? row : model.bounds(row))||row;input.min=bounds.min;input.max=bounds.max;input.step=row.step||1;
       }
       else input.maxLength = row.maxLength || 24;
-      input.value = value ?? '';
+      input.value = value === -1 && row.id.startsWith('performance.') ? '' : value ?? '';
+      if(value===-1&&row.id.startsWith('performance.'))input.placeholder='Mixed';
     }
     const inputValue = (clamp=false) => {
       if(input.tagName==='SELECT')return input.value === '' ? NaN : JSON.parse(input.value);
@@ -248,11 +254,11 @@ export function initializeEngineStudio({ engine, groups, getContext, onChange, o
     label.append(input);
     form.append(label);
     const actions = studioText('div', '', 'engine-editor-actions');
-    const apply = studioText('button', connected ? 'Apply to device' : row.status === 'live' ? 'Apply to preview' : 'Save draft', 'button engine-apply');
+    const apply = studioText('button', connected ? 'Apply to device' : row.status === 'live' ? 'Apply to preview' : 'Save draft', 'button engine-apply hud-action--primary');
     apply.type = 'submit';
     apply.disabled = device.pending || input.tagName === 'SELECT' && (!input.selectedOptions[0] || input.selectedOptions[0].disabled);
     input.disabled = device.pending;
-    const cancel = studioText('button', 'Cancel', 'button'); cancel.type = 'button';
+    const cancel = studioText('button', 'Cancel', 'button hud-action--quiet'); cancel.type = 'button';
     cancel.disabled = device.pending;
     cancel.addEventListener('click', () => { if (connected) device.cancel(); else model.cancelEdit(); changed(true); });
     actions.append(apply, cancel); form.append(actions);
@@ -318,13 +324,14 @@ export function initializeEngineStudio({ engine, groups, getContext, onChange, o
       for (const item of visibleRows) {
         if (!snapshot.quickOpen && sawBasic && item.advanced && !divided) {
           const separator = document.createElement('hr');
-          separator.className = 'engine-menu-divider';
+          separator.className = 'engine-menu-divider hud-rule';
           separator.setAttribute('aria-label', 'Advanced options');
           list.append(separator);
           divided = true;
         }
         if (!item.advanced) sawBasic = true;
-        const button = studioText('button', '', 'engine-menu-item');
+        const button = studioText('button', '', 'engine-menu-item hud-choice hud-choice--nav');
+        button.dataset.traceOrigin='left';
         button.type = 'button'; button.dataset.setting = item.id;
         button.dataset.section = item.advanced ? 'advanced' : 'basic';
         button.setAttribute('aria-pressed', String(item.id === row?.id));

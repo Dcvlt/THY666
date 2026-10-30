@@ -15,11 +15,13 @@ async function fresh() {
   return engine;
 }
 
-test('live Split Sides menu controls produce independent channel, destination and velocity messages', async () => {
+test('Split Sides routes retain legacy velocity values without exposing duplicate expression editors', async () => {
   const engine = await fresh(), { state, firmware } = engine;
   state.designMode(false);
-  for (const id of ['midi.routingProfile', 'midi.routeTarget', 'midi.channel', 'midi.destinations', 'midi.velocity', 'midi.pressure'])
+  for (const id of ['midi.routingProfile', 'midi.routeTarget', 'midi.channel', 'midi.destinations'])
     assert.equal(state.focus(STUDIO_MENU.groups.findIndex(group=>group.id==='midi'), index(id)).ok, true, id);
+  for (const id of ['midi.velocity','midi.pressure','midi.pressureBend','midi.bendRange','midi.bendSetup'])
+    assert.equal(state.focus(STUDIO_MENU.groups.findIndex(group=>group.id==='midi'), index(id)).ok, false, id);
   assert.ok(choose(state, 'midi.routeTarget', 'left').ok);
   assert.ok(set(state, 'midi.channel', 16).ok);
   assert.ok(choose(state, 'midi.destinations', 'din').ok);
@@ -114,9 +116,11 @@ test('editing one route expression field preserves inheritance of the other', as
   assert.equal(firmware.padRoute(1).pressureEnabled, 1);
   assert.ok(choose(state, 'midi.routeTarget', 'right').ok);
   assert.ok(set(state, 'midi.pressure', 0).ok);
+  assert.ok(set(state, 'performance.velocityTarget', 2).ok);
   assert.ok(set(state, 'performance.velocity', 105).ok);
   assert.equal(firmware.padRoute(1).velocity, 71);
-  assert.equal(firmware.padRoute(2).velocity, 105);
+  assert.equal(firmware.padRoute(2).velocity, 96);
+  assert.equal(state.get(index('performance.velocity')), 105);
   assert.equal(firmware.padRoute(2).pressureEnabled, 0);
 });
 

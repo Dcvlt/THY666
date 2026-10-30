@@ -28,6 +28,30 @@ test('older firmware never receives unsupported Harmony commands',async t=>{
   await assert.rejects(e.client.harmonyAction(0,1),/does not expose/);
   assert.equal(e.commands.some(c=>c.startsWith('companion harmony ')),false);
 });
+
+test('pad labels use a conditional read-only snapshot and always release completed or failed leases',async t=>{
+  const e=environment(t,{padMap:true,native:true,expectedSchema:'ff'.repeat(32)});await e.client.connect();
+  assert.equal(e.client.compatible,false);assert.equal(e.client.padMapSupported,true,'Direct device labels need no local musical approximation.');
+  const map=await e.client.padMapSnapshot();assert.deepEqual(map.bytes,e.server.padMap);
+  assert.match(e.commands.at(-1),/^companion release /);
+  const before=e.commands.length;
+  assert.deepEqual(await e.client.padMapSnapshot(17),{unchanged:true,revision:17});
+  assert.deepEqual(e.commands.slice(before),['companion pad-map 17'],'An unchanged map sends no blob chunks.');
+  e.server.padMapPending=true;const pending=await e.client.padMapSnapshot();
+  assert.deepEqual(pending,{pending:true,generation:7});assert.equal(e.commands.at(-1),'companion pad-map');
+  assert.equal(await e.client.cancelPadMap(),true);assert.equal(e.commands.at(-1),'companion release 7');
+  const canceled=e.commands.length;assert.equal(await e.client.cancelPadMap(),false);assert.equal(e.commands.length,canceled);
+  assert.equal(e.commands.some(command=>/^companion (?:set|control|action|nav) /.test(command)),false);
+});
+
+test('old firmware receives no pad-label request and corrupt pad-label data releases staging',async t=>{
+  const old=environment(t);await old.client.connect();assert.equal(old.client.padMapSupported,false);
+  await assert.rejects(old.client.padMapSnapshot(),/Labels require newer firmware/);
+  assert.equal(old.commands.some(command=>command.startsWith('companion pad-map')),false);
+  const broken=environment(t,{padMap:true,override:command=>command.startsWith('companion get ')?'ERR corrupt':undefined});
+  await broken.client.connect();await assert.rejects(broken.client.padMapSnapshot(),/corrupt/);
+  assert.equal(broken.commands.at(-1),'companion release 7');
+});
 test('Harmony failures release a frozen lease and reject mismatched action acknowledgements',async t=>{
   const e=environment(t,{harmony:true,override(command){
     if(command.startsWith('companion get '))return 'ERR corrupt';
@@ -97,11 +121,11 @@ function reseal(bytes) {
 
 function environment(t, { override, writable = '1', schema = SCHEMA, expectedSchema = SCHEMA, timeoutMs = 40,
   fragment = false, statusSequence = ['applied', 'queued', 'saved-verified'], exportBytes,native=false,
-  settingsVersion=13,migrateBackupPayload,harmony=false,reset=false } = {}) {
+  settingsVersion=13,migrateBackupPayload,harmony=false,reset=false,padMap=false } = {}) {
   let waiter = null, closed = false, time = 0;
   const queued = [], states = [], commands = [], portEvents = new Map();
   const server = { file: makeBackup({settingsVersion}), snapshot: Uint8Array.from({ length: 1680 }, (_, n) => n & 255),
-    harmony:Uint8Array.from({length:800},(_,n)=>n&255),generation: 7, committed: false, upload: null, statusReads: 0, received: 0 };
+    harmony:Uint8Array.from({length:800},(_,n)=>n&255),padMap:Uint8Array.from({length:1672},(_,n)=>n&255),padMapRevision:17,padMapPending:false,generation: 7, committed: false, upload: null, statusReads: 0, received: 0 };
   const push = text => {
     if (closed) return;
     const bytes = encoder.encode(text);
@@ -118,10 +142,15 @@ function environment(t, { override, writable = '1', schema = SCHEMA, expectedSch
   };
   const statusLine = state => `BACKUP version=1 state=${state} bytes=${server.committed ? server.file.length : 0} received=${server.received} crc32=${crc(server.file)} payload_crc32=${crc(server.file.subarray(64))} generation=31`;
   function respond(command) {
-    if (command === 'companion caps') return `COMPANION/1 CAPS role=instrument backup=1 song=1 companion=1 uid=${UID} build=${BUILD} schema=${schema} writable=${writable} chunk=128${harmony?' harmony=1 harmony_bytes=800':''}${reset?' reset=1':''}`;
+    if (command === 'companion caps') return `COMPANION/1 CAPS role=instrument backup=1 song=1 companion=1 uid=${UID} build=${BUILD} schema=${schema} writable=${writable} chunk=128${harmony?' harmony=1 harmony_bytes=800':''}${reset?' reset=1':''}${padMap?' pad_map=1 pad_map_bytes=1672':''}`;
     if (command === 'backup caps') return `BACKUP version=1 settings=${settingsVersion} max=${BACKUP_MAX_BYTES} chunk=32 target=1043 compatibility=65537 uid=${UID} build=${BUILD} schema=${schema}`;
     if (command === 'companion snapshot') {server.frozen=server.snapshot;return `COMPANION/1 SNAPSHOT seq=${server.generation} bytes=${server.snapshot.length} crc32=${crc(server.snapshot)}`;}
     if (command === 'companion harmony snapshot') {server.frozen=server.harmony;return `COMPANION/1 HARMONY seq=${server.generation} bytes=800 crc32=${crc(server.harmony)}`;}
+    if(/^companion pad-map(?: \d+)?$/.test(command)){
+      if(Number(command.split(' ')[2])===server.padMapRevision)return `COMPANION/1 PADMAP unchanged=1 revision=${server.padMapRevision}`;
+      if(server.padMapPending)return `COMPANION/1 PADMAP pending=1 seq=${server.generation}`;
+      server.frozen=server.padMap;return `COMPANION/1 PADMAP seq=${server.generation} bytes=1672 crc32=${crc(server.padMap)}`;
+    }
     if (command.startsWith('companion harmony-control ')) {const words=command.split(' ');return `COMPANION/1 HCONTROL result=0 bank=${words[3]} index=${words[4]}`;}
     if (command.startsWith('companion reset-confirm ')) {const words=command.split(' ');return `COMPANION/1 RESET result=0 epoch=${words[3]} confirmed=${words[4]}`;}
     if (command.startsWith('companion harmony ')) {const words=command.split(' ');return `COMPANION/1 HARMONY result=0 action=${words[3]} value=${words[4]}`;}
@@ -227,7 +256,7 @@ test('current v15 exports agree with capabilities and older source versions are 
   const file=await e.client.downloadBackup();assert.equal(inspectDeviceBackup(file).settingsVersion,15);
   assert.doesNotThrow(()=>inspectDeviceBackup(makeBackup(),e.client.backupIdentity));
   assert.throws(()=>inspectDeviceBackup(makeBackup({settingsVersion:15}),backupIdentity),/belong/);
-  for(const version of [12,19])assert.throws(()=>inspectDeviceBackup(makeBackup({settingsVersion:version})),/unsupported/);
+  for(const version of [12,20])assert.throws(()=>inspectDeviceBackup(makeBackup({settingsVersion:version})),/unsupported/);
 });
 
 test('v16 exports and restoration normalize each known historical source before any upload',async t=>{
@@ -246,8 +275,48 @@ test('v16 exports and restoration normalize each known historical source before 
 test('maximum-size V16 backup downloads and restores without rejecting the added preference bytes',async t=>{
   const e=environment(t,{settingsVersion:16});await e.client.connect();
   e.server.file=makeBackup({settingsVersion:16,payloadBytes:BACKUP_MAX_BYTES-BACKUP_HEADER_BYTES});
-  const file=await e.client.downloadBackup();assert.equal(file.length,13908);
+  const file=await e.client.downloadBackup();assert.equal(file.length,BACKUP_MAX_BYTES);
   assert.equal((await e.client.restoreBackup(file)).verified,true);assert.deepEqual(e.server.upload,file);
+});
+test('V19 backup migration accepts V18 and preserves the split-policy tail through verified readback',async t=>{
+  const original=makeBackup({settingsVersion:18}),normalized=original.subarray(64).slice();normalized[6]=19;
+  normalized.set([80,2,2,12,96,3,3,24,1,2],normalized.length-10);
+  const e=environment(t,{settingsVersion:19,migrateBackupPayload:async(payload,versions)=>{
+    assert.deepEqual(versions,{sourceVersion:18,targetVersion:19});assert.deepEqual(payload,original.subarray(64));
+    assert.equal(e.commands.some(c=>c.startsWith('backup begin ')),false);return normalized;
+  }});await e.client.connect();
+  assert.equal(inspectDeviceBackup(await e.client.downloadBackup()).settingsVersion,19);
+  const receipt=await e.client.restoreBackup(original);
+  assert.equal(receipt.sourceSettingsVersion,18);assert.equal(receipt.settingsVersion,19);assert.equal(receipt.verified,true);
+  assert.deepEqual(e.server.file.subarray(64),normalized);
+  assert.throws(()=>inspectDeviceBackup(makeBackup({settingsVersion:19}),{...backupIdentity,settings:'18'}),/belong/);
+});
+
+test('V18-to-V19 backup preparation is off-device and leaves its source file and running state untouched',async t=>{
+  const original=makeBackup({settingsVersion:18}),retained=original.slice(),normalized=original.subarray(64).slice();normalized[6]=19;
+  const e=environment(t,{settingsVersion:19,migrateBackupPayload:async(payload,versions)=>{
+    assert.deepEqual(versions,{sourceVersion:18,targetVersion:19});assert.deepEqual(payload,retained.subarray(64));
+    return normalized;
+  }});await e.client.connect();const commands=e.commands.slice(),running=e.server.file.slice();
+  const prepared=await e.client.prepareBackupRestore(original);
+  assert.deepEqual(prepared,{sourceSettingsVersion:18,settingsVersion:19,sourcePayloadCRC:deviceCRC32(retained.subarray(64)),
+    payloadCRC:deviceCRC32(normalized),migrated:true});
+  assert.deepEqual(e.commands,commands,'Preparation must not issue even a telemetry or transfer command.');
+  assert.deepEqual(e.server.file,running);assert.deepEqual(original,retained);
+  await assert.rejects(e.client.prepareBackupRestore(makeBackup({settingsVersion:20})),/unsupported/);
+  await assert.rejects(e.client.prepareBackupRestore(makeBackup({settingsVersion:18,uid:'ff'.repeat(12)})),/belong/);
+  assert.deepEqual(e.commands,commands);
+});
+
+test('failed or disconnected backup preparation cannot upload, reset or substitute defaults',async t=>{
+  for(const disconnected of [false,true]){
+    let e;e=environment(t,{settingsVersion:19,migrateBackupPayload:async()=>{
+      if(disconnected){await e.client.disconnect();return new Uint8Array(32);}
+      throw Error('The shared C settings codec rejected this backup. No restore was sent.');
+    }});await e.client.connect();
+    await assert.rejects(e.client.prepareBackupRestore(makeBackup({settingsVersion:18})),disconnected?/connection changed/:/codec rejected/);
+    assert.equal(e.commands.some(command=>/^backup (?:begin|put|commit|abort)/.test(command)),false);
+  }
 });
 
 test('restore migrates before any upload, preserves original bytes and verifies the entire normalized payload',async t=>{

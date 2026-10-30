@@ -73,7 +73,7 @@ def main():
         'debug_path_anonymization': debug_paths,
         'memory_bytes': inspection['memory_bytes'], 'reserved_stack_bytes': 8192,
         'tests': [], 'flash_ready': False, 'device_validated': False,
-        'scope': 'Offline instrument with live Harmony workspace, shared constrained voicing and note-role controls, full-surface contextual Harmony exploration, global cluster inversion and settings v18. Legacy settings, expression, physical calibration, library and songs migrate through the shared codec. Size-optimized LTO and bounded cooperative work; no device access.',
+        'scope': 'Offline instrument with physical-half Performance policies, selectable MPE pressure outputs, revised expression indicators and settings v19. Legacy settings, expression, physical calibration, library and songs migrate through the shared codec. Size-optimized LTO and bounded cooperative work; no device access.',
         'limits': ['This source revision has not been flashed or device-validated',
             'strike velocity uses recent ADC rise with millisecond resolution and no added attack window; physical soft/hard presets require target-specific qualification',
             'sensitivity profiles are user-specific configuration',

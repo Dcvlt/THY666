@@ -5,12 +5,20 @@
 
 #define THY_MPE_MEMBERS 15u
 
+enum thy_mpe_pressure_output {
+    THY_MPE_PRESSURE = 0, THY_MPE_CC74 = 1, THY_MPE_CC1 = 2
+};
+
 /* One whole-instrument MIDI 1.0 MPE zone. All channel numbers are zero-based.
  * Configuration is applied only while quiet. These bytes are settings, not a
  * packed persistence format; serialize fields explicitly. */
 typedef struct thy_mpe_config {
     uint8_t enabled, upper_zone, members, bend_range, manager_bend_range;
     uint8_t glide, pad_window, semitone_window;
+    /* Physical LEFT/RIGHT clusters, indexed by the mapped position / 48.
+     * Pressure uses Channel Pressure; the alternatives use member-channel CC.
+     * The optional second axis uses CC74 for Pressure, otherwise Pressure. */
+    uint8_t pressure_output[2];
 } thy_mpe_config;
 
 enum thy_mpe_voice_state {
@@ -26,6 +34,7 @@ typedef struct thy_mpe_voice {
     uint8_t pad, logical, reference, pitch, channel, destinations, state;
     uint8_t pressure, sent_pressure, modifier, modifier_pressure;
     uint8_t timbre, sent_timbre;
+    uint8_t pressure_output; /* Captured through retiring cleanup. */
     int8_t interval;
 } thy_mpe_voice;
 
@@ -66,9 +75,10 @@ int thy_mpe_press(thy_mpe *mpe, uint8_t pad, uint8_t logical,
     uint8_t reference, const int16_t *notes, size_t count,
     uint8_t destinations, uint8_t velocity, uint16_t strum_ms,
     int *out_consumed);
-/* Explicit initial CC74 value for a pressure-mapped timbre profile. The
- * ordinary press API initializes it to the MPE neutral value64. This adds a
- * controller mapping, not another independent physical sensor axis. */
+/* Explicit initial value for the second pressure stage. It maps to CC74 in
+ * Pressure mode and Channel Pressure in CC74/CC1 mode. The ordinary press API
+ * initializes it to neutral CC74=64 or Channel Pressure=0, respectively.
+ * This is another mapping of one physical sensor, not an independent axis. */
 int thy_mpe_press_ex(thy_mpe *mpe, uint8_t pad, uint8_t logical,
     uint8_t reference, const int16_t *notes, size_t count,
     uint8_t destinations, uint8_t velocity, uint16_t strum_ms,

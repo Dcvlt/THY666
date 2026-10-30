@@ -392,8 +392,10 @@ int bridge_expression_configure(int enabled,int upper,int members,int bend,
     if(enabled<0 || enabled>1 || upper<0 || upper>1 || members<1 || members>15 ||
         bend<1 || bend>96 || manager<1 || manager>96 || glide<0 || glide>1 ||
         pads<1 || pads>11 || semitones<1 || semitones>24) return THY_INVALID_ARGUMENT;
-    thy_mpe_config config={(uint8_t)enabled,(uint8_t)upper,(uint8_t)members,
-        (uint8_t)bend,(uint8_t)manager,(uint8_t)glide,(uint8_t)pads,(uint8_t)semitones};
+    thy_mpe_config config=shared_engine.expression_config;
+    config.enabled=(uint8_t)enabled;config.upper_zone=(uint8_t)upper;config.members=(uint8_t)members;
+    config.bend_range=(uint8_t)bend;config.manager_bend_range=(uint8_t)manager;
+    config.glide=(uint8_t)glide;config.pad_window=(uint8_t)pads;config.semitone_window=(uint8_t)semitones;
     return thy_engine_expression_configure(&shared_engine,&config);
 }
 int bridge_expression_value(int field)
@@ -405,6 +407,7 @@ int bridge_expression_value(int field)
     case 5:return c->glide; case 6:return c->pad_window; case 7:return c->semitone_window;
     case 8:return thy_mpe_active(shared_engine.expression);
     case 9: {int count=0;for(unsigned p=0;p<96;++p)count+=thy_mpe_consumed(shared_engine.expression,(uint8_t)p)!=0;return count;}
+    case 10:return c->pressure_output[0];case 11:return c->pressure_output[1];
     default:return -1;
     }
 }

@@ -2105,6 +2105,11 @@ static int expression_editable(const thy_instrument *i,uint8_t p,const thy_expre
     return !profile->enabled || (s->detector_profile==THY_DETECTOR_RELATIVE?
         s->calibration.full_scale>=2u:s->response.pressure_full_scale-s->response.pressure_floor>=2u);
 }
+int thy_instrument_check_expression_profile(const thy_instrument *i,uint8_t p,const thy_expression_profile *profile)
+{
+    return valid(i)&&p<THY_PAD_COUNT&&thy_expression_profile_valid(profile)&&
+        expression_editable(i,p,profile)?THY_OK:THY_INVALID_ARGUMENT;
+}
 int thy_instrument_set_cluster_expression_profile(thy_instrument *i,uint8_t side,const thy_expression_profile *profile)
 {
     if(!valid(i)||side>1u||!thy_expression_profile_valid(profile))return THY_INVALID_ARGUMENT;

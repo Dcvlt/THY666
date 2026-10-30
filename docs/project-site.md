@@ -25,6 +25,8 @@ connection in desktop Chrome or Edge over HTTPS or localhost. The installer rele
 its connection before **Go to Client** navigates there; reconnect explicitly in the Client.
 The guide is at `manual.html`; a topic link such as
 `manual.html#sequencer-editor` opens that topic directly.
+The read-only component reference is at `design-system.html`. It uses the same
+typography, palette and components as the Client; see [the design guide](design-system.md).
 
 The site needs no npm packages, firmware, device or `.env`. Its portable Rust
 updater is built first and verified against its source/build manifest. It stages

@@ -45,9 +45,12 @@ static int text_at(const uint8_t *actual, unsigned y, const char *text)
 {
     uint8_t expected[THY_UI_FRAME_BYTES] = {0};
     unsigned start = y == 1u ? 12u : 2u;
-    thy_ui_draw_text(expected, start, y, text, 25u, 0);
+    unsigned cells = y == 1u ? 19u : 21u;
+    thy_ui_draw_text(expected, start, y, text, cells, 0);
+    /* Check glyph columns and internal/trailing spaces. The final spacer at
+     * x106, the frame at x107 and the status rail are independent content. */
     for (unsigned dy = y; dy <= y + 4u; ++dy)
-        for (unsigned x = y == 1u ? 12u : 0u; x < 108u; ++x)
+        for (unsigned x = start; x < start + cells * 5u - 1u; ++x)
             if (pixel(actual, x, dy) != pixel(expected, x, dy)) return 0;
     return 1;
 }

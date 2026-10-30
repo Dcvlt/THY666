@@ -98,6 +98,27 @@ export function decodeHarmonySnapshot(bytes,identity=null){
   });
   return result;
 }
+export const PAD_MAP_SNAPSHOT_BYTES=1672;
+export function decodePadMapSnapshot(bytes,identity=null){
+  if(!(bytes instanceof Uint8Array)||bytes.length!==PAD_MAP_SNAPSHOT_BYTES)
+    throw new Error('Unsupported pad-label snapshot size.');
+  const data=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+  if(string(bytes,0,8)!=='THYMAP1'||data.getUint16(8,true)!==1||data.getUint16(10,true)!==bytes.length)
+    throw new Error('Unsupported pad-label snapshot format.');
+  const result={sequence:data.getUint32(12,true),now:data.getUint32(16,true),revision:data.getUint32(20,true),
+    layoutRevision:data.getUint32(24,true),stateRevision:data.getUint32(28,true),
+    build:string(bytes,32,16),uid:string(bytes,48,24),schema:string(bytes,72,64)};
+  if(!/^[0-9a-f]{16}$/i.test(result.build)||!/^[0-9a-f]{24}$/i.test(result.uid)||!/^[0-9a-f]{64}$/i.test(result.schema)||
+    identity&&(result.uid.toLowerCase()!==identity.uid?.toLowerCase()||result.build!==identity.build||result.schema!==identity.schema))
+    throw new Error('Pad-label snapshot does not match the connected device identity.');
+  result.pads=Array.from({length:96},(_,pad)=>{
+    const offset=136+pad*16,kind=bytes[offset],text=bytes.subarray(offset+1,offset+16),end=text.indexOf(0);
+    if(kind>4||end<0||text.subarray(0,end).some(byte=>byte<32||byte>126))
+      throw new Error('Invalid pad-label record.');
+    return {pad,kind,label:String.fromCharCode(...text.subarray(0,end))};
+  });
+  return result;
+}
 export const companionNoteName=note=>['C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'][note%12]+(Math.floor(note/12)-1);
 export function paintDeviceOLED(canvas,frame){
   if(!canvas||!(frame instanceof Uint8Array)||frame.length!==1024)return;

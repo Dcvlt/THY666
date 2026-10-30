@@ -85,6 +85,7 @@ test('Backups mounts without connecting or reading, clearly separates preview an
   assert.match(f.mount.textContent, /not firmware, the bootloader or unsaved edits/);
   assert.equal(f.find('backupReadout', 'notice').hidden, true);
   assert.equal(f.find('backupAction', 'help').dataset.help, 'backup');
+  assert.ok(f.find('backupAction','help').className.split(/\s+/).includes('hud-icon-button'));
   f.client.connected = true; f.panel.refresh(); assert.equal(f.find('backupAction', 'read').disabled, false);
   f.client.busy = true; f.panel.refresh(); assert.equal(f.find('backupAction', 'read').disabled, true);
   assert.equal(f.find('backupField', 'file').disabled, true);

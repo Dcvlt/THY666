@@ -128,6 +128,7 @@ static int test_all_live_rows_use_real_instrument_values(void)
             if (edits[n].row == row) covered = 1u;
         if (!covered) {
             int32_t value = get(row);
+            if(value<0&&thy_menu_rows[row].instance_kind==THY_MENU_SIDE)value=thy_menu_rows[row].default_value;
             if(row==THY_ROW_HARMONY_FREEZE||row==THY_ROW_HARMONY_TARGETROOT||row==THY_ROW_HARMONY_TARGETSCALE){
                 /* Transient Harmony actions require its active workspace.
                  * Their success path has the live workspace fixture. */
@@ -143,7 +144,7 @@ static int test_all_live_rows_use_real_instrument_values(void)
     CHECK(engine.scale == 0 && instrument.performance.root == 2);
     CHECK(instrument.transpose[0] == 7 && instrument.transpose[1] == 7);
     CHECK(instrument.performance.chord_octave == 1 && instrument.performance.melody_octave == -1);
-    CHECK(instrument.fixed_velocity == 88 && instrument.pressure_enabled == 1);
+    CHECK(engine.performance[0].velocity == 88 && engine.performance[1].velocity == 88 && instrument.pressure_enabled == 1);
     CHECK(instrument.performance.inversion == 2 && instrument.performance.spread == 1);
     CHECK(instrument.performance.upper_octaves == 1 && instrument.performance.strum == 1);
     CHECK(instrument.performance.strum_ms == 30 && instrument.performance.strum_order == 2);
@@ -162,7 +163,7 @@ static int test_all_live_rows_use_real_instrument_values(void)
     CHECK(instrument.play_nav[0] == THY_PLAY_CHORDS && instrument.play_nav[1] == THY_PLAY_SENSITIVITY);
     CHECK(instrument.play_nav[2] == THY_PLAY_LIGHTS && instrument.play_nav[3] == THY_PLAY_VIEWS);
     CHECK(thy_instrument_set_expression(&instrument, 91, 0) == THY_OK);
-    CHECK(get(THY_ROW_PERFORMANCE_VELOCITY) == 91 && get(THY_ROW_PERFORMANCE_AFTERTOUCH) == 0);
+    CHECK(get(THY_ROW_PERFORMANCE_VELOCITY) == 88 && instrument.fixed_velocity == 91 && get(THY_ROW_PERFORMANCE_AFTERTOUCH) == 0);
     CHECK(engine.state.revision == live_count);
     unsigned actions = 0u, cleanup_revisions = 0u;
     for (uint16_t row = 0u; row < THY_MENU_ROW_COUNT; ++row)
@@ -188,7 +189,7 @@ static int test_all_live_rows_use_real_instrument_values(void)
                 row == THY_ROW_ENGINES_ARP || row == THY_ROW_ENGINES_SEQUENCER ||
                 /* Ordinary receiver setup emits an explicit RPN batch and
                  * is covered independently below. */
-                row == THY_ROW_MIDI_BENDSETUP ||
+                row == THY_ROW_MIDI_BENDSETUP || row == THY_ROW_PERFORMANCE_BENDSETUP ||
                 /* Scoped sensitivity reset and muted acquisition have their
                  * own fixtures; their actions must not run blindly here. */
                 row == THY_ROW_SENSITIVITY_PICK || row == THY_ROW_SENSITIVITY_RESET ||
@@ -244,6 +245,16 @@ static int test_ordinary_bend_setup_uses_selected_route_and_requires_quiet_non_m
     static const uint8_t controllers[] = {101u, 100u, 6u, 38u, 101u, 100u};
     static const uint8_t values[] = {0u, 0u, 12u, 0u, 127u, 127u};
     CHECK(initialize());
+    /* Frozen route policies remain available to legacy codec/API fixtures,
+     * while every visible playing control now belongs to Performance. */
+    const uint16_t retired[]={THY_ROW_MIDI_VELOCITY,THY_ROW_MIDI_PRESSURE,
+        THY_ROW_MIDI_PRESSUREBEND,THY_ROW_MIDI_BENDRANGE,THY_ROW_MIDI_BENDSETUP};
+    for(unsigned mode=0u;mode<2u;++mode){
+        CHECK(thy_state_set_design_mode(&engine.state,(uint8_t)mode)==THY_STATE_OK);
+        for(unsigned n=0u;n<sizeof retired/sizeof retired[0];++n)
+            CHECK(!thy_state_row_visible(&engine.state,retired[n]));
+    }
+    CHECK(thy_state_set_design_mode(&engine.state,0u)==THY_STATE_OK);
     CHECK(set(THY_ROW_MIDI_ROUTINGPROFILE, THY_ROUTING_SPLIT) == THY_STATE_OK);
     CHECK(set(THY_ROW_MIDI_ROUTETARGET, 2) == THY_STATE_OK);
     CHECK(set(THY_ROW_MIDI_CHANNEL, 12) == THY_STATE_OK);
@@ -1084,75 +1095,74 @@ static int test_performance_velocity_scope_is_atomic_and_preserves_calibration(v
 static int test_performance_route_aliases_share_policies_and_capture_drafts(void)
 {
     CHECK(initialize());
-    const uint16_t target_rows[]={THY_ROW_MIDI_ROUTETARGET,THY_ROW_PERFORMANCE_ROUTETARGET};
-    const uint16_t aliases[]={THY_ROW_PERFORMANCE_PRESSUREMODE,THY_ROW_PERFORMANCE_PRESSUREBEND,
-        THY_ROW_PERFORMANCE_BENDRANGE};
-    const uint16_t canonical[]={THY_ROW_MIDI_PRESSURE,THY_ROW_MIDI_PRESSUREBEND,THY_ROW_MIDI_BENDRANGE};
-    for(unsigned n=0;n<3u;++n){
-        CHECK(thy_state_instance_count(aliases[n])==9u);
-        CHECK(thy_menu_rows[aliases[n]].instance_kind==THY_MENU_ROUTE);
+    CHECK(!thy_state_row_visible(&engine.state,THY_ROW_PERFORMANCE_ROUTETARGET));
+    const uint16_t fields[]={THY_ROW_PERFORMANCE_VELOCITY,THY_ROW_PERFORMANCE_PRESSUREMODE,
+        THY_ROW_PERFORMANCE_PRESSUREBEND,THY_ROW_PERFORMANCE_BENDRANGE,
+        THY_ROW_PERFORMANCE_PROFILEENABLED,THY_ROW_PERFORMANCE_MPEOUTPUT};
+    for(unsigned n=0;n<sizeof(fields)/sizeof(fields[0]);++n){
+        CHECK(thy_state_instance_count(fields[n])==3u);
+        CHECK(thy_menu_rows[fields[n]].instance_kind==THY_MENU_SIDE);
     }
-    for(unsigned profile=0;profile<3u;++profile){
-        CHECK(set(THY_ROW_MIDI_ROUTINGPROFILE,(int32_t)profile)==THY_STATE_OK);
-        for(unsigned target=0;target<9u;++target){
-            int allowed=profile==THY_ROUTING_WHOLE?target==0u:
-                profile==THY_ROUTING_SPLIT?target==1u || target==2u:target>=3u;
-            for(unsigned n=0;n<2u;++n){
-                CHECK(thy_state_option_allowed(&engine.state,target_rows[n],(int32_t)target)==allowed);
-                uint8_t before=engine.route_target;
-                CHECK(set(target_rows[n],(int32_t)target)==(allowed?THY_STATE_OK:THY_STATE_INVALID));
-                CHECK(engine.route_target==(allowed?target:before));
-            }
-            if(!allowed)continue;
-            CHECK(get(THY_ROW_MIDI_ROUTETARGET)==(int32_t)target && get(THY_ROW_PERFORMANCE_ROUTETARGET)==(int32_t)target);
-            for(unsigned n=0;n<3u;++n){
-                int32_t value=n==2u?(int32_t)target+1:(int32_t)(target%3u);
-                CHECK(set(aliases[n],value)==THY_STATE_OK && get(canonical[n])==value);
-                value=n==2u?24-(int32_t)target:(value+1)%3;
-                CHECK(set(canonical[n],value)==THY_STATE_OK && get(aliases[n])==value);
-                int32_t observed=-1;
-                CHECK(thy_state_get_instance(&engine.state,aliases[n],(uint8_t)target,&observed)==THY_STATE_OK && observed==value);
-            }
-        }
-    }
-    CHECK(!thy_core_queued(&core)); /* No setup or musical output on policy edits. */
-    CHECK(set(THY_ROW_MIDI_ROUTINGPROFILE,THY_ROUTING_SPLIT)==THY_STATE_OK);
-    CHECK(set(THY_ROW_PERFORMANCE_ROUTETARGET,1)==THY_STATE_OK);
-    CHECK(set(THY_ROW_MIDI_PRESSURE,THY_CHANNEL_PRESSURE_OFF)==THY_STATE_OK);
-    CHECK(set(THY_ROW_PERFORMANCE_ROUTETARGET,2)==THY_STATE_OK);
+    /* Legacy route values are inherited until the player makes a side policy. */
+    CHECK(set(THY_ROW_MIDI_ROUTINGPROFILE,THY_ROUTING_WHOLE)==THY_STATE_OK);
+    CHECK(set(THY_ROW_MIDI_ROUTETARGET,0)==THY_STATE_OK);
     CHECK(set(THY_ROW_MIDI_PRESSURE,THY_CHANNEL_PRESSURE_POLY)==THY_STATE_OK);
-    CHECK(set(THY_ROW_MIDI_ROUTETARGET,1)==THY_STATE_OK);
+    CHECK(get(THY_ROW_PERFORMANCE_PRESSUREMODE)==THY_CHANNEL_PRESSURE_POLY);
+    CHECK(set(THY_ROW_PERFORMANCE_VELOCITYTARGET,1)==THY_STATE_OK);
+    CHECK(set(THY_ROW_PERFORMANCE_PRESSUREMODE,THY_CHANNEL_PRESSURE_CHANNEL)==THY_STATE_OK);
+    CHECK(set(THY_ROW_PERFORMANCE_PRESSUREBEND,THY_CHANNEL_BEND_UP)==THY_STATE_OK);
+    CHECK(set(THY_ROW_PERFORMANCE_VELOCITY,71)==THY_STATE_OK);
+    CHECK(set(THY_ROW_PERFORMANCE_BENDRANGE,7)==THY_STATE_OK);
+    CHECK(set(THY_ROW_PERFORMANCE_VELOCITYTARGET,2)==THY_STATE_OK);
+    CHECK(get(THY_ROW_PERFORMANCE_PRESSUREMODE)==THY_CHANNEL_PRESSURE_POLY);
+    CHECK(set(THY_ROW_PERFORMANCE_PRESSUREMODE,THY_CHANNEL_PRESSURE_OFF)==THY_STATE_OK);
+    CHECK(set(THY_ROW_PERFORMANCE_VELOCITY,113)==THY_STATE_OK);
+    CHECK(set(THY_ROW_PERFORMANCE_VELOCITYTARGET,0)==THY_STATE_OK);
+    CHECK(get(THY_ROW_PERFORMANCE_PRESSUREMODE)==-1&&get(THY_ROW_PERFORMANCE_VELOCITY)==-1);
+    char label[24];
+    CHECK(thy_state_format(&engine.state,THY_ROW_PERFORMANCE_VELOCITY,0,label,sizeof label)==THY_STATE_OK);
+    CHECK(!strcmp(label,"Mixed"));
+    CHECK(get(THY_ROW_MIDI_PRESSURE)==THY_CHANNEL_PRESSURE_POLY);
+    /* Drafts retain their physical scope, independently of both selectors. */
+    CHECK(set(THY_ROW_PERFORMANCE_VELOCITYTARGET,1)==THY_STATE_OK);
     CHECK(thy_state_begin_edit(&engine.state,THY_ROW_PERFORMANCE_PRESSUREMODE)==THY_STATE_OK);
     CHECK(engine.state.edit_instance==1u);
-    CHECK(set(THY_ROW_PERFORMANCE_ROUTETARGET,2)==THY_STATE_OK);
-    CHECK(thy_state_edit_set(&engine.state,THY_CHANNEL_PRESSURE_CHANNEL)==THY_STATE_OK);
+    CHECK(set(THY_ROW_PERFORMANCE_VELOCITYTARGET,2)==THY_STATE_OK);
+    CHECK(thy_state_edit_set(&engine.state,THY_CHANNEL_PRESSURE_POLY)==THY_STATE_OK);
     CHECK(thy_state_commit(&engine.state)==THY_STATE_OK);
-    CHECK(get(THY_ROW_MIDI_PRESSURE)==THY_CHANNEL_PRESSURE_POLY);
-    int32_t left=-1;
-    CHECK(thy_state_get_instance(&engine.state,THY_ROW_MIDI_PRESSURE,1u,&left)==THY_STATE_OK && left==THY_CHANNEL_PRESSURE_CHANNEL);
-    CHECK(set(THY_ROW_MIDI_BENDRANGE,7)==THY_STATE_OK);
-    static uint8_t before[THY_SETTINGS_PAYLOAD_MAX],after[THY_SETTINGS_PAYLOAD_MAX];
-    size_t before_bytes=0,after_bytes=0;
-    CHECK(thy_settings_encode(&engine,before,sizeof before,&before_bytes));
-    CHECK(thy_state_begin_edit(&engine.state,THY_ROW_PERFORMANCE_BENDRANGE)==THY_STATE_OK);
-    CHECK(engine.state.edit_instance==2u);
-    CHECK(thy_state_edit_set(&engine.state,21)==THY_STATE_OK);
-    CHECK(set(THY_ROW_MIDI_ROUTETARGET,1)==THY_STATE_OK);
-    CHECK(thy_state_cancel(&engine.state)==THY_STATE_OK);
-    CHECK(thy_state_get_instance(&engine.state,THY_ROW_MIDI_BENDRANGE,2u,&left)==THY_STATE_OK && left==7);
-    CHECK(thy_settings_encode(&engine,after,sizeof after,&after_bytes));
-    CHECK(after_bytes==before_bytes && !memcmp(before,after,before_bytes));
-    /* No alias state is serialized: the existing V13 policies restore once,
-     * and both menus immediately project the same restored route values. */
-    CHECK(set(THY_ROW_PERFORMANCE_PRESSUREMODE,THY_CHANNEL_PRESSURE_OFF)==THY_STATE_OK);
-    instrument.input_enabled=0u;
-    CHECK(thy_settings_apply(&engine,before,before_bytes));
-    CHECK(set(THY_ROW_PERFORMANCE_ROUTETARGET,1)==THY_STATE_OK);
-    CHECK(get(THY_ROW_PERFORMANCE_PRESSUREMODE)==THY_CHANNEL_PRESSURE_CHANNEL && get(THY_ROW_MIDI_PRESSURE)==THY_CHANNEL_PRESSURE_CHANNEL);
-    CHECK(set(THY_ROW_MIDI_ROUTETARGET,2)==THY_STATE_OK);
-    CHECK(get(THY_ROW_PERFORMANCE_BENDRANGE)==7 && get(THY_ROW_MIDI_BENDRANGE)==7);
-    CHECK(thy_settings_encode(&engine,after,sizeof after,&after_bytes));
-    CHECK(after_bytes==before_bytes && !memcmp(before,after,before_bytes) && !thy_core_queued(&core));
+    CHECK(get(THY_ROW_PERFORMANCE_PRESSUREMODE)==THY_CHANNEL_PRESSURE_OFF);
+    CHECK(engine.performance[0].aftertouch==2u&&engine.performance[1].aftertouch==1u);
+    /* Override curves are preserved; a held selected contact blocks the whole union. */
+    thy_expression_profile profile={0u,81u,1u,2u};
+    CHECK(thy_instrument_set_pad_expression_profile(&instrument,0,&profile)==THY_OK);
+    CHECK(set(THY_ROW_PERFORMANCE_VELOCITYTARGET,0)==THY_STATE_OK);
+    instrument.sensors[4].held=1u;
+    CHECK(set(THY_ROW_PERFORMANCE_PROFILEENABLED,1)==THY_STATE_BLOCKED);
+    CHECK(!instrument.expression_profiles[0].enabled&&!instrument.expression_profiles[1].enabled);
+    CHECK(!instrument.pad_expression_profiles[0].enabled);
+    instrument.sensors[4].held=0u;
+    CHECK(set(THY_ROW_PERFORMANCE_PROFILEENABLED,1)==THY_STATE_OK);
+    CHECK(instrument.expression_profiles[0].enabled&&instrument.expression_profiles[1].enabled);
+    CHECK(instrument.expression_profile_overridden[0]&&instrument.pad_expression_profiles[0].split==81u);
+    CHECK(instrument.pad_expression_profiles[0].pressure_curve==1u&&instrument.pad_expression_profiles[0].aftertouch_curve==2u);
+    CHECK(set(THY_ROW_PERFORMANCE_VELOCITYTARGET,1)==THY_STATE_OK);
+    CHECK(set(THY_ROW_PERFORMANCE_MPEOUTPUT,THY_MPE_CC1)==THY_STATE_OK);
+    CHECK(engine.expression_config.pressure_output[0]==THY_MPE_CC1&&!engine.expression_config.pressure_output[1]);
+    /* Physical half policy survives every role/routing profile without changing route values. */
+    for(unsigned routing=0;routing<3u;++routing){
+        CHECK(set(THY_ROW_MIDI_ROUTINGPROFILE,(int32_t)routing)==THY_STATE_OK);
+        CHECK(thy_instrument_set_cluster_swap(&instrument,1)==THY_OK);
+        CHECK(get(THY_ROW_PERFORMANCE_VELOCITY)==71);
+        CHECK(get(THY_ROW_PERFORMANCE_PRESSUREMODE)==THY_CHANNEL_PRESSURE_POLY);
+        CHECK(thy_instrument_set_cluster_swap(&instrument,0)==THY_OK);
+    }
+    static uint8_t saved[THY_SETTINGS_PAYLOAD_MAX],again[THY_SETTINGS_PAYLOAD_MAX];size_t bytes=0,after_bytes=0;
+    CHECK(thy_settings_encode(&engine,saved,sizeof saved,&bytes));
+    CHECK(set(THY_ROW_PERFORMANCE_VELOCITY,42)==THY_STATE_OK);
+    instrument.input_enabled=0u;CHECK(thy_settings_apply(&engine,saved,bytes));
+    CHECK(engine.performance[0].velocity==71u&&engine.performance[1].velocity==113u);
+    CHECK(thy_settings_encode(&engine,again,sizeof again,&after_bytes));
+    CHECK(bytes==after_bytes&&!memcmp(saved,again,bytes)&&!thy_core_queued(&core));
     return 1;
 }
 

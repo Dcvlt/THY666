@@ -117,7 +117,7 @@ static int saved_configuration_and_label(void)
     engine.harmony.low_note=36;engine.harmony.high_note=84;
     CHECK(attack(0));CHECK(release(0));
     static uint8_t encoded[THY_SETTINGS_PAYLOAD_MAX];size_t used=0;
-    CHECK(thy_settings_encode(&engine,encoded,sizeof encoded,&used));CHECK(thy_settings_payload_version(encoded,used)==18);
+    CHECK(thy_settings_encode(&engine,encoded,sizeof encoded,&used));CHECK(thy_settings_payload_version(encoded,used)==THY_SETTINGS_VERSION);
     CHECK(thy_settings_validate(encoded,used,70));CHECK(thy_instrument_set_input_enabled(&instrument,0)==THY_OK);
     engine.state.reset_open=1u;CHECK(!thy_settings_can_apply(&engine,encoded,used));
     CHECK(thy_engine_harmony_action(&engine,THY_HARMONY_ACTIVATE,0)==THY_STATE_BLOCKED);

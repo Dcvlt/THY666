@@ -454,3 +454,103 @@ are retained in the audit and excluded from the successful transcript. No claim
 of complete bus capture or raw-flash readback follows. Temporary Arp settings
 were restored and saved. A new cold-boot or full-state-restoration check was not
 part of this focused theme test.
+
+
+## Scoped expression and status rail
+
+The prepared `1c5bad7c961c4d8c` build adds physical-half Performance policies,
+Pressure/CC74/CC1 MPE mapping and the revised status icons. It has not been
+flashed or measured on hardware.
+
+| Allocation | Used | Remaining | Change from tested OLED build |
+| --- | ---: | ---: | ---: |
+| Application image / 512 KiB | 455,628 B | 68,660 B | +3,464 B |
+| Static SRAM below the reserved stack | 101,784 B | 21,092 B contiguous | +12 B |
+| CCM / 64 KiB | 55,672 B | 9,864 B | +16 B |
+| Reserved stack | 8,192 B | Runtime peak unmeasured for this build | Unchanged |
+
+Static SRAM occupies a 101,788-byte span, including four alignment bytes. The
+application's allocated flash sections total 455,600 B; the raw image includes
+28 additional address-gap bytes. Settings V19 appends ten bytes after the frozen
+V18 prefix; the aligned maximum journal record grows by twelve bytes to 13,888 B.
+The 256 KiB journal reservation and four-slot write allocation are unchanged.
+
+The MPE member structure remains 24 B. Its target workspace grows by four bytes
+to 492 B; the maximum nine-event service batch and two-member service limit are
+unchanged. Status glyph rows use 252 B of constant data and no heap. Per-half
+indicator reads inspect at most 96 fixed pad records; neither new input policy
+resolution nor pressure-output selection introduces a scheduler or unbounded loop.
+
+A standalone Cortex-M4 `-Oz`, non-LTO inspection reports an 80-byte local frame
+for Performance readback and 744 B for the setter, including its inlined explicit
+bend-setup batch. This is not a linked worst-case stack bound and excludes
+callees/interrupts. Bend setup deduplicates at most nine routes across three
+outputs, rejects contradictory ranges on a shared selected channel, and queues
+its complete RPN batch atomically. It runs only after explicit selection while
+musical ownership is quiet. Ordinary policy edits and restores emit no setup.
+
+Host tests cover split scope, swapped roles, sequencer input routes, held-owner
+snapshots, queue backpressure, release cleanup, stage/profile atomicity and
+V18-to-V19 migration. The unchanged modeled three-/five-note Arp display timing
+checks remain part of the instrument tests. Hardware latency, expression
+interoperability and current-build stack high-water still require device tests.
+
+
+### Simple separator correction
+
+The `db14dace389c1a93` follow-up changes only Simple's right frame: the rules
+meet the dotted spine through the supplied three-pixel diagonal elbows.
+Existing content-aligned notches and glyph columns are preserved, including
+long labels. The frame adds bounded work: two three-row junction checks,
+two 3 × 3 clears and fixed pixel loops; no heap or persistent allocation.
+
+Its application image is 455,816 B (+188 B from `1c5bad7c`), leaving 68,472 B
+before settings storage. Allocated flash sections total 455,788 B. Static SRAM
+remains 101,784 B (21,092 B contiguous below the stack); CCM remains 55,672 B
+with 9,864 B free. The stack reservation and settings format are unchanged.
+Pixel-coordinate and text-boundary tests cover the corrected joins. The Client
+and documentation use regenerated C frames. Focused board checks subsequently
+passed the frame, expression indicators, split velocity/AT/bend and MPE CC74/CC1
+output. Recorded notes released cleanly. The observed post-boot stack peak was
+5,312 / 8,192 B; this sample is not a worst-case bound.
+
+### MIDI menu and output-side feedback
+
+Prepared build `1e43a70e0667aae9` retires the duplicate MIDI expression rows while
+preserving their stored values and IDs. USB/DIN side ticks distinguish a whole
+physical half from mixed output zones. Their readback visits at most six active
+routes per output icon and allocates no persistent state.
+
+The raw application is **456,080 B**, leaving **68,208 B** of application flash:
+264 B more than the tested separator build. Static SRAM remains **101,784 B**
+(101,788 B including alignment), leaving **21,092 B** below the reserved 8 KiB
+stack. CCM remains **55,672 / 65,536 B**. Settings V19 and its journal allocation
+are unchanged. The package adds 48 B of report alignment and a 78 B header;
+offline Rust inspection and synthetic transfer pass. Core and instrument tests
+pass. This build has not been flashed; its side ticks and menu cleanup still
+need a focused device check.
+
+### Read-only Client pad labels
+
+Prepared build `bce2819acb736568` adds the optional physical-pad label map.
+It reuses the existing 1,680-byte transfer staging area for a 1,672-byte frame.
+One pure pad plan runs per foreground pass; no heap, extra owner pool or
+musical scheduler is added. Pending work expires or cancels on map changes.
+
+| Resource | Occupied span | Remaining |
+| --- | ---: | ---: |
+| Application image / 512 KiB | 458,464 B | 65,824 B |
+| Static SRAM, including alignment | 101,796 B | 21,084 B below the reserved stack |
+| CCM / 64 KiB | 55,672 B | 9,864 B |
+
+The image grows by 2,384 B and SRAM by 8 B from the preceding prepared menu/icon
+build. The 8 KiB stack reservation, settings V19 and journal allocation stay
+unchanged. A pinned Cortex-M4 `-Oz` non-LTO assembly inspection gives local
+frames of 24 B for service, 104 B for its map key and 240 B for label planning.
+These exclude callees, main and interrupts, and are not a linked worst-case bound.
+
+Core/instrument suites, current-frame reproduction, frozen-artifact/reset review
+and offline Rust package validation pass. Client label requests are optional,
+revision-cached and limited to a visible label overlay; pending work is bounded
+before returning to base feedback. Actual device timing, label refresh during
+playing and the new artifact's stack watermark remain hardware checks.

@@ -52,8 +52,8 @@ musical display.
 The **Web / OLED** switch sits directly above the center screen. The diagonal
 arrow beside it expands that existing screen in place between the pad halves;
 press it again to return to the compact layout. Expansion does not open a
-dialog or duplicate the screen. These controls appear after connection, along
-with Fit, 1:1 and pad labels. The Board heading shows **THY666** offline and
+dialog or duplicate the screen. These controls and Labels appear after
+connection; the board always fits the available width. The Board heading shows **THY666** offline and
 **THY666 / running build** when connected. The larger header logo is centered
 between the two interrupted header rails. Application tabs sit on the left and
 the connection action on the right, with balanced space above and below the
@@ -70,11 +70,21 @@ Parameters edits use the device's existing actions and validation. Physical
 playing remains owned by the controller. The wireframe shown before connection
 has no interactive controls or browser audio preview.
 
+**Labels** reads the current pad assignments from supported firmware, including
+notes, chords, control pads and sequencer steps. The read runs only while labels
+are visible and refreshes when assignments change. Labels describe the next
+press; notes already held keep their original pitches and release routes. Older
+firmware without the label service explains that an update is needed.
+
 Parameters reads values and edit targets from the board. **Apply to device**
 sends an explicit change; Cancel sends nothing. A missing value stays Reading
 rather than falling back to a preview value. Changing a physical route or pad
 selection does not redirect an existing browser draft. Browsing categories in
-the browser does not navigate the physical OLED menu.
+the browser does not navigate the physical OLED menu. Performance uses a
+physical **Settings for: Both / Left / Right** scope; MIDI routes and Sensitivity
+keep separate targets. Mixed values remain explicit until you apply one value
+to the selected scope. MPE enable and context-pad controls remain global. See
+[Expression](mpe-expression.md) for pressure-message choices and screen indicators.
 
 Harmony projects the board's cached analysis and physical pad hints. Its virtual
 shortcuts require the physical Harmony workspace; opening device Settings or a
@@ -154,7 +164,7 @@ Pink or Monochrome. Dark / Red remains the default, and existing browser color
 preferences are retained. Both choices apply to Update, Client and Documentation
 and are saved only in this browser when local storage is available. The
 board chassis and touch controls follow the selected appearance. Pad hues and
-held feedback remain musical; the OLED/Web framebuffer alone stays black with
+held feedback remain musical; OLED alone stays black with
 white display content. These preferences do not change firmware settings, live
 refresh or MIDI behavior.
 
@@ -162,12 +172,25 @@ The Accent color menu previews every option with its own swatch, including
 the currently selected color. UP/DOWN or HOME/END move through the open list;
 ENTER/SPACE applies. ESC closes the list first, then the settings dialog.
 
-The Board cockpit stays quiet offline, with a restrained wireframe in the
-selected accent. An explicit board connection reveals the fuller HUD for that session:
-the contact matrix, pressure gauges, circle of fifths and clock/engine readings
-use the received device snapshot. Missing values remain unavailable; decoration
-does not supply simulated device telemetry. The original physical control
+The Board cockpit stays quiet offline. Its first complete device snapshot starts
+a short assembly: circuit traces, the playing surface, then the live panels.
+Subtle frame motion remains while connected; readings and controls stay still.
+Motion pauses offscreen and respects the system's reduced-motion preference.
+The sequence never delays incoming note feedback. The original physical control
 layout, OLED/Web choice and connected-pad inspection behavior remain intact.
+
+Panels adapt to what you are playing:
+
+| Panel | What to look for |
+| --- | --- |
+| Expression | Left/right pressure, captured strike velocity and the selected pressure destination. Aftertouch-stage marks explain the split. |
+| Arps | A dim pitch pool with sounding notes brightened. This is the combined pool, rather than an individual Arp step display. |
+| Harmony | Current chord → selected suggestion, the board's explanation, shared/changed tones and recent chord history. |
+| Sequencer | Selected track, stopped/playing state and distinct armed/recording feedback. |
+
+Missing values stay unavailable. The Client does not invent MPE member activity,
+Arp phase or track playheads from its own clock. Detailed per-voice and playback
+position telemetry remains future work.
 
 The startup presentation draws the logo's diamonds in sequence, then its center
 numbers and broken-line ripples on black. The app appears once initialization
@@ -180,8 +203,9 @@ board-action diagrams and option tables. These examples are read-only.
 ## What a .thyb backup contains
 
 **Read backup** explicitly downloads the connected instrument's complete
-applied settings payload (development V18): musical preferences, routes, ordinary expression
-and MPE configuration, both clusters' sensitivity/velocity/release defaults,
+applied settings payload (development V19): musical preferences, routes, ordinary expression
+and MPE configuration, physical-half playing policies and pressure destinations,
+both clusters' sensitivity/velocity/release defaults,
 per-pad calibration parameters/overrides/guards, custom scales/chords/six sets
 and the current song. Applied values can be awaiting the normal idle autosave;
 the backup captures current applied configuration rather than only a journal
@@ -189,7 +213,7 @@ slot. Unapplied editor/calibration drafts, learned ADC baselines, held notes,
 playback positions and runtime owners are excluded.
 
 The file is **THYB version 1**, with a 64-byte header and a maximum of
-**13,901 bytes**. Header and payload have independent IEEE CRC32 checks; the
+**13,918 bytes**. Header and payload have independent IEEE CRC32 checks; the
 transfer also checks the complete file. The header binds board UID, target,
 adapter/catalog compatibility and settings version. Source build and schema
 fingerprint are provenance: a compatible backup can be restored to the
@@ -271,8 +295,11 @@ installer finishes, **Go to Client** releases its port and opens the Client; use
 Harmony wire version 4 uses 800 bytes: the compatible prefix plus the full
 48-pad pitch-class map, recent history, exploration settings and selected reason.
 Older wire versions cannot drive these revised Harmony controls. Settings V18
-appends four bytes after the frozen V17 prefix; migration retains musical data
-and physical calibration while replacing retired Harmony map/view preferences.
+appended four bytes after the frozen V17 prefix. V19 adds ten physical-half
+playing-policy/MPE-mapping bytes after that unchanged prefix. Migration retains
+musical data and physical calibration; V18 imports retain their routed behavior
+and initialize MPE output to Pressure. V19 migration and restoration are
+host-tested and await hardware qualification.
 
 ## Compact navigation and guided tasks
 
@@ -309,8 +336,8 @@ worst-case guarantee. Flash is the application partition, not song storage.
 **System → Storage** retains saved-state and song usage. Older firmware still
 supports MIDI activity; resource gauges stay unavailable until updated.
 
-The resource telemetry and System page are host-tested; hardware qualification
-of their values and timing overhead is pending.
+Focused board checks passed the resource display and reported values. Worst-case
+timing overhead and stack use still require dedicated load measurements.
 
 Board adds contextual panels for MPE, Arps, Sequencer and Harmony when active.
 Harmony groups the retained chord and physical map, suggestions, exploration

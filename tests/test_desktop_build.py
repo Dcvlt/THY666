@@ -52,6 +52,15 @@ class DesktopBuildTests(unittest.TestCase):
         self.assertNotIn("generated/chords.runtime.json", files)
         self.assertNotIn(".env", files)
 
+    def test_shared_interface_assets_are_staged_without_a_second_asset_copy(self):
+        shared = {"ui-system.js": b"export const UI_ICON_NAMES = [];\n",
+                  "ui-system.css": b".ui-icon { color: currentColor; }\n"}
+        for name, data in shared.items():
+            (self.web / name).write_bytes(data)
+        files = stage.web_assets()
+        for name, data in shared.items():
+            self.assertEqual(files[name], data)
+
     def test_macos_development_bundle_contains_exact_executable_and_scoped_resources(self):
         import plistlib
         (self.root / "desktop").mkdir()

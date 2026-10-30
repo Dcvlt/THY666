@@ -3,6 +3,9 @@ import { createBrowserUpdaterClient } from './installer/browser-updater-client.j
 import { initializeUpdaterPanel } from './installer/updater-panel.js';
 import { createCore } from './client/core.js';
 import { createBackupPayloadMigrator } from './client/backup-migration.js';
+import { initializeUIComponents } from './ui-system.js';
+
+initializeUIComponents();
 
 const mount = document.querySelector('#browser-updater');
 const status = document.querySelector('#browser-install-status');

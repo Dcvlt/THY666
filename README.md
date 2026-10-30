@@ -32,7 +32,8 @@ available in Client → Documentation.
   octave folding, guitar voicings and a live Harmony workspace with playable
   suggestions, melody context, dedicated views and explicit key previews.
 - **Expression:** strike velocity, sensitivity and calibration, aftertouch,
-  pressure bend and optional MPE.
+  pressure bend and optional MPE, with physical-half playability settings and
+  selectable MPE pressure messages.
 - **Rhythm and routing:** two Arps, a 21-track sequencer, DIN and USB MIDI,
   with configurable channels and destinations.
 - **A connected Client:** live board views, settings, diagnostics, configuration
@@ -43,9 +44,15 @@ surface; screen pads inspect its state. On phones, a compact navigation drawer
 keeps pages accessible. Backups separate saving from restoration; Diagnostics
 offers bounded live report charts, including DIN output activity. New firmware
 also exposes CPU timing, fixed RAM allocation, observed stack peak and firmware
-flash in Diagnostics and System → Resources; focused board checks passed. Board feedback adapts
-to active engines; Harmony groups suggestions and playing controls. The guide
+flash in Diagnostics and System → Resources; focused board checks passed. Board
+feedback adapts to active engines: connection assembly, expression routing,
+Arp pitch ribbons, Harmony movement/history and clear recording states.
+Labels read the board's assignments; the Web screen follows the app theme.
+These Client refinements are software-tested and await a connected board check.
+Harmony groups suggestions and playing controls. The guide
 uses illustrations, expandable reference sections and phone-friendly tables.
+The Client and project site share a [component library and design guide](docs/design-system.md),
+including a read-only reference for themes, controls, states and motion.
 
 ## Current status
 
@@ -61,8 +68,19 @@ device image, and configuration preservation or automatic rollback is not
 promised. Follow the [installation guide](docs/installation.md) and the notes
 attached to the exact release you choose.
 
-The development build uses settings V18. Harmony offers a full 48-pad chord
-surface, fixed root columns, adaptive or locked qualities and contextual in/out-key
+The development build uses settings V19. **Performance → Settings for** scopes
+velocity, Aftertouch, bend and MPE pressure output to Both, Left or Right; MPE
+enable and its zone remain global. Pressure remains the default MPE message,
+with CC74 and CC1 alternatives for different synth assignments. These additions
+and the revised play-screen status icons passed focused board checks, including
+split expression output and clean releases. The later USB/DIN side ticks and
+MIDI menu cleanup remain host-tested and await a device check.
+Performance is the expression hub; MIDI keeps routing, clock and input controls.
+USB/DIN icons combine active routes, with physical-side ticks distinguishing
+whole-half output from mixed zones. See [Expression](docs/mpe-expression.md).
+
+Harmony offers a full 48-pad chord surface, fixed root columns, adaptive or
+locked qualities and contextual in/out-key
 suggestions in one Fifths view. Exploration, readable pad guidance, clean DIN
 releases and cold-boot persistence have been exercised on a board; broader
 policy and load tests remain. **System → Swap clusters** exchanges musical roles;
@@ -81,6 +99,8 @@ scale assignments live in Controls. System stays last in global Settings.
 When restoring a compatible older backup, the Client uses an isolated shared C
 codec to migrate it before upload,
 keeps the original file, and verifies the complete saved payload afterward.
+Update verification checks the same supported settings versions and prepares any
+needed backup conversion off-device before a separate restore confirmation.
 V13-to-V15 restoration of the captured Windows configuration passed saved
 readback and a full power-off check. V14 migration and broader saved-material
 coverage still need physical qualification.

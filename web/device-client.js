@@ -3,7 +3,16 @@
  * transactions. Construction never connects, writes or asks for a port.
  */
 export const BACKUP_HEADER_BYTES=64;
-export const BACKUP_MAX_BYTES=13908;
+export const BACKUP_MAX_BYTES=13918;
+// One bounded Client contract for backup inspection, migration and update
+// verification. Regression checks bind the upper bound to the generated C
+// codec, so a settings upgrade cannot silently leave a stale verifier behind.
+export const BACKUP_SETTINGS_MIN_VERSION=13;
+export const BACKUP_SETTINGS_CURRENT_VERSION=19;
+export const supportsBackupSettingsVersion=version=>Number.isInteger(version)&&
+  version>=BACKUP_SETTINGS_MIN_VERSION&&version<=BACKUP_SETTINGS_CURRENT_VERSION;
+export const canMigrateBackupSettings=(source,target)=>supportsBackupSettingsVersion(source)&&
+  supportsBackupSettingsVersion(target)&&target>=15&&source<target;
 export function deviceCRC32(bytes){
   let crc=0xffffffff;
   for(const byte of bytes){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((-(crc&1))&0xedb88320);}
@@ -47,9 +56,9 @@ export function inspectDeviceBackup(bytes,identity=null){
     compatibility:view.getUint32(20,true),uid:hex(bytes.subarray(24,36)),build:hex(bytes.subarray(36,44)),
     schemaPrefix:hex(bytes.subarray(44,52)),capabilities:view.getUint32(52,true),payloadBytes,payloadCRC,
     payload:bytes.subarray(64),bytes:bytes.length};
-  if(![13,14,15,16,17,18].includes(info.settingsVersion)||info.target!==0x413||info.compatibility!==0x10001||info.capabilities!==1||view.getUint32(56,true)!==0)
+  if(!supportsBackupSettingsVersion(info.settingsVersion)||info.target!==0x413||info.compatibility!==0x10001||info.capabilities!==1||view.getUint32(56,true)!==0)
     throw new Error('This backup targets an unsupported device or settings version.');
-  if(identity&&(info.uid!==identity.uid?.toLowerCase()||![13,14,15,16,17,18].includes(Number(identity.settings))||info.settingsVersion>Number(identity.settings)||
+  if(identity&&(info.uid!==identity.uid?.toLowerCase()||!supportsBackupSettingsVersion(Number(identity.settings))||info.settingsVersion>Number(identity.settings)||
     info.target!==Number(identity.target)||info.compatibility!==Number(identity.compatibility)))
     throw new Error('This backup does not belong to the connected board or its supported format.');
   return info;
@@ -58,7 +67,7 @@ export function inspectDeviceBackup(bytes,identity=null){
 export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutMs=3000,onState=()=>{},
   expectedSchema='',migrateBackupPayload=null,now=()=>Date.now(),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
   const encoder=new TextEncoder(),decoder=new TextDecoder();
-  let port=null,reader=null,writer=null,pump=null,pending=null,lineBuffer='',caps=null,backupCaps=null;
+  let port=null,reader=null,writer=null,pump=null,pending=null,lineBuffer='',caps=null,backupCaps=null,padMapLease=null;
   let operations=0,tail=Promise.resolve(),closing=false;
   const state={connected:false,connecting:false,busy:false,compatible:false,message:'No board connected',identity:null};
   const emit=message=>{if(message)state.message=message;state.busy=operations>0;onState({...state});};
@@ -173,10 +182,36 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
     }finally{if(started){try{await exchange('backup abort',/^BACKUP aborted$/);}catch{}}}
   }
   function canWrite(){if(!state.compatible)throw new Error('The device and this client use different menu versions. Controls are read-only.');}
+  async function prepareBackupRestore(bytes){
+    if(!state.connected||!backupCaps)throw new Error('Connect the board before preparing a backup.');
+    // This step is entirely off-device. Keep the original file and provenance
+    // intact, and reject a connection change before any caller can upload it.
+    bytes=bytes.slice();
+    const restoreIdentity=backupCaps,restorePort=port;
+    const original=inspectDeviceBackup(bytes,restoreIdentity),originalHeader=bytes.slice(0,64),targetVersion=Number(restoreIdentity.settings);
+    let info=original;
+    if(original.settingsVersion!==targetVersion){
+      if(!canMigrateBackupSettings(original.settingsVersion,targetVersion)||typeof migrateBackupPayload!=='function')
+        throw new Error('This client cannot migrate that backup to the connected settings version. No restore was sent.');
+      emit(`Preparing backup · upgrading settings V${original.settingsVersion} to V${targetVersion} with the shared C codec`);
+      const payload=await migrateBackupPayload(original.payload.slice(),{sourceVersion:original.settingsVersion,targetVersion});
+      if(!(payload instanceof Uint8Array)||!payload.length||payload.length+64>BACKUP_MAX_BYTES)
+        throw new Error('The shared C settings migration returned an invalid payload. No restore was sent.');
+      bytes=new Uint8Array(64+payload.length);bytes.set(originalHeader);bytes.set(payload,64);
+      const header=new DataView(bytes.buffer);header.setUint32(8,payload.length,true);
+      header.setUint32(12,deviceCRC32(payload),true);header.setUint16(16,targetVersion,true);
+      header.setUint32(60,deviceCRC32(bytes.subarray(0,60)),true);
+      info=inspectDeviceBackup(bytes,restoreIdentity);
+    }
+    if(!state.connected||port!==restorePort||backupCaps!==restoreIdentity)
+      throw new Error('The device connection changed during backup preparation. No restore was sent.');
+    return {bytes,info,original,targetVersion};
+  }
   const client={
     get available(){return Boolean(serial?.requestPort);},get connected(){return state.connected;},
     get busy(){return operations>0;},get compatible(){return state.compatible;},
     get harmonySupported(){return state.connected&&caps?.harmony==='1'&&caps?.harmony_bytes==='800';},
+    get padMapSupported(){return state.connected&&caps?.pad_map==='1'&&caps?.pad_map_bytes==='1672';},
     get resetSupported(){return state.connected&&caps?.reset==='1';},
     get identity(){return caps?{...caps}:null;},get backupIdentity(){return backupCaps?{...backupCaps}:null;},
     get status(){return {...state};},
@@ -213,7 +248,7 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
       if(pump){await pump;pump=null;}
       const oldWriter=writer;writer=null;if(oldWriter){try{oldWriter.releaseLock();}catch{}}
       const oldPort=port;port=null;if(oldPort){try{await oldPort.close();}catch{}}
-      caps=backupCaps=null;lineBuffer='';closing=false;state.connected=false;state.compatible=false;state.identity=null;
+      caps=backupCaps=null;padMapLease=null;lineBuffer='';closing=false;state.connected=false;state.compatible=false;state.identity=null;
       emit('No board connected');
     },
     snapshot(){return exclusive(async()=>{
@@ -236,6 +271,37 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
         const bytes=await chunks('companion',count,crcValue(result.crc32),generation+' ');
         return {generation,bytes,receivedAt:now()};
       }finally{if(generation!==null){try{await exchange(`companion release ${generation}`,/^COMPANION\/1 RELEASED/);}catch{}}}
+    });},
+    padMapSnapshot(knownRevision=null){const requestPort=port,requestCaps=caps;return exclusive(async()=>{
+      if(port!==requestPort||caps!==requestCaps)throw new Error('The device connection changed during the pad-label request.');
+      if(!client.padMapSupported)throw new Error('Labels require newer firmware.');
+      if(knownRevision!==null)integer(knownRevision,0,0xffffffff,'pad-label revision');
+      let keepLease=false;
+      try{
+        const command=`companion pad-map${knownRevision===null?'':` ${knownRevision}`}`;
+        const result=deviceFields(await exchange(command,/^COMPANION\/1 PADMAP /),'COMPANION/1 PADMAP');
+        if(result.unchanged==='1'){
+          const revision=integer(result.revision,0,0xffffffff,'pad-label revision');
+          if(knownRevision===null||revision!==knownRevision)throw new Error('The pad-label revision changed unexpectedly.');
+          return {unchanged:true,revision};
+        }
+        const generation=integer(result.seq,1,0xffffffff,'pad-label snapshot generation');padMapLease=generation;
+        if(result.pending==='1'){keepLease=true;return {pending:true,generation};}
+        if(result.pending!==undefined)throw new Error('Unsupported pad-label snapshot state.');
+        const count=integer(result.bytes,1672,1672,'pad-label snapshot length');
+        const bytes=await chunks('companion',count,crcValue(result.crc32),generation+' ');
+        return {pending:false,generation,bytes,receivedAt:now()};
+      }finally{
+        if(!keepLease&&padMapLease!==null&&port===requestPort&&caps===requestCaps){
+          const generation=padMapLease;padMapLease=null;
+          try{await exchange(`companion release ${generation}`,/^COMPANION\/1 RELEASED/);}catch{}
+        }
+      }
+    });},
+    cancelPadMap(){const requestPort=port,requestCaps=caps;return exclusive(async()=>{
+      if(port!==requestPort||caps!==requestCaps||padMapLease===null)return false;
+      const generation=padMapLease;padMapLease=null;
+      await exchange(`companion release ${generation}`,/^COMPANION\/1 RELEASED/);return true;
     });},
     harmonyAction(action,value=0){return exclusive(async()=>{
       canWrite();if(!client.harmonySupported)throw new Error('This firmware does not expose the live Harmony workspace. Update it to use Harmony in the Client.');
@@ -301,31 +367,15 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
       return exclusive(()=>exchange(command,/^(?:STATUS|IO|SETTINGS|DISPLAY|PAD|VELOCITY) /));
     },
     downloadBackup(){return exclusive(download);},
+    async prepareBackupRestore(bytes){
+      const {info,original,targetVersion}=await prepareBackupRestore(bytes);
+      return {sourceSettingsVersion:original.settingsVersion,settingsVersion:targetVersion,
+        sourcePayloadCRC:original.payloadCRC,payloadCRC:info.payloadCRC,migrated:original.settingsVersion!==targetVersion};
+    },
     restoreBackup(bytes){return exclusive(async()=>{
       // Capture both bytes and identity before asynchronous migration. The
       // original file and its provenance remain unchanged outside this call.
-      bytes=bytes.slice();
-      const restoreIdentity=backupCaps,restorePort=port;
-      const original=inspectDeviceBackup(bytes,restoreIdentity),originalHeader=bytes.slice(0,64),targetVersion=Number(restoreIdentity.settings);
-      let info=original;
-      if(original.settingsVersion!==targetVersion){
-        if(![15,16,17,18].includes(targetVersion)||![13,14,15,16,17].includes(original.settingsVersion)||original.settingsVersion>=targetVersion||typeof migrateBackupPayload!=='function')
-          throw new Error('This client cannot migrate that backup to the connected settings version. No restore was sent.');
-        emit(`Preparing backup · upgrading settings V${original.settingsVersion} to V${targetVersion} with the shared C codec`);
-        const payload=await migrateBackupPayload(original.payload.slice(),{sourceVersion:original.settingsVersion,targetVersion});
-        if(!(payload instanceof Uint8Array)||!payload.length||payload.length+64>BACKUP_MAX_BYTES)
-          throw new Error('The shared C settings migration returned an invalid payload. No restore was sent.');
-        bytes=new Uint8Array(64+payload.length);
-        // Container framing is host code; musical/settings meaning stays in C.
-        bytes.set(originalHeader,0);
-        bytes.set(payload,64);
-        const header=new DataView(bytes.buffer);header.setUint32(8,payload.length,true);
-        header.setUint32(12,deviceCRC32(payload),true);header.setUint16(16,targetVersion,true);
-        header.setUint32(60,deviceCRC32(bytes.subarray(0,60)),true);
-        info=inspectDeviceBackup(bytes,restoreIdentity);
-      }
-      if(!state.connected||port!==restorePort||backupCaps!==restoreIdentity)
-        throw new Error('The device connection changed during backup preparation. No restore was sent.');
+      const prepared=await prepareBackupRestore(bytes),{info,original,targetVersion}=prepared;bytes=prepared.bytes;
       let uploading=false,applied=false;
       try{
         const before=await backupStatus();if(!['idle','saved-verified','error'].includes(before.state))throw new Error('Device backup service is busy.');

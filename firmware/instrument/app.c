@@ -384,6 +384,7 @@ int main(void)
         }
         if(thy_settings_transfer_expire(&backup_transfer,now))settings.observed=0u;
         if(thy_companion_expire(&companion,now))settings.observed=0u;
+        (void)thy_companion_service(&companion,&high_level,now);
         if(high_level.song_recall_requested && !settings.writing && !song_transfer.state&&
             !companion.active&&!thy_settings_transfer_busy(&backup_transfer)) {
             high_level.song_recall_requested=0u;
