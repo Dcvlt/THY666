@@ -58,7 +58,7 @@ distinct from page navigation.
 
 ## Current status
 
-**Hardware alpha. The v0.2 series is a prerelease for board testing.** Existing playing,
+**Hardware alpha. v0.2.2 is the current release; broader board qualification continues.** Existing playing,
 MIDI, display, storage and Windows update paths have device evidence. The latest
 musical additions have passed software checks and focused board tests, including
 Harmony exploration, held-note stability and saved preferences after power-off.

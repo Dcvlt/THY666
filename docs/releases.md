@@ -21,7 +21,7 @@ The browser Client needs no desktop download. GitHub also adds **Source code**
 ZIP/TAR archives automatically; these contain project source, not built apps or
 firmware, and do not include the separate musical input needed to build firmware.
 
-The historical v0.1.0 release provides source only. The v0.2.0 prerelease includes
+The historical v0.1.0 release provides source only. The current v0.2.2 release includes
 standalone firmware, matching source/input, Windows and macOS Clients, and
 checksums. Read the notes attached to the release for platform and device-test
 limits.
