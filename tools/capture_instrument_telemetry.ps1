@@ -53,14 +53,29 @@ function ConvertFrom-ThyInstrumentReply([string]$Line,[string]$Command) {
         'status' {
             # Layout names contain spaces. Match named fields and the final
             # entire layout string, never split the reply on whitespace.
-            $pattern='^STATUS THYINSTRUMENT/1 build=(?<build>[0-9a-f]{16}) ready=(?<ready>[01]) uptime_ms=(?<uptime_ms>[0-9]{1,10}) errors=(?<errors>[0-9]{1,10}) presses=(?<presses>[0-9]{1,10}) releases=(?<releases>[0-9]{1,10}) voices=(?<voices>[0-9]{1,10}) layout=(?<layout>[ -~]{1,512})$'
+            $resourceNames=@('cpu_active','timing_valid','resource_ms','loop_us','loop_peak_us','ram_used','ram_total','ccm_used','ccm_total','stack_used','stack_total','stack_valid','flash_used','flash_total')
+            $resourcePattern=($resourceNames|ForEach-Object {$_+'=(?<'+$_+'>[0-9]{1,10})'}) -join ' '
+            $pattern='^STATUS THYINSTRUMENT/1 build=(?<build>[0-9a-f]{16}) ready=(?<ready>[01]) uptime_ms=(?<uptime_ms>[0-9]{1,10}) errors=(?<errors>[0-9]{1,10}) presses=(?<presses>[0-9]{1,10}) releases=(?<releases>[0-9]{1,10}) voices=(?<voices>[0-9]{1,10})' +
+                '(?: resources=(?<resources>1) '+$resourcePattern+')? layout=(?<layout>[ -~]{1,512})$'
             $match=[regex]::Match($Line,$pattern,[Text.RegularExpressions.RegexOptions]::CultureInvariant)
             if(-not $match.Success) {throw 'Malformed or incomplete instrument status'}
             $result=@{build=$match.Groups['build'].Value;layout=$match.Groups['layout'].Value}
-            foreach($name in @('ready','uptime_ms','errors','presses','releases','voices')) {
+            $names=@('ready','uptime_ms','errors','presses','releases','voices')
+            if($match.Groups['resources'].Success) {$names+=@('resources')+$resourceNames}
+            foreach($name in $names) {
                 $value=[uint32]0
                 if(-not [uint32]::TryParse($match.Groups[$name].Value,[ref]$value)) {throw ('Invalid uint32 '+$name)}
                 $result[$name]=$value
+            }
+            if($match.Groups['resources'].Success) {
+                if($result.cpu_active -gt 100 -or $result.timing_valid -gt 1 -or $result.stack_valid -gt 1 -or
+                   $result.loop_us -gt $result.loop_peak_us) {throw 'Invalid resource timing or flag range'}
+                foreach($region in @(@('ram',131072),@('ccm',65536),@('flash',524288))) {
+                    $used=$result[$region[0]+'_used'];$total=$result[$region[0]+'_total']
+                    if($total -eq 0 -or $total -gt $region[1] -or $used -gt $total) {throw 'Invalid resource memory range'}
+                }
+                if($result.stack_total -eq 0 -or $result.stack_total -gt $result.ram_total -or
+                   $result.stack_used -gt $result.stack_total) {throw 'Invalid resource stack range'}
             }
             if($result.layout -match '(?:^| )[A-Za-z_][A-Za-z0-9_]*=') {throw 'Ambiguous extra field in layout'}
             return $result

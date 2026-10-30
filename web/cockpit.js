@@ -3,7 +3,7 @@ export function initializeCockpit({ mount } = {}) {
   if (!mount?.ownerDocument) throw new TypeError('Cockpit requires a DOM mount.');
   const doc = mount.ownerDocument, hadClass = mount.classList.contains('cockpit'), hadActive = mount.classList.contains('cockpit-active');
   const instrument = mount.querySelector('.instrument');
-  let disposed = false, state = 'offline', session = 0;
+  let disposed = false, state = 'offline', session = 0, hostActive = true;
   const values = new Map(), pressurePaths = [], pressureNumbers = [], contactNodes = [], pitchNodes = [];
   const el = (tag, className = '', text) => {
     const node = doc.createElement(tag); if (className) node.className = className;
@@ -23,8 +23,28 @@ export function initializeCockpit({ mount } = {}) {
   const number = (value, low, high) => typeof value === 'number' && Number.isFinite(value) && value >= low && value <= high ? value : null;
   const integer = (value, low, high) => Number.isInteger(value) ? number(value, low, high) : null;
   const setAttribute = (node, key, value) => { if (node.getAttribute?.(key) !== String(value)) node.setAttribute(key, String(value)); };
+  const setClass = (node, name, on) => { if (node.classList.contains(name) !== Boolean(on)) node.classList.toggle(name, Boolean(on)); };
+  const setHidden = (node, hidden) => { if (node.hidden !== Boolean(hidden)) node.hidden = Boolean(hidden); };
+  const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
+  const finishAssembly = () => setClass(mount, 'cockpit-assembling', false);
+  const assemblyEnd = event => {
+    if (event.target === mount && event.animationName === 'cockpit-assembly-lifetime') finishAssembly();
+  };
+  const motionPreference = () => { if (reducedMotion?.matches) finishAssembly(); };
+  mount.addEventListener('animationend', assemblyEnd);
+  reducedMotion?.addEventListener?.('change', motionPreference);
+  const label = value => typeof value === 'string' && value ? value.slice(0, 96) : '—';
+  const axisName = value => ['Pressure', 'CC74', 'CC1'][integer(value, 0, 2)] ?? '—';
+  const stageName = value => value === true ? 'On' : value === false ? 'Off' : value === -1 ? 'Mixed' : '—';
+  const syncMotion = () => {
+    const paused = !hostActive || Boolean(doc.hidden) || state === 'offline';
+    if (paused) finishAssembly();
+    setClass(mount, 'cockpit-motion-paused', paused);
+    if (mount.dataset.cockpitMotion !== (paused ? 'paused' : 'running')) mount.dataset.cockpitMotion = paused ? 'paused' : 'running';
+  };
+  doc.addEventListener?.('visibilitychange', syncMotion);
   const panel = (index, title, className) => {
-    const node = el('section', `cockpit-panel ${className}`), head = el('div', 'cockpit-panel-head');
+    const node = el('section', `cockpit-panel hud-frame ${className}`), head = el('div', 'cockpit-panel-head');
     head.append(el('span', 'cockpit-panel-index', index), el('h2', '', title), el('span', 'cockpit-head-mark', '⌁'));
     node.append(head); return node;
   };
@@ -37,9 +57,9 @@ export function initializeCockpit({ mount } = {}) {
   if (instrument) { instrument.before(deck); deck.append(instrument); } else mount.append(deck);
   const frame = el('div', 'cockpit-deck-frame'); frame.setAttribute('aria-hidden', 'true');
   const drawing = svg('svg', { viewBox: '0 0 1440 410', preserveAspectRatio: 'none', fill: 'none' });
-  drawing.append(svg('path', { class: 'cockpit-frame-outline', d: 'M2 103V23L23 2H301L318 16H1122L1139 2H1417L1438 23V103M2 307V387L23 408H270L288 394H1152L1170 408H1417L1438 387V307' }));
-  drawing.append(svg('path', { class: 'cockpit-frame-inner', d: 'M10 91V31L31 10H284M1156 10H1409L1430 31V91M10 319V379L31 400H252M1188 400H1409L1430 379V319' }));
-  drawing.append(svg('path', { class: 'cockpit-frame-rich cockpit-circuit', d: 'M30 18H192L205 31H252M1410 18H1248L1235 31H1188M30 392H172L185 379H244M1410 392H1268L1255 379H1196M4 115V154L13 163V247L4 256V295M1436 115V154L1427 163V247L1436 256V295' }));
+  drawing.append(svg('path', { class: 'cockpit-frame-outline', pathLength: 100, d: 'M2 103V23L23 2H301L318 16H1122L1139 2H1417L1438 23V103M2 307V387L23 408H270L288 394H1152L1170 408H1417L1438 387V307' }));
+  drawing.append(svg('path', { class: 'cockpit-frame-inner', pathLength: 100, d: 'M10 91V31L31 10H284M1156 10H1409L1430 31V91M10 319V379L31 400H252M1188 400H1409L1430 379V319' }));
+  drawing.append(svg('path', { class: 'cockpit-frame-rich cockpit-circuit', pathLength: 100, d: 'M30 18H192L205 31H252M1410 18H1248L1235 31H1188M30 392H172L185 379H244M1410 392H1268L1255 379H1196M4 115V154L13 163V247L4 256V295M1436 115V154L1427 163V247L1436 256V295' }));
   for (let n = 0; n < 52; n++) {
     const x = 344 + n * 14.75, height = n % 4 ? 4 : 8;
     drawing.append(svg('path', { class: 'cockpit-frame-rich cockpit-ruler', d: `M${x} 5v${height}M${x} 405v-${height}` }));
@@ -84,14 +104,15 @@ export function initializeCockpit({ mount } = {}) {
     const side = svg('text', { x: 50, y: 24, class: 'cockpit-gauge-side' }); side.textContent = label;
     const value = svg('text', { x: 50, y: 53, class: 'cockpit-gauge-number' }); value.textContent = '—'; pressureNumbers.push(value);
     gauge.append(side, value);
-    wrap.append(gauge, field(index ? 'pressure-right' : 'pressure-left')); pressurePair.append(wrap);
+    const velocity = el('div', 'cockpit-input-velocity'); velocity.append(el('span', '', 'VELOCITY'), field(index ? 'velocity-right' : 'velocity-left'));
+    wrap.append(gauge, field(index ? 'pressure-right' : 'pressure-left'), velocity); pressurePair.append(wrap);
   }
   const express = el('div', 'cockpit-expression'); express.append(el('span', '', 'EXPRESSION'), field('expression'));
   pressure.append(pressurePair, express);
 
   const harmony = panel('03', 'HARMONIC FIELD', 'cockpit-harmony');
   const harmonicBody = el('div', 'cockpit-harmonic-body'), circle = svg('svg', { class: 'cockpit-harmonic-ring', viewBox: '0 0 128 128', 'aria-hidden': 'true' });
-  circle.append(svg('circle', { cx: 64, cy: 64, r: 44, class: 'cockpit-harmonic-guide' }), svg('circle', { cx: 64, cy: 64, r: 33, class: 'cockpit-harmonic-inner' }));
+  circle.append(svg('circle', { cx: 64, cy: 64, r: 44, class: 'cockpit-harmonic-guide' }), svg('circle', { cx: 64, cy: 64, r: 33, class: 'cockpit-harmonic-inner cockpit-ambient-orbit' }));
   const polygon = svg('polyline', { class: 'cockpit-harmonic-link', points: '' }); circle.append(polygon);
   const pitchNames = ['C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'], pitchPositions = [];
   for (let n = 0; n < 12; n++) {
@@ -105,6 +126,29 @@ export function initializeCockpit({ mount } = {}) {
   const center = svg('path', { class: 'cockpit-harmonic-cross', d: 'M59 64h10M64 59v10' }); circle.append(center);
   const chord = el('div', 'cockpit-chord'); chord.append(el('span', 'cockpit-field-caption', 'PLAYED MATERIAL'), field('harmony'), el('span', 'cockpit-field-caption', 'ROOT'), field('root'));
   harmonicBody.append(circle, chord); harmony.append(harmonicBody);
+  const harmonyDetail = el('div', 'cockpit-harmony-detail'); harmonyDetail.hidden = true;
+  const transition = el('div', 'cockpit-harmony-transition');
+  transition.append(field('harmony-played'), el('span', 'cockpit-transition-arrow', '→'), field('harmony-next'));
+  const harmonyReason = field('harmony-reason', '—', 'cockpit-harmony-reason');
+  const toneMap = svg('svg', { class: 'cockpit-tone-map', viewBox: '0 0 360 50', role: 'img', 'aria-label': 'Harmony tones unavailable' }), toneNodes = [];
+  for (let n = 0; n < 12; n++) {
+    const cell = svg('rect', { x: 3 + n * 30, y: 4, width: 24, height: 21, class: 'cockpit-tone-cell' });
+    const text = svg('text', { x: 15 + n * 30, y: 42, class: 'cockpit-tone-name' }); text.textContent = pitchNames[n];
+    toneMap.append(cell, text); toneNodes.push(cell);
+  }
+  const toneLegend = el('div', 'cockpit-tone-legend'); toneLegend.append(el('span', 'is-common', 'SHARED'), el('span', 'is-added', 'NEW'), el('span', 'is-removed', 'LEAVING'));
+  const history = el('div', 'cockpit-harmony-history'), historyNodes = [];
+  for (let n = 0; n < 4; n++) {
+    const item = el('div', 'cockpit-history-item'), ring = svg('svg', { viewBox: '0 0 56 56', 'aria-hidden': 'true' }), dots = [];
+    ring.append(svg('circle', { cx: 28, cy: 28, r: 18, class: 'cockpit-history-orbit' }));
+    for (let pitch = 0; pitch < 12; pitch++) {
+      const angle = (((pitch * 7) % 12) * 30 - 90) * Math.PI / 180;
+      const dot = svg('circle', { cx: 28 + Math.cos(angle) * 18, cy: 28 + Math.sin(angle) * 18, r: 1.8, class: 'cockpit-history-tone' }); ring.append(dot); dots.push(dot);
+    }
+    const name = el('span', 'cockpit-history-root', '—'); item.append(ring, name); item.hidden = true; history.append(item); historyNodes.push({item, dots, name});
+  }
+  const harmonyFooter = el('div', 'cockpit-harmony-footer'); harmonyFooter.append(field('harmony-home'), field('harmony-status'));
+  harmonyDetail.append(transition, harmonyReason, toneMap, toneLegend, history, harmonyFooter); harmony.append(harmonyDetail);
 
   const clock = panel('04', 'CLOCK / ENGINES', 'cockpit-clock');
   const tempo = el('div', 'cockpit-tempo'); tempo.append(field('tempo'), el('span', '', 'BPM')); clock.append(tempo);
@@ -114,33 +158,125 @@ export function initializeCockpit({ mount } = {}) {
     const chip = el('span', 'cockpit-mode', label); chip.dataset.cockpitFlag = key; modes.append(chip); flags.push([key, label, chip]);
   }
   clock.append(modes); panels.append(contacts, pressure, harmony, clock);
-  const context=el('div','cockpit-context-panels');
-  const mpePanel=panel('05','MPE EXPRESSION','cockpit-context'),arpPanel=panel('06','ARPEGGIATORS','cockpit-context'),seqPanel=panel('07','SEQUENCER','cockpit-context'),harmonyPanel=panel('08','HARMONY','cockpit-context');
-  mpePanel.append(reading('OUTPUT','mpe-output'),reading('AFTERTOUCH L / R','mpe-stage'),el('p','cockpit-context-note','Per-note channels. Pressure gauges above show each half’s peak.'));
-  arpPanel.append(reading('ENABLED','arp-engines'),reading('NOTE POOL','arp-pool'),reading('SOUNDING','arp-sounding'));
-  seqPanel.append(reading('TRACK','seq-track'),reading('TRANSPORT','seq-state'),reading('CAPTURE','seq-capture'));
-  harmonyPanel.append(reading('HOME','harmony-home'),reading('PLAYED','harmony-played'),el('p','cockpit-context-note','Open Harmony to refine the map and explore suggestions.'));
-  context.append(mpePanel,arpPanel,seqPanel,harmonyPanel);hud.append(panels,context); mount.append(hud);
+  const context = el('div', 'cockpit-context-panels');
+  const mpePanel = panel('02', 'MPE / EXPRESSION ROUTING', 'cockpit-context cockpit-mpe-context');
+  const arpPanel = panel('05', 'ARP / COMBINED PITCHES', 'cockpit-context cockpit-arp-context');
+  const seqPanel = panel('06', 'SEQUENCER / TRANSPORT', 'cockpit-context cockpit-seq-context');
+  const expressionLanes = [], pressureBars = [], velocityBars = [];
+  for (let side = 0; side < 2; side++) {
+    const lane = el('div', 'cockpit-expression-lane');
+    const header = el('div', 'cockpit-lane-heading'); header.append(el('span', '', side ? 'RIGHT' : 'LEFT'), field(`mpe-primary-${side}`));
+    const graph = svg('svg', { viewBox: '0 0 300 70', class: 'cockpit-expression-bars', 'aria-hidden': 'true' });
+    for (const [row, name] of ['PRESSURE', 'VELOCITY'].entries()) {
+      const y = 12 + row * 32, text = svg('text', { x: 0, y: y + 8, class: 'cockpit-axis-label' }); text.textContent = name;
+      graph.append(text, svg('path', { d: `M76 ${y + 5}H296`, class: 'cockpit-input-track' }));
+      const bar = svg('rect', { x: 76, y, width: 0, height: 10, class: `cockpit-input-fill${row ? ' is-velocity' : ''}` }); graph.append(bar);
+      (row ? velocityBars : pressureBars).push(bar);
+    }
+    const footer = el('div', 'cockpit-lane-footer'); footer.append(el('span', '', 'UPPER AFTERTOUCH'), field(`mpe-upper-${side}`));
+    lane.append(header, graph, footer); mpePanel.append(lane); expressionLanes.push(lane);
+  }
+  const expressionSummary = el('div', 'cockpit-context-footer'); expressionSummary.append(el('span', '', 'PHYSICAL INPUT PEAKS'), field('mpe-output')); mpePanel.append(expressionSummary);
+  const ribbon = svg('svg', { viewBox: '0 0 448 112', class: 'cockpit-note-ribbon', role: 'img', 'aria-label': 'Combined Arp pitch pool and sounding output' }), ribbonPool = [], ribbonSounding = [], ribbonLabels = [];
+  const noteName = note => `${pitchNames[note % 12]}${Math.floor(note / 12) - 1}`;
+  for (const [row, text] of ['POOL', 'OUTPUT'].entries()) {
+    const name = svg('text', { x: 1, y: row * 37 + 10, class: 'cockpit-axis-label' }); name.textContent = text; ribbon.append(name);
+    for (let note = 0; note < 128; note++) {
+      const cell = svg('rect', { x: 3 + note * 3.45, y: row * 37 + 16, width: 2.1, height: 13, class: 'cockpit-ribbon-note' });
+      cell.dataset.cockpitRibbon = `${row ? 'output' : 'pool'}-${note}`; ribbon.append(cell); (row ? ribbonSounding : ribbonPool).push(cell);
+    }
+  }
+  for (let note = 0; note < 128; note++) {
+    const text = svg('text', { x: 0, y: 96, class: 'cockpit-ribbon-label', 'text-anchor': 'middle' }); text.textContent = noteName(note); ribbon.append(text); ribbonLabels.push(text);
+  }
+  const arpStats = el('div', 'cockpit-context-footer'); arpStats.append(field('arp-engines'), field('arp-range'), field('arp-pool'), field('arp-sounding'));
+  arpPanel.append(ribbon, arpStats);
+  const transport = svg('svg', { viewBox: '0 0 300 96', class: 'cockpit-transport-visual', role: 'img', 'aria-label': 'Transport unavailable' });
+  const playSymbol = svg('path', { d: 'M25 23L55 42L25 61Z', class: 'cockpit-transport-play' });
+  const stopSymbol = svg('path', { d: 'M27 27H55V55H27Z', class: 'cockpit-transport-stop' });
+  const pauseSymbol = svg('path', { d: 'M28 26V56M48 26V56', class: 'cockpit-transport-pause' });
+  transport.append(svg('path', { d: 'M7 15L20 2H280L293 15V76L280 89H20L7 76Z', class: 'cockpit-transport-frame' }), playSymbol, stopSymbol, pauseSymbol);
+  const transportTrack = svg('text', { x: 93, y: 37, class: 'cockpit-transport-track' }); transportTrack.textContent = '—';
+  const captureSymbol = svg('circle', { cx: 106, cy: 65, r: 6, class: 'cockpit-capture-dot' });
+  const captureText = svg('text', { x: 124, y: 69, class: 'cockpit-capture-label' }); captureText.textContent = '—'; transport.append(transportTrack, captureSymbol, captureText);
+  const seqStats = el('div', 'cockpit-context-footer'); seqStats.append(field('seq-track'), field('seq-state'), field('seq-capture')); seqPanel.append(transport, seqStats);
+  panels.insertBefore(mpePanel, pressure); mpePanel.hidden = true;
+  context.append(arpPanel, seqPanel); hud.append(panels, context); mount.append(hud); syncMotion();
 
   function update(snapshot, { connected = false, preview = false } = {}) {
     if (disposed) return null;
-    const next = connected ? 'device' : preview ? 'preview' : 'offline';
+    const present = Boolean(snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot));
+    const next = present && connected ? 'device' : present && preview ? 'preview' : 'offline';
     if (next !== state) {
       state = next; mount.dataset.cockpitState = state;
       if (state !== 'offline') { session++; mount.dataset.cockpitSession = String(session); }
+      setClass(mount, 'cockpit-assembling', state !== 'offline' && !reducedMotion?.matches);
     }
-    const active = state !== 'offline'; hud.hidden = !active; mount.classList.toggle('cockpit-active', active);
+    const active = state !== 'offline'; setHidden(hud, !active); setClass(mount, 'cockpit-active', active); syncMotion();
     setText('source', state === 'device' ? 'LIVE DEVICE' : state === 'preview' ? 'DESIGN MODE / BROWSER ENGINE' : 'OFFLINE');
     if (!active) return { state, session };
-    const data = snapshot && typeof snapshot === 'object' ? snapshot : {};
-    mpePanel.hidden=data.mpe!==true;arpPanel.hidden=!(data.arp1||data.arp2);seqPanel.hidden=!(data.engine===2||data.sequenceOpen||data.running||data.recording);harmonyPanel.hidden=data.engine!==6;
-    setText('mpe-output','Per-note expression');setText('mpe-stage',Array.isArray(data.aftertouchStage)?data.aftertouchStage.map(v=>v?'On':'Off').join(' / '):'—');
+    const data = snapshot, expressionContext = data.context?.expression;
+    const expression = expressionContext?.available === false ? null : expressionContext;
+    const harmonyData = data.context?.harmony ?? data.harmonyContext;
+    const harmonyActive = data.engine === 6;
+    // The physical board already shows contacts. Give Harmony that slot so
+    // its wider explanation and the clock remain in one balanced overview.
+    setHidden(contacts, harmonyActive);
+    setHidden(mpePanel, data.mpe !== true); setHidden(arpPanel, !(data.arp1 === true || data.arp2 === true));
+    setHidden(pressure, data.mpe === true);
+    setHidden(seqPanel, !(data.engine === 2 || data.sequenceOpen === true || data.running === true || data.recording === true));
+    setHidden(harmonyDetail, !harmonyActive); setClass(harmony, 'has-harmony-context', harmonyActive); setClass(panels, 'has-harmony-context', harmonyActive);
+    setText('mpe-output', expressionContext?.pending === true ? 'Reading routing' : expressionContext?.available === true || expression?.mpeOutput?.some(value => integer(value, 0, 2) !== null) ? 'Per-note routing' : 'Routing unavailable');
+    const stages = expression?.aftertouchStage ?? data.aftertouchStage;
+    for (let n = 0; n < 2; n++) {
+      const output = integer(expression?.mpeOutput?.[n], 0, 2), pressure = integer(data.pressure?.[n], 0, 127);
+      const velocity = integer(data.heldVelocity?.[n], 1, 127), upper = output === null ? '—' : output === 0 ? 'CC74' : 'Pressure';
+      setText(`mpe-primary-${n}`, `Pressure → ${axisName(output)}`);
+      setText(`mpe-upper-${n}`, `${stageName(stages?.[n])}${stages?.[n] === true ? ` → ${upper}` : ''}`);
+      setAttribute(pressureBars[n], 'width', pressure === null ? 0 : pressure * 220 / 127);
+      setAttribute(velocityBars[n], 'width', velocity === null ? 0 : velocity * 220 / 127);
+      setAttribute(expressionLanes[n], 'aria-label', `${n ? 'Right' : 'Left'}: pressure ${pressure ?? 'unavailable'}, velocity ${velocity ?? 'unavailable'}; primary ${axisName(output)}; upper Aftertouch ${stageName(stages?.[n])}`);
+    }
     setText('arp-engines',[data.arp1?'Arp 1':'',data.arp2?'Arp 2':''].filter(Boolean).join(' + '));
-    setText('arp-pool',Array.isArray(data.pool)?data.pool.length:'—');setText('arp-sounding',Array.isArray(data.sounding)?data.sounding.length:'—');
-    setText('seq-track',Number.isInteger(data.selectedTrack)&&data.selectedTrack>=0&&data.selectedTrack<21?`T${data.selectedTrack+1}`:'—');
-    setText('seq-state',data.running?'Playing':'Stopped');setText('seq-capture',['Off','Armed','Recording','Overdub'][data.capture]||'—');
-    setText('harmony-home',data.scale||'—');setText('harmony-played',data.harmony||'—');
+    const validNotes = list => new Set((Array.isArray(list) ? list : []).filter(note => integer(note, 0, 127) !== null));
+    const poolNotes = validNotes(data.pool), outputNotes = validNotes(data.sounding);
+    const heldPitches = validNotes(data.heldPitches);
+    const rangeNotes = [...poolNotes, ...heldPitches];
+    // Derive the view from sustained inputs, never the changing sounding gate.
+    const low = rangeNotes.length ? Math.max(0, Math.floor((Math.min(...rangeNotes) - 2) / 12) * 12) : 0;
+    const high = rangeNotes.length ? Math.min(127, Math.ceil((Math.max(...rangeNotes) + 3) / 12) * 12 - 1) : 127;
+    const cellWidth = 442 / (high - low + 1);
+    let outside = 0; for (const note of outputNotes) if (note < low || note > high) outside++;
+    setText('arp-range', `${noteName(low)}–${noteName(high)}`);
+    setText('arp-pool', Array.isArray(data.pool) ? `${poolNotes.size} pooled` : '—');
+    setText('arp-sounding', Array.isArray(data.sounding) ? `${outputNotes.size} sounding${outside ? ` · ${outside} outside range` : ''}` : '—');
+    for (let n = 0; n < 128; n++) {
+      setClass(ribbonPool[n], 'is-present', poolNotes.has(n)); setClass(ribbonSounding[n], 'is-present', outputNotes.has(n));
+      const visible = n >= low && n <= high;
+      for (const cell of [ribbonPool[n], ribbonSounding[n]]) {
+        setAttribute(cell, 'display', visible ? 'inline' : 'none');
+        if (visible) { setAttribute(cell, 'x', 3 + (n - low) * cellWidth); setAttribute(cell, 'width', Math.max(1, cellWidth - 2)); }
+      }
+      const showLabel = visible && (n % 12 === 0 || high - low < 48 && (poolNotes.has(n) || heldPitches.has(n)));
+      setAttribute(ribbonLabels[n], 'display', showLabel ? 'inline' : 'none');
+      if (showLabel) setAttribute(ribbonLabels[n], 'x', 3 + (n - low + .5) * cellWidth);
+    }
+    setAttribute(ribbon, 'aria-label', `Combined Arp pool: ${Array.isArray(data.pool) ? poolNotes.size : 'unavailable'} pitches; all sounding output: ${Array.isArray(data.sounding) ? outputNotes.size : 'unavailable'} pitches; range ${noteName(low)} to ${noteName(high)}${outside ? `; ${outside} sounding outside range` : ''}`);
+    const track = integer(data.selectedTrack, 0, 20), transportState = integer(data.transport, 0, 2), capture = integer(data.capture, 0, 5);
+    const trackText = track === null ? '—' : `T${track + 1}`;
+    const transportText = transportState === null ? typeof data.running === 'boolean' ? data.running ? 'Playing' : 'Stopped' : '—' : ['Stopped', 'Playing', 'Paused'][transportState];
+    const captureState = capture === null ? '—' : ['Off', 'Armed', 'Queued', 'Recording', 'Finishing', 'Failed'][capture];
+    setText('seq-track', trackText); setText('seq-state', transportText); setText('seq-capture', captureState);
+    if (transportTrack.textContent !== trackText) transportTrack.textContent = trackText;
+    if (captureText.textContent !== captureState) captureText.textContent = captureState;
+    setAttribute(playSymbol, 'display', transportText === 'Playing' ? 'inline' : 'none');
+    setAttribute(stopSymbol, 'display', transportText === 'Stopped' ? 'inline' : 'none');
+    setAttribute(pauseSymbol, 'display', transportText === 'Paused' ? 'inline' : 'none');
+    setClass(captureSymbol, 'is-armed', capture === 1 || capture === 2);
+    setClass(captureSymbol, 'is-recording', capture === 3 || capture === 4); setClass(captureSymbol, 'is-failed', capture === 5);
+    setAttribute(transport, 'aria-label', `Selected track ${trackText}; transport ${transportText}; capture ${captureState}`);
     const padCount = integer(data.heldPads, 0, 96), notes = integer(data.noteCount, 0, 128), bpm = number(data.tempo, 1, 1000);
+    setClass(mount, 'cockpit-has-input', (padCount ?? 0) > 0 || (notes ?? 0) > 0);
     setText('pads', padCount ?? '—'); setText('notes', notes ?? '—'); setText('tempo', bpm === null ? '—' : bpm.toFixed(1));
     setText('scale', typeof data.scale === 'string' && data.scale ? data.scale : '—');
     setText('harmony', typeof data.harmony === 'string' && data.harmony ? data.harmony : '—');
@@ -157,22 +293,52 @@ export function initializeCockpit({ mount } = {}) {
       setText(n ? 'pressure-right' : 'pressure-left', value === null ? '—' : `${value} / 127`);
       if (pressureNumbers[n].textContent !== String(value ?? '—')) pressureNumbers[n].textContent = String(value ?? '—');
       setAttribute(pressurePaths[n], 'stroke-dashoffset', 127 - (value ?? 0));
+      const velocity = integer(data.heldVelocity?.[n], 1, 127);
+      setText(n ? 'velocity-right' : 'velocity-left', velocity ?? '—');
     }
     const stage = Array.isArray(data.aftertouchStage) ? data.aftertouchStage : null;
     setText('expression', data.mpe === true ? 'MPE / PER VOICE' : data.mpe === false ? (stage?.some(Boolean) ? 'MIDI / UPPER STAGE' : 'MIDI / PRESSURE') : '—');
     for (const [key, label, chip] of flags) {
-      chip.classList.toggle('is-on', data[key] === true); chip.classList.toggle('is-unknown', typeof data[key] !== 'boolean');
+      setClass(chip, 'is-on', data[key] === true); setClass(chip, 'is-unknown', typeof data[key] !== 'boolean');
       setAttribute(chip, 'aria-label', `${label}: ${typeof data[key] === 'boolean' ? data[key] ? 'on' : 'off' : 'unavailable'}`);
     }
     const held = Array.isArray(data.held) ? data.held : [];
     for (let n = 0; n < 96; n++) {
-      contactNodes[n].classList.toggle('is-held', held[n] === true); contactNodes[n].classList.toggle('is-inspected', n === selected);
+      setClass(contactNodes[n], 'is-held', held[n] === true); setClass(contactNodes[n], 'is-inspected', n === selected);
     }
     const pitches = list => new Set((Array.isArray(list) ? list : []).filter(value => integer(value, 0, 127) !== null).map(value => value % 12));
     const sounding = pitches(data.sounding), pool = pitches(data.pool);
     for (let n = 0; n < 12; n++) {
-      pitchNodes[n].classList.toggle('is-pool', pool.has(n)); pitchNodes[n].classList.toggle('is-sounding', sounding.has(n));
-      pitchNodes[n].classList.toggle('is-root', root === n);
+      setClass(pitchNodes[n], 'is-pool', pool.has(n)); setClass(pitchNodes[n], 'is-sounding', sounding.has(n));
+      setClass(pitchNodes[n], 'is-root', root === n);
+    }
+    const harmonicCurrent = integer(harmonyData?.inputMask, 0, 4095);
+    // The extension's comparison masks describe key previews. A chord step
+    // compares its actual selected row mask with the captured chord instead.
+    const selectedRow = harmonyData?.page === 0 && Array.isArray(harmonyData.rows) ? harmonyData.rows[harmonyData.cursor] : null;
+    const harmonicNext = integer(selectedRow?.mask, 0, 4095);
+    const tonesAvailable = harmonicCurrent !== null && harmonicNext !== null;
+    const shared = tonesAvailable ? harmonicCurrent & harmonicNext : 0;
+    const added = tonesAvailable ? harmonicNext & ~harmonicCurrent : 0;
+    const removed = tonesAvailable ? harmonicCurrent & ~harmonicNext : 0;
+    setText('harmony-home', label(harmonyData?.keyLabel ?? data.scale));
+    setText('harmony-played', label(harmonyData?.inputLabel ?? data.harmony));
+    setText('harmony-next', label(harmonyData?.selectedLabel)); setText('harmony-reason', label(harmonyData?.reason));
+    setText('harmony-status', harmonyData?.pending === true ? 'Updating choices' : harmonyData?.cacheReady === true ? 'Selected next chord' : 'Context unavailable');
+    const maskNames = mask => pitchNames.filter((_, n) => mask & (1 << n)).join(' ') || 'none';
+    setAttribute(toneMap, 'aria-label', tonesAvailable ? `Shared: ${maskNames(shared)}. New: ${maskNames(added)}. Leaving: ${maskNames(removed)}.` : 'Harmony tones unavailable');
+    for (let n = 0; n < 12; n++) {
+      setClass(toneNodes[n], 'is-common', shared & (1 << n)); setClass(toneNodes[n], 'is-added', added & (1 << n)); setClass(toneNodes[n], 'is-removed', removed & (1 << n));
+      setClass(pitchNodes[n], 'is-current', harmonyActive && harmonicCurrent !== null && (harmonicCurrent & (1 << n)));
+      setClass(pitchNodes[n], 'is-next', harmonyActive && harmonicNext !== null && (harmonicNext & (1 << n)));
+    }
+    const historyData = Array.isArray(harmonyData?.history) ? harmonyData.history.slice(0, 4) : [];
+    for (let n = 0; n < 4; n++) {
+      const entry = historyData[n], mask = integer(entry?.mask, 0, 4095), historyRoot = integer(entry?.root, 0, 11), item = historyNodes[n];
+      setHidden(item.item, mask === null || historyRoot === null);
+      const name = historyRoot === null ? '—' : pitchNames[historyRoot]; if (item.name.textContent !== name) item.name.textContent = name;
+      setAttribute(item.item, 'aria-label', mask === null ? 'History unavailable' : `History chord ${n + 1}: ${maskNames(mask)}`);
+      for (let pitch = 0; pitch < 12; pitch++) setClass(item.dots[pitch], 'is-present', mask !== null && (mask & (1 << pitch)));
     }
     const ordered = [...sounding].sort((a, b) => (a * 7) % 12 - (b * 7) % 12);
     const points = ordered.map(value => pitchPositions[value]); if (points.length > 2) points.push(points[0]);
@@ -181,12 +347,18 @@ export function initializeCockpit({ mount } = {}) {
   }
   return {
     update,
+    setActive(active) { if (!disposed) { hostActive = active === true; syncMotion(); } },
     destroy() {
       if (disposed) return; disposed = true;
+      mount.removeEventListener('animationend', assemblyEnd);
+      reducedMotion?.removeEventListener?.('change', motionPreference);
+      finishAssembly(); mount.classList.remove('cockpit-has-input');
+      doc.removeEventListener?.('visibilitychange', syncMotion);
       if (instrument) deck.before(instrument); deck.remove(); hud.remove();
       if (!hadClass) mount.classList.remove('cockpit');
       mount.classList.toggle('cockpit-active', hadActive);
       delete mount.dataset.cockpitState; delete mount.dataset.cockpitSession;
+      delete mount.dataset.cockpitMotion; mount.classList.remove('cockpit-motion-paused');
     },
   };
 }
@@ -195,23 +367,23 @@ export function initializeDiagnostics(mount) {
   const doc=mount.ownerDocument,el=(tag,cls='',text)=>{const n=doc.createElement(tag);n.className=cls;if(text!==undefined)n.textContent=String(text);return n;};
   const root=el('section','diagnostics-dashboard'),head=el('div','diagnostics-heading');
   const freshness=el('p','diagnostics-freshness','Waiting for a device snapshot');freshness.setAttribute('role','status');
-  head.append(el('h2','','◈  Device health'),freshness);
+  head.append(el('h2','','Device health'),freshness);
   const resources=el('div','diagnostics-resources'),meters=[];
   for(const [key,label,max,description] of [['heldPads','Held pads',96,'Physical pad activity'],['generated','Generated notes',128,'Shared Arp / sequencer owner pool']]){
-    const card=el('section','diagnostics-resource'),value=el('strong','','—'),bar=el('meter');bar.min=0;bar.max=max;bar.value=0;bar.setAttribute('aria-label',label);
+    const card=el('section','diagnostics-resource hud-frame'),value=el('strong','','—'),bar=el('meter','hud-meter');bar.min=0;bar.max=max;bar.value=0;bar.setAttribute('aria-label',label);
     card.append(el('h3','',label),value,bar,el('p','',description));resources.append(card);meters.push({key,max,value,bar});
   }
-  const unavailable=el('details','diagnostics-unavailable'),resourceNote=el('p','','Read Activity to check firmware resource reporting.');
+  const unavailable=el('details','diagnostics-unavailable hud-disclosure'),resourceNote=el('p','','Read Activity to check firmware resource reporting.');
   unavailable.append(el('summary','','About resources'),resourceNote);
   const targetResources=el('div','diagnostics-resources'),targetMeters=[];
   for(const [key,label,detail] of [['cpu','CPU active','Includes polling; 100% does not mean overload.'],['ram','Static RAM','Stack reservation is separate; no dynamic heap.'],['ccm','CCM RAM','CPU-only memory.'],['stack','Observed stack peak','Since boot; not a worst-case guarantee.'],['flash','Firmware flash','Application partition; separate from saved data.']]){
-    const card=el('section','diagnostics-resource'),value=el('strong','','—'),bar=el('meter');bar.min=0;bar.value=0;bar.hidden=true;bar.setAttribute('aria-label',label);
+    const card=el('section','diagnostics-resource hud-frame'),value=el('strong','','—'),bar=el('meter','hud-meter');bar.min=0;bar.value=0;bar.hidden=true;bar.setAttribute('aria-label',label);
     card.append(el('h3','',label),value,bar,el('p','',detail));targetResources.append(card);targetMeters.push({key,value,bar});
   }
   const resourceAge=el('p','diagnostics-freshness','Resources · read Activity to update');
   targetResources.hidden=true;
 
-  const report=el('section','diagnostics-report'),reportTitle=el('h3','','Report summary'),metrics=el('dl','diagnostics-metrics');
+  const report=el('section','diagnostics-report hud-frame'),reportTitle=el('h3','','Report summary'),metrics=el('dl','diagnostics-metrics');
   const graph=doc.createElementNS('http://www.w3.org/2000/svg','svg');graph.setAttribute('viewBox','0 0 600 100');graph.setAttribute('preserveAspectRatio','none');graph.setAttribute('role','img');graph.setAttribute('aria-label','No report samples');graph.setAttribute('class','diagnostics-trend');
   const line=doc.createElementNS('http://www.w3.org/2000/svg','polyline');line.setAttribute('fill','none');line.setAttribute('stroke','currentColor');line.setAttribute('stroke-width','2');graph.append(line);
   const caption=el('p','diagnostics-chart-caption','Read a report or start a live session.');report.append(reportTitle,metrics,graph,caption);

@@ -1,5 +1,8 @@
 import { initializeHelp, resolveHelpTopic } from './guide/help.js';
 import { getHelpTopic } from './guide/help-topics.js';
+import { initializeUIComponents } from './ui-system.js';
+
+initializeUIComponents();
 
 let navigating = false;
 const help = initializeHelp({

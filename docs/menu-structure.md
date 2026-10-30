@@ -20,7 +20,7 @@ the reason.
 | Arpeggiators | Two instance configurations, source grouping, timing, patterns and output |
 | Expression | MPE zone, per-voice pressure, glide and receiver setup |
 | Sensitivity | Cluster/per-pad response, calibration, Aftertouch profiles and advanced thresholds |
-| MIDI & Routing | Pad route profile, side/zone, channels, destinations and expression policies |
+| MIDI & Routing | Pad route profile, side/zone, channels, destinations, clock and USB input |
 | Lights & Display | Note palettes, brightness, held feedback, key contrast and center lights |
 | Views | Play view, independent information slots/rows, headers and motion |
 | Controls | Play arrow shortcuts and lower-button mode/scope |

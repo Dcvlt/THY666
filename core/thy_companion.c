@@ -3,9 +3,11 @@
 #include "thy_studio_ui.h"
 #include "thy_views.h"
 #include "thy_harmony_workspace.h"
+#include "thy_ui.h"
 
 _Static_assert(THY_GUIDANCE_LIMIT<=24u,"Harmony scale rows must fit the640-byte wire snapshot");
 _Static_assert(THY_HARMONY_WORKSPACE_CHOICES<=24u,"Harmony chord choices must fit the shared recommendation area");
+_Static_assert(THY_COMPANION_PAD_MAP_BYTES<=THY_COMPANION_SNAPSHOT_BYTES,"Pad labels reuse visual staging");
 
 typedef struct {char *p;size_t used,cap;} writer;
 static void add(writer *w,const char *p){while(*p && w->used+1u<w->cap)w->p[w->used++]=*p++;}
@@ -27,13 +29,92 @@ static uint32_t crc32(const uint8_t *p,size_t bytes){uint32_t c=UINT32_MAX;for(s
 void thy_companion_init(thy_companion *s,uint8_t *buffer,size_t cap,const thy_companion_identity *id,thy_companion_visual_fn visual,void *ctx)
 {if(s)*s=(thy_companion){.buffer=buffer,.capacity=cap,.identity=id?*id:(thy_companion_identity){0},.visual=visual,.context=ctx};}
 int thy_companion_expire(thy_companion *s,uint32_t now)
-{if(s && s->active && ((uint32_t)(now-s->last_ms)>=THY_COMPANION_IDLE_MS || (uint32_t)(now-s->captured_ms)>=THY_COMPANION_MAX_AGE_MS)){s->active=0u;return 1;}return 0;}
+{if(s && s->active && ((uint32_t)(now-s->last_ms)>=THY_COMPANION_IDLE_MS || (uint32_t)(now-s->captured_ms)>=THY_COMPANION_MAX_AGE_MS)){s->active=0u;s->map_state=0u;return 1;}return 0;}
 
 static void snapshot_header(thy_companion *s,uint32_t now,const char *magic,uint16_t bytes)
 {
     uint8_t *p=s->buffer;for(unsigned n=0;n<bytes;++n)p[n]=0u;
+    s->map_state=0u;
     text(p,0,8,magic);u16(p,8,1u);u16(p,10,bytes);u32(p,12,s->sequence+1u);u32(p,16,now);
     text(p,32,16,s->identity.build);text(p,48,24,s->identity.uid);text(p,72,64,THY_MENU_SCHEMA_SHA256);
+}
+
+static uint32_t pad_map_key(const thy_engine *e)
+{
+    const thy_instrument *i=e->instrument;uint32_t key=UINT32_C(2166136261);
+    const thy_sequencer_ui *u=&e->sequencer_ui;
+    unsigned track=u->options_open?u->options_track:e->sequencer.selected_track;
+    /* Acquisition adds exactly one revision per counted edge. Pressure and
+     * generated gates add none. UI gesture counters are deliberately absent:
+     * only the actual surface roles and future note-planning inputs matter. */
+    const uint32_t parts[]={i->revision-i->presses-i->releases,i->layout_revision,
+        e->state.level,e->harmony.revision,u->open,u->view,u->input_layout,
+        u->help_open,u->options_open,track,
+        (uint32_t)thy_sequencer_track_exists(&e->sequencer,(uint8_t)track),
+        e->calibration_open,e->sensitivity_pick,i->voicing_previous_mask,
+        (uint32_t)i->live_anchor,i->live_degree_count};
+    for(unsigned n=0;n<sizeof parts/sizeof parts[0];++n)key=(key^parts[n])*UINT32_C(16777619);
+    for(unsigned n=0;n<7u;++n)key=(key^(uint16_t)i->voicing_previous[n])*UINT32_C(16777619);
+    for(unsigned n=0;n<i->live_degree_count&&n<12u;++n)key=(key^(uint16_t)i->live_degrees[n])*UINT32_C(16777619);
+    return key;
+}
+static void pad_map_label(const thy_engine *e,uint8_t physical,uint8_t record[16])
+{
+    const thy_instrument *i=e->instrument;uint8_t role=thy_instrument_role_pad(i,physical);
+    int16_t notes[THY_MAX_NOTES];size_t count=0u;char label[32]={0};uint8_t kind=THY_COMPANION_PAD_HOLE;
+    if(e->calibration_open||e->sensitivity_pick){
+        kind=THY_COMPANION_PAD_CONTROL;text(record,1u,14u,e->calibration_open?"Calibrate":"Pick pad");record[0]=kind;return;
+    }
+    int source=role;
+    if(e->sequencer_ui.open&&(e->state.level==THY_STATE_PLAY||e->sequencer_ui.options_open)){
+        uint8_t track,pitch;uint32_t tick;
+        int action=thy_sequencer_ui_preview_pad_role(&e->sequencer_ui,role,&track,&tick,&pitch);
+        if(action==THY_SEQ_PAD_EDITOR){
+            writer w={label,0u,sizeof label};add(&w,"Step ");dec(&w,(role%4u)*12u+role/4u+1u);
+            kind=THY_COMPANION_PAD_STEP;goto finished;
+        }
+        if(action==THY_SEQ_PAD_INPUT_NOTES||action==THY_SEQ_PAD_INPUT_CHORDS)
+            source=role%48u+(action==THY_SEQ_PAD_INPUT_NOTES?48u:0u);
+        else return;
+    }else{
+        int control=thy_instrument_context_pad(i,role);
+        if(control){
+            static const char *const names[]={"Chord oct -","Chord oct +","Voicing","Bass octave","Note oct -","Note oct +"};
+            kind=THY_COMPANION_PAD_CONTROL;text(record,1u,14u,names[control-1]);record[0]=kind;return;
+        }
+    }
+    if(source<0||source>=96||thy_instrument_preview_source(i,(uint8_t)source,notes,&count)!=THY_OK||!count)return;
+    kind=count==1u?THY_COMPANION_PAD_NOTE:THY_COMPANION_PAD_CHORD;
+    if(count==1u)thy_ui_note_name(notes[0],label);
+    else{
+        thy_harmony chord;uint8_t root=UINT8_MAX;
+        if(source<48){
+            thy_chord_cell cell;
+            if(thy_engine_harmony_active(e))root=(uint8_t)(source/4u);
+            else if(thy_instrument_chord_cell(i,(uint8_t)source,&cell)==THY_OK)
+                root=(uint8_t)(((cell.root+i->transpose[0])%12+12)%12);
+        }
+        if(thy_harmony_from_notes(notes,count,root,&chord)!=THY_HARMONY_OK||
+            thy_harmony_format(&chord,label,sizeof label)!=THY_HARMONY_OK)return;
+        unsigned length=0u;while(label[length])++length;
+        if(length>14u){
+            /* Preserve a complete musical identity, never cut an alteration. */
+            unsigned used=0u;for(unsigned n=0u;n<length;++n)if(label[n]!=' ')label[used++]=label[n];label[used]=0;
+            if(used>14u){writer w={label,0u,sizeof label};dec(&w,(uint32_t)count);add(&w," NOTES");label[w.used]=0;}
+        }
+    }
+finished:
+    record[0]=kind;text(record,1u,14u,label);
+}
+int thy_companion_service(thy_companion *s,const thy_engine *e,uint32_t now)
+{
+    if(!s||s->map_state!=1u)return 0;
+    if(!s->active||!e||!e->instrument||pad_map_key(e)!=s->map_key){s->map_state=0u;s->active=0u;return 0;}
+    if(thy_companion_expire(s,now))return 0;
+    pad_map_label(e,s->map_cursor,s->buffer+THY_COMPANION_PAD_MAP_RECORDS+16u*s->map_cursor);
+    if(++s->map_cursor<96u)return 0;
+    s->captured_bytes=THY_COMPANION_PAD_MAP_BYTES;s->crc=crc32(s->buffer,s->captured_bytes);
+    s->map_state=2u;s->last_ms=now;return 1;
 }
 static void snapshot_finish(thy_companion *s,uint32_t now,uint16_t bytes)
 {
@@ -131,7 +212,8 @@ static int snapshot(thy_companion *s,const thy_engine *e,uint32_t now)
         if(sensor->pressure>p[1608+side])p[1608+side]=sensor->pressure;
         thy_instrument_velocity velocity;thy_instrument_route route;uint8_t custom;
         if(thy_instrument_get_velocity(i,(int)n,&velocity,&custom)!=THY_OK ||
-           thy_instrument_get_pad_route(i,thy_instrument_route_target(i,(uint8_t)n),&route)!=THY_OK)return 0;
+           thy_instrument_get_pad_route(i,thy_engine_performance_route(e,(uint8_t)n),&route)!=THY_OK)return 0;
+        if(e->performance[side].velocity)route.velocity=e->performance[side].velocity;
         if(!seen[side]){fixed[side]=route.velocity;modes[side]=velocity.mode;seen[side]=1u;}
         else {if(fixed[side]!=route.velocity)fixed[side]=0u;if(modes[side]!=velocity.mode)modes[side]=2u;}
         if(logical==s->selected_pad){p[1632]=(uint8_t)logical;p[1633]=(uint8_t)n;u16(p,1634,sensor->raw);u16(p,1636,(uint16_t)sensor->signed_delta);
@@ -173,16 +255,35 @@ size_t thy_companion_command(thy_companion *s,thy_engine *e,int available,uint32
     if(same(line,"companion caps")){
         add(&w,"CAPS build=");add(&w,s->identity.build?s->identity.build:"unknown");add(&w," uid=");add(&w,s->identity.uid?s->identity.uid:"unknown");
         add(&w," schema=");add(&w,THY_MENU_SCHEMA_SHA256);field(&w," bytes=",THY_COMPANION_SNAPSHOT_BYTES);field(&w," chunk=",THY_COMPANION_CHUNK_BYTES);field(&w," rows=",THY_MENU_ROW_COUNT);field(&w," writable=",!!available);
-        add(&w," role=instrument backup=1 song=1 companion=1 harmony=1 harmony_bytes=");dec(&w,THY_COMPANION_HARMONY_BYTES);add(&w," reset=1");
+        add(&w," role=instrument backup=1 song=1 companion=1 harmony=1 harmony_bytes=");dec(&w,THY_COMPANION_HARMONY_BYTES);add(&w," reset=1 pad_map=1 pad_map_bytes=");dec(&w,THY_COMPANION_PAD_MAP_BYTES);
     }else if(same(line,"companion status")){field(&w,"STATUS active=",s->active);field(&w," seq=",s->sequence);field(&w," selected=",s->selected_pad);field(&w," available=",!!available);}
     else if(prefix(&p,"companion release ")&&number(&p,&first)&&!*p){
-        if(first!=s->sequence)add(&w,"ERR generation");else{s->active=0u;add(&w,"RELEASED");}
+        if(first!=s->sequence)add(&w,"ERR generation");else{s->active=0u;s->map_state=0u;add(&w,"RELEASED");}
     }else if(!available)add(&w,"ERR busy");
     else if(same(line,"companion snapshot")){
         if(s->active)add(&w,"ERR snapshot-active");
         else if(s->captured&&(uint32_t)(now-s->last_visual_ms)<THY_COMPANION_MIN_CAPTURE_MS)add(&w,"ERR rate");
         else if(!snapshot(s,e,now))add(&w,"ERR snapshot-unavailable");
         else{field(&w,"SNAPSHOT seq=",s->sequence);field(&w," bytes=",THY_COMPANION_SNAPSHOT_BYTES);add(&w," crc32=");hex(&w,s->crc,8u);}
+    }else if(same(line,"companion pad-map")||
+        (p=line,prefix(&p,"companion pad-map ")&&number(&p,&first)&&!*p)){
+        int conditional=!same(line,"companion pad-map");
+        if(s->active&&!s->map_state)add(&w,"ERR snapshot-active");
+        else if(!s->active&&conditional&&first==pad_map_key(e)){
+            add(&w,"PADMAP unchanged=1");field(&w," revision=",first);
+        }
+        else if(!s->active&&(!s->buffer||s->capacity<THY_COMPANION_PAD_MAP_BYTES||s->sequence==UINT32_MAX))add(&w,"ERR snapshot-unavailable");
+        else{
+            if(!s->active){
+                snapshot_header(s,now,"THYMAP1",THY_COMPANION_PAD_MAP_BYTES);
+                s->map_key=pad_map_key(e);u32(s->buffer,20,s->map_key);
+                u32(s->buffer,24,e->instrument->layout_revision);u32(s->buffer,28,e->state.revision);
+                ++s->sequence;s->active=1u;s->map_state=1u;s->map_cursor=0u;
+                s->captured_bytes=0u;s->captured_ms=s->last_ms=now;
+            }
+            if(s->map_state==1u){add(&w,"PADMAP pending=1");field(&w," seq=",s->sequence);s->last_ms=now;}
+            else{field(&w,"PADMAP seq=",s->sequence);field(&w," bytes=",THY_COMPANION_PAD_MAP_BYTES);add(&w," crc32=");hex(&w,s->crc,8u);s->last_ms=now;}
+        }
     }else if(same(line,"companion harmony snapshot")){
         if(s->active)add(&w,"ERR snapshot-active");
         else if(!harmony_snapshot(s,e,now))add(&w,"ERR snapshot-unavailable");

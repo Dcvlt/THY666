@@ -14,6 +14,7 @@ import { initializeCompanionShell } from './companion-shell.js';
 import { initializeStartup } from './startup.js';
 import { connectDesktopRuntime } from './desktop-runtime.js';
 import { initializeDesktopChrome } from './desktop-chrome.js';
+import { initializeUIComponents } from './ui-system.js';
 
 const startup=initializeStartup();
 let desktopChrome=null;
@@ -1201,6 +1202,9 @@ async function initializeConnectedCompanion() {
     }
     window.addEventListener('pagehide', () => { unsubscribe(); unsubscribeNotices(); companionShell.destroy(); }, { once: true });
   }
+  // Both archive-free browser/desktop startup and the local workbench need
+  // the same observer for existing controls and later dialogs/page content.
+  initializeUIComponents();
   window.thyWorkbench = Object.freeze({ engine, menuDesign: engineStudio, companion: companionShell, desktop: bindings?.runtime || null });
   document.documentElement.dataset.ready = 'true';
   startup.ready();
@@ -1297,6 +1301,7 @@ async function initialize() {
       const unsubscribeNotices=await runtime.subscribeNotices(message=>{nativeNotice.textContent=message;nativeNotice.hidden=false;});
       window.addEventListener('pagehide',()=>{unsubscribe();unsubscribeNotices();companionShell.destroy();},{once:true});
     }
+    initializeUIComponents();
     oledPreview?.pause();
     renderScreen();
     // Read-only hooks support browser integration checks against actual WASM state.

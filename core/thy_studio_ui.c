@@ -1053,7 +1053,17 @@ static void view_line(const thy_state *state, const play_snapshot *snapshot,
         (void)append(out, used, 32u, snapshot->musical_name);
         break;
     case THY_VIEW_INFO_VELOCITY:
-        if (instrument->routing_profile == THY_ROUTING_ZONES) {
+        if (engine && (engine->performance[0].velocity || engine->performance[1].velocity)) {
+            used=append(out,used,32u,"VEL ");
+            for(uint8_t side=1u;side<=2u;++side){
+                int32_t value=0;
+                used=append(out,used,32u,side==1u?"L":" R");
+                if(thy_engine_performance_get(engine,THY_ROW_PERFORMANCE_VELOCITY,side,&value)!=THY_STATE_OK)
+                    used=append(out,used,32u,"--");
+                else if(value<0)used=append(out,used,32u,"MIX");
+                else used=number(out,used,32u,(unsigned)value);
+            }
+        } else if (instrument->routing_profile == THY_ROUTING_ZONES) {
             used = append(out, used, 32u, "V");
             for (unsigned zone = 0u; zone < 6u; ++zone) {
                 if (zone) used = append(out, used, 32u, zone == 3u ? "|" : "/");
@@ -1171,35 +1181,92 @@ static void draw_view_line(uint8_t *out, unsigned y, const thy_state *state,
     thy_ui_draw_text(out, 2u, y, text, 21u, 0);
 }
 
+static void rail_bitmap(uint8_t *out, unsigned x, unsigned y,
+    unsigned width, unsigned height, const uint32_t *rows)
+{
+    for (unsigned row = 0u; row < height; ++row)
+        for (unsigned col = 0u; col < width; ++col)
+            if (rows[row] & (UINT32_C(1) << col))
+                thy_ui_draw_pixel(out, x + col, y + row, 1);
+}
+
+static void output_side_ticks(uint8_t *out,const thy_instrument *i,unsigned mask,unsigned y)
+{
+    const unsigned count=i->routing_profile==THY_ROUTING_ZONES?3u:1u;
+    for(unsigned physical=0u;physical<2u;++physical){
+        unsigned enabled=0u,side=physical^i->cluster_swap;
+        for(unsigned zone=0u;zone<count;++zone){
+            uint8_t target=i->routing_profile==THY_ROUTING_WHOLE?0u:
+                count==3u?(uint8_t)(3u+side*3u+zone):(uint8_t)(side+1u);
+            thy_instrument_route route;
+            if(thy_instrument_get_pad_route(i,target,&route)==THY_OK&&(route.destinations&mask))++enabled;
+        }
+        unsigned x=physical?127u:110u;
+        if(enabled==count)thy_ui_draw_pixel(out,x,y,1);
+        else if(enabled){
+            thy_ui_draw_pixel(out,x,y-1u,1);thy_ui_draw_pixel(out,x,y+1u,1);
+        }
+    }
+}
+
 static void connection_icons(uint8_t *out, const thy_state *state,
     int din_ready, int usb_ready)
 {
-    thy_ui_draw_rectangle(out, 116, 1, 1, 8, 1);
-    thy_ui_draw_pixel(out, 115, 2, 1);
-    thy_ui_draw_pixel(out, 117, 2, 1);
-    thy_ui_draw_rectangle(out, 113, 4, 1, 3, 1);
-    thy_ui_draw_rectangle(out, 113, 6, 4, 1, 1);
-    thy_ui_draw_rectangle(out, 116, 4, 5, 1, 1);
-    thy_ui_draw_rectangle(out, 120, 2, 2, 2, 1);
-    thy_ui_draw_rectangle(out, 115, 9, 3, 2, 1);
-    /* DIN is labelled instead of the ambiguous circular connector glyph.
-     * The fixed side rail is shared by every Play view. */
-    thy_ui_draw_text(out, 112u, 17u, "DIN", 3u, 0);
-    if (!usb_ready) for (unsigned at = 0u; at < 10u; ++at)
-        thy_ui_draw_pixel(out, 112u + at, 10u - at, 1);
-    if (!din_ready) for (unsigned at = 0u; at < 10u; ++at)
-            thy_ui_draw_pixel(out, 112u + at, 24u - at, 1);
-    if (state->engine != NULL && state->engine->expression_config.enabled)
-        thy_ui_draw_text(out, 112u, 30u, "MPE", 3u, 0);
-    if (state->engine != NULL) {
-        unsigned arps = (state->engine->arps[0].config.enabled ? 1u : 0u) |
-            (state->engine->arps[1].config.enabled ? 2u : 0u);
-        if (arps) {
-            thy_ui_draw_text(out, 112u, 42u, "ARP", 3u, 0);
-            thy_ui_draw_text(out, 112u, 49u,
-                arps == 3u ? "1+2" : arps == 1u ? "1" : "2", 3u, 0);
+    /* Pixel drawings supplied for the 128 x 64 panel. Fixed slots keep two
+     * completely blank rows between icons; hidden states never move a slot. */
+    static const uint32_t usb[] = {0x38u,0x7cu,0x10u,0x390u,0x392u,
+        0x117u,0x1f2u,0x1eu,0x10u,0x10u,0x38u,0x7cu,0x10u};
+    static const uint32_t din[] = {0x1c0u,0x630u,0x808u,0x1004u,0x2002u,
+        0x2002u,0x4001u,0x4411u,0x4809u,0x2222u,0x2412u,0x1084u,
+        0x888u,0x630u,0x1c0u};
+    static const uint32_t mpe[] = {0x776cu,0x1554u,0x13755u,0x1144u,0x7144u};
+    static const uint32_t arp[] = {0x1ddcu,0x1554u,0x5dddu,0x4d4u,0x554u};
+    static const uint32_t at[] = {0x77u,0x25u,0x27u,0x25u,0x25u};
+    static const uint32_t vel[] = {0x1744u,0x1144u,0x1328u,0x1128u,0x7710u};
+    static const uint32_t poly[] = {7u,5u,7u,1u,1u};
+    static const uint32_t channel[] = {7u,1u,1u,1u,7u};
+    static const uint32_t mixed[] = {7u,4u,2u,0u,2u};
+    unsigned routes = side_destinations(state->instrument, 0u) |
+        side_destinations(state->instrument, 1u);
+    /* USB readiness includes a configured host. DIN has no cable sensor:
+     * readiness reports the output driver, gated by enabled destinations. */
+    if (usb_ready && (routes & (THY_ROUTE_USB0 | THY_ROUTE_USB1))) {
+        rail_bitmap(out,114u,1u,10u,13u,usb);
+        output_side_ticks(out,state->instrument,THY_ROUTE_USB0|THY_ROUTE_USB1,7u);
+    }
+    if (din_ready && (routes & THY_ROUTE_DIN)) {
+        rail_bitmap(out,111u,16u,15u,15u,din);
+        output_side_ticks(out,state->instrument,THY_ROUTE_DIN,23u);
+    }
+    const thy_engine *engine = state->engine;
+    if (engine == NULL) return;
+    if (engine->expression_config.enabled)
+        rail_bitmap(out,110u,33u,17u,5u,mpe);
+    if (engine->arps[0].config.enabled || engine->arps[1].config.enabled)
+        rail_bitmap(out,111u,40u,15u,5u,arp);
+    int show_at = 0, show_vel = 0;
+    for (uint8_t side = 1u; side <= 2u; ++side) {
+        int32_t mode = 0;
+        unsigned x = side == 1u ? 110u : 124u;
+        if (!engine->expression_config.enabled &&
+            thy_engine_performance_get(engine,THY_ROW_PERFORMANCE_PRESSUREMODE,
+                side,&mode) == THY_STATE_OK && mode != THY_CHANNEL_PRESSURE_OFF) {
+            rail_bitmap(out,x,47u,3u,5u,mode == THY_CHANNEL_PRESSURE_POLY ? poly :
+                mode == THY_CHANNEL_PRESSURE_CHANNEL ? channel : mixed);
+            show_at = 1;
+        }
+        if (thy_engine_performance_get(engine,THY_ROW_SENSITIVITY_VELOCITYMODE,
+                side,&mode) == THY_STATE_OK && mode != THY_VELOCITY_FIXED) {
+            x = side == 1u ? 110u : 126u;
+            if (mode == THY_VELOCITY_STRIKE) thy_ui_draw_pixel(out,x,56u,1);
+            else { /* Mixed overrides: split tick, rather than a false ON. */
+                thy_ui_draw_pixel(out,x,55u,1);thy_ui_draw_pixel(out,x,57u,1);
+            }
+            show_vel = 1;
         }
     }
+    if (show_at) rail_bitmap(out,115u,47u,7u,5u,at);
+    if (show_vel) rail_bitmap(out,110u,54u,17u,5u,vel);
 }
 
 static void large_text(uint8_t *out, unsigned x, unsigned y,
@@ -1613,9 +1680,9 @@ static void harmony_workspace_page(uint8_t *out, const thy_state *state,
     }
     if(page!=THY_HARMONY_CHORDS)
         thy_ui_draw_rule(out,9u,128u,2u,page==THY_HARMONY_SCALES?"HARMONY / SCALES":"HARMONY / KEY",25u,0);
-    thy_ui_draw_rectangle(out,64u,14u,1u,13u,1);thy_ui_draw_pixel(out,65u,27u,1);
-    thy_ui_draw_rectangle(out,66u,28u,1u,11u,1);thy_ui_draw_pixel(out,65u,39u,1);
-    thy_ui_draw_rectangle(out,64u,40u,1u,15u,1);
+    for (unsigned y=14u;y<55u;y+=2u)
+        thy_ui_draw_pixel(out,y>=28u&&y<=38u?65u:63u,y,1);
+    thy_ui_draw_pixel(out,64u,27u,1);thy_ui_draw_pixel(out,64u,39u,1);
     uint16_t selected = 0u;
     if (page == THY_HARMONY_CHORDS) {
         thy_ui_draw_text(out, 68u, 13u, "NOW", 12u, 0);
@@ -1808,8 +1875,22 @@ static void studio_play(uint8_t *out, const thy_state *state,
     if(footer[0])thy_ui_draw_rule(out,55u,108u,2u,footer,21u,1);
     draw_view_line(out, 58u, state, &snapshot, config->slots[1], scale_name, din_ready, usb_ready);
     if(view==THY_VIEW_SIMPLE){
-        thy_ui_draw_rectangle(out,107u,17u,1u,23u,1);
-        thy_ui_draw_pixel(out,106u,16u,1);thy_ui_draw_pixel(out,106u,40u,1);
+        /* Keep the existing content-aligned rules. Only their three final
+         * columns become elbows; inspect the known three rule rows so long
+         * labels retain their own raised/lowered underline rather than a gap. */
+        unsigned top=10u,bottom=54u;
+        for(unsigned y=8u;y<=10u;++y)
+            if(out[y/8u*THY_UI_WIDTH+104u]&(1u<<(y%8u))){top=y;break;}
+        for(unsigned y=54u;y<=56u;++y)
+            if(out[y/8u*THY_UI_WIDTH+104u]&(1u<<(y%8u))){bottom=y;break;}
+        thy_ui_draw_rectangle(out,105u,8u,3u,3u,0);
+        thy_ui_draw_rectangle(out,105u,54u,3u,3u,0);
+        for(unsigned step=0u;step<3u;++step){
+            thy_ui_draw_pixel(out,105u+step,top+step+1u,1);
+            thy_ui_draw_pixel(out,105u+step,bottom-step-1u,1);
+        }
+        for(unsigned y=12u;y<54u;y+=2u)
+            if(y>top+3u&&y<bottom-3u)thy_ui_draw_pixel(out,107u,y,1);
     }
 }
 

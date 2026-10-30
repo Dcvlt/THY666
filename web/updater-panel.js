@@ -14,14 +14,14 @@ let panelSequence = 0;
 
 export function initializeUpdaterPanel({ mount, client, createHelper = createUpdaterClient, notify = () => {}, onOwnershipChange = () => {},
   connectApplication = () => client.connect(), onCompanion = () => {}, onRestored = async () => {}, handoff = null,
-  operationId = () => globalThis.crypto.randomUUID(), setTimer = globalThis.setTimeout, clearTimer = globalThis.clearTimeout,runtime=null } = {}) {
+  operationId = () => globalThis.crypto.randomUUID(), setTimer = globalThis.setTimeout, clearTimer = globalThis.clearTimeout,runtime=null, developmentPreview=false } = {}) {
   if (!mount?.ownerDocument || !client?.downloadBackup || typeof createHelper !== 'function')
     throw new TypeError('Update requires a DOM mount, the shared device client and an updater helper factory.');
   const doc = mount.ownerDocument, prefix = `thy-updater-${++panelSequence}`, listeners = [];
   const helper = createHelper();
   let disposed = false, working = false, fileTicket = 0, selected = null, inspected = null, devices = [];
   let backup = null, operation = null, locked = false, dialog = null, confirmationKind = null, returnFocus = null, previewConfirm = null, applicationVerification = null;
-  let preservationRequested = false, restorationState = 'idle', restorationError = '';
+  let preservationRequested = false, restorationState = 'idle', restorationError = '', backupPreparation = null;
   let progressTimer = null, helperSimulation = false, rejectionPending = null,hostActive=true;
   let step = 1, backupState = 'idle', source = 'thy666', releases = [], catalogConfigured = false, detectedUID = null, verifying = false;
   const health = new Map(); let healthError = '', packageTicket = 0, packageReadoutKey = '';
@@ -37,16 +37,17 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
     listeners.push(() => node.removeEventListener(type, handler, options));
   };
   const button = (text, action) => {
-    const node = el('button', 'button', text); node.type = 'button'; node.dataset.updaterAction = action; return node;
+    const node = el('button', action === 'confirm' ? 'button hud-action hud-action--primary' : 'button hud-action', text); node.type = 'button'; node.dataset.updaterAction = action; return node;
   };
   const {root,boardPane,stages,bodies,actions,headings,stepEntries,setup,manual,boardArt,boardIdentity,deviceActions,entry,read,skip,backupConnect,backupSummary,backupProgress,restoreChoice,restoreWanted,restoration,restorationSummary,restore,keepSettings,restoreProgress,unavailable,endpoint,token,connect,disconnect,helperSummary,browserSummary,simulationBadge,sourceButtons,releaseNotice,custom,browse,fileName,file,expectedBuild,clearFile,inspect,fileDetails,packageSummary,find,device,prepared,prepare,install,progress,operationSummary,completion,logoArt,completionTitle,completionCopy,healthList,healthRows,applicationSummary,verify,companion,installProgress,recovery,status}=createUpdaterLayout(doc,prefix);
   if(runtime?.companionLabel)companion.textContent=String(runtime.companionLabel);
   mount.replaceChildren(root);
 
   let previewOpen=false, previewRoot=null, cancelPreview=()=>{};
-  const previewButton=button('Development preview','preview');
-  previewButton.className='button update-quiet';root.querySelector('.update-wizard-heading').append(previewButton);
-  listen(previewButton,'click',()=>{
+  // Synthetic scenarios are an explicit test/development opt-in, never a production control.
+  const previewButton=developmentPreview===true?button('Development preview','preview'):null;
+  if(previewButton){previewButton.className='button hud-action hud-action--quiet update-quiet';root.querySelector('.update-wizard-heading').append(previewButton);}
+  if(previewButton)listen(previewButton,'click',()=>{
     if(working||locked||operation||client.connected||client.busy)return;
     previewOpen=true;root.hidden=true;
     const view=createUpdaterLayout(doc,`${prefix}-preview`);previewRoot=view.root;mount.append(previewRoot);
@@ -189,7 +190,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
     if(disposed||step!==3||!preservationRequested||!applicationVerification?.verified||
       operation?.state!=='awaiting-verification'||operation.simulation||operation.firmware_kind==='stock'||
       working||locked||client.busy||restorationState==='verified'||restorationState==='declined'||typeof client.restoreBackup!=='function')return false;
-    try{restoreIdentity();return true;}catch{return false;}
+    try{return !backupPreparation?.error&&Boolean(restoreIdentity());}catch{return false;}
   }
   function mayKeepSettings() {
     return !disposed&&step===3&&preservationRequested&&applicationVerification?.verified===true&&
@@ -294,7 +295,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
       healthError||'Leave every pad released. Choose Connect and verify, then select your THY666 board. No automatic restore is performed.';
     root.dataset.step=String(step);
     root.dataset.operation=operation?'active':'idle';
-    previewButton.disabled=busy||locked||Boolean(operation)||connected||client.busy;
+    if(previewButton)previewButton.disabled=busy||locked||Boolean(operation)||connected||client.busy;
     stages.forEach((node,index)=>{node.hidden=index!==step;});
     stepEntries.forEach((node,i)=>{node.hidden=i===2&&operation?.firmware_kind==='stock';const index=i+1;node.dataset.state=index===step?'active':index<step?'done':'pending';node.setAttribute('aria-current',index===step?'step':'false');});
     setup.hidden=runtime?.kind==='desktop'||directBrowser||Boolean(operation)&&locked;
@@ -333,7 +334,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
     restore.disabled=!mayRestore();keepSettings.disabled=!mayKeepSettings();
     restore.hidden=['verified','declined'].includes(restorationState);keepSettings.hidden=restore.hidden;
     restoration.dataset.state=restorationState;
-    restorationSummary.textContent=restorationState==='verified'?'Your configuration was restored, saved and re-exported. The complete saved payload matches the independently checked restore payload.':restorationState==='declined'?'You chose to keep the current settings. The downloaded backup remains available for a later explicit restore.':restorationState==='running'?'Restoring your configuration and checking the saved readback. Keep the board connected and every pad released.':restorationState==='failed'?`${restorationError} No restore retry was sent. Keep the downloaded backup and inspect the current device state before another explicit attempt.`:firmwareVerified?'Firmware checks passed. Restore the saved configuration next, or explicitly choose to keep the current settings.':'First verify the intended board and firmware. Your retained backup will not be written before those checks pass.';
+    restorationSummary.textContent=restorationState==='verified'?'Your configuration was restored, saved and re-exported. The complete saved payload matches the independently checked restore payload.':restorationState==='declined'?'You chose to keep the current settings. The downloaded backup remains available for a later explicit restore.':restorationState==='running'?'Restoring your configuration and checking the saved readback. Keep the board connected and every pad released.':restorationState==='failed'?`${restorationError} No restore retry was sent. Keep the downloaded backup and inspect the current device state before another explicit attempt.`:firmwareVerified?backupPreparation?.error?`Firmware checks passed. ${backupPreparation.error} Keep the original backup; no restore was sent.`:backupPreparation?.migrated?`Firmware checks passed. Your settings V${backupPreparation.sourceSettingsVersion} backup was checked and converted to V${backupPreparation.settingsVersion} off-device. Review before restoring; the original file is unchanged.`:'Firmware checks passed. Restore the saved configuration next, or explicitly choose to keep the current settings.':'First verify the intended board and firmware. Your retained backup will not be written before those checks pass.';
     const restoreMatch=/Sending backup · ([0-9]+)\/([0-9]+) bytes/.exec(client.status?.message||'');
     paintProgress(restoreProgress,{state:restorationState==='running'?'running':restorationState==='verified'?'done':restorationState==='failed'?'failure':'idle',completed:restorationState==='verified'?1:Number(restoreMatch?.[1]||0),total:restorationState==='verified'?1:Number(restoreMatch?.[2]||0),message:restorationSummary.textContent});
     completion.hidden=!operation;completion.dataset.state=firmwareVerified&&restorationState==='verified'?'restored':firmwareVerified?'verified':complete&&operation?.firmware_kind==='stock'?'stock-complete':complete?'finished':operation?.state==='failed'?'failure':'busy';
@@ -453,9 +454,9 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
     if(dialog)return;
     returnFocus=trigger;confirmationKind='preview-install';previewConfirm=confirmAction;
     dialog=el('div','thy-help-overlay updater-confirmation');dialog.dataset.updaterDialog='';
-    const card=el('section','thy-help-dialog');card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');
+    const card=el('section','thy-help-dialog hud-frame hud-frame--dialog');card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');
     const title=el('h2','','Keep your board powered');title.id=`${prefix}-preview-confirm-title`;title.className='update-warning-heading';title.prepend(createUpdateIcon(doc,'warning'));
-    const warning=el('p','update-power-warning',POWER_WARNING);warning.id=`${prefix}-preview-confirm-copy`;
+    const warning=el('p','update-power-warning hud-notice',POWER_WARNING);warning.id=`${prefix}-preview-confirm-copy`;
     card.setAttribute('aria-labelledby',title.id);card.setAttribute('aria-describedby',warning.id);
     const cancel=button('Cancel','cancel'),confirm=button('Confirm and preview update','confirm');
     card.append(title,warning,el('p','','DEVELOPMENT PREVIEW · Confirmation starts a simulated transfer only. No physical board is accessed.'),cancel,confirm);
@@ -465,11 +466,11 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
     if (disposed || dialog || !mayInstall()) return;
     returnFocus = doc.activeElement || install;confirmationKind='install';
     dialog = el('div', 'thy-help-overlay updater-confirmation'); dialog.dataset.updaterDialog = '';
-    const card = el('section', 'thy-help-dialog'); card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true');
+    const card = el('section', 'thy-help-dialog hud-frame hud-frame--dialog'); card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true');
     card.setAttribute('aria-labelledby', `${prefix}-confirm-title`); card.setAttribute('aria-describedby', `${prefix}-confirm-copy`);
     const h = el('h2', '', helperSimulation ? 'Run this simulated update once?' : 'Keep your board powered'); h.id = `${prefix}-confirm-title`;h.className='update-warning-heading';h.prepend(createUpdateIcon(doc,'warning'));
     const copy = el('p', '', helperSimulation ? 'SIMULATION uses a fake board and never opens physical USB, writes firmware or verifies a running device. This exercises the update workflow only.' : 'Release all controls and keep USB connected until the helper finishes. This writes application flash. Bootloader memory preparation runs before hardware/UID verification and may change external contents. The backup contains configuration only; it is not raw flash and provides no qualified recovery or automatic rollback. No automatic restore follows.'); copy.id = `${prefix}-confirm-copy`;
-    card.append(h, el('p','update-power-warning',POWER_WARNING), copy, el('p', '', `Package: ${selected.name} · SHA-256 ${inspected.file_sha256}`),
+    card.append(h, el('p','update-power-warning hud-notice',POWER_WARNING), copy, el('p', '', `Package: ${selected.name} · SHA-256 ${inspected.file_sha256}`),
       el('p', '', helperSimulation ? `Simulated board: ${currentDevice().label || currentDevice().id}. No physical board is selected.` : `Selected physical update-mode board: ${currentDevice().label || currentDevice().id}. Confirm this is the intended connected board; its bootloader HID serial does not establish its application UID before preparation.`),
       el('p', '', currentBackup() ? restoreWanted.checked&&inspected.kind==='thy666'?'A verified configuration backup was downloaded in this session. After firmware checks, a separate review will ask you to restore it and verify the saved readback.':'A verified configuration backup was downloaded in this session. It will not be restored by this update.':'No fresh configuration backup is available. Settings recovery is not guaranteed.'));
     const cancel = button('Cancel', 'cancel'), confirm = button(helperSimulation ? 'Run simulation once' : 'Confirm and install firmware', 'confirm'); card.append(cancel, confirm);
@@ -514,7 +515,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
   async function verifyInstallation(){
     if(!operation||operation.state!=='awaiting-verification'||operation.simulation||operation.firmware_kind==='stock'||verifying)return;
     await run(async()=>{
-      verifying=true;health.clear();healthError='';applicationVerification=null;
+      verifying=true;health.clear();healthError='';applicationVerification=null;backupPreparation=null;
       let checking='identity';
       try{
         if(!client.connected)await connectApplication();
@@ -526,12 +527,23 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
           checking=id;health.set(id,{state:'busy',message:'Reading the board…'});refresh();
           checkUpdateIdentity(operation,client.identity);
           const report=await client.telemetry(id);if(disposed)return;
-          const message=checkUpdateHealth(id,report,operation);health.set(id,{state:'pass',message});refresh();
+          const message=checkUpdateHealth(id,report,operation,client.backupIdentity);health.set(id,{state:'pass',message});refresh();
         }
         checkUpdateIdentity(operation,client.identity);
         if(!client.connected)throw new Error('The board disconnected before verification finished.');
         applicationVerification={verified:true,state:'matched',scope:'basic-installation-health',actualBuild:identity.build,actualUID:identity.uid};
-        say(preservationRequested&&!preservationResolved()?'Firmware checks passed. Review and restore your saved configuration, or explicitly keep the current settings.':'Firmware verified. The firmware identity and basic health checks passed.',preservationRequested&&!preservationResolved()?'info':'success');
+        if(preservationRequested&&backup?.bytes){
+          try{
+            const info=restoreIdentity();
+            if(info.settingsVersion!==Number(client.backupIdentity.settings)){
+              if(typeof client.prepareBackupRestore!=='function')throw new Error('This Client cannot prepare the older backup for this firmware.');
+              backupPreparation=await client.prepareBackupRestore(backup.bytes.slice());
+              checkUpdateIdentity(operation,client.identity);
+              if(!client.connected)throw new Error('The board disconnected during backup preparation.');
+            }
+          }catch(error){backupPreparation={error:error.message};}
+        }
+        say(backupPreparation?.error?'Firmware checks passed. Backup preparation needs attention; no restore was sent.':preservationRequested&&!preservationResolved()?'Firmware checks passed. Review and restore your saved configuration, or explicitly keep the current settings.':'Firmware verified. The firmware identity and basic health checks passed.',preservationRequested&&!preservationResolved()?'info':'success');
       }catch(error){healthError=error.message;health.set(checking,{state:'failure',message:error.message});applicationVerification={verified:false,state:'failed',scope:'basic-installation-health'};throw error;}
       finally{verifying=false;}
     });
@@ -540,7 +552,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
     if(disposed||dialog||!(kind==='restore'?mayRestore():mayKeepSettings()))return;
     returnFocus=doc.activeElement||(kind==='restore'?restore:keepSettings);confirmationKind=kind;
     dialog=el('div','thy-help-overlay updater-confirmation');dialog.dataset.updaterDialog='';
-    const card=el('section','thy-help-dialog');card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');
+    const card=el('section','thy-help-dialog hud-frame hud-frame--dialog');card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');
     card.setAttribute('aria-labelledby',`${prefix}-confirm-title`);card.setAttribute('aria-describedby',`${prefix}-confirm-copy`);
     const h=el('h2','',kind==='restore'?'Restore this saved configuration?':'Keep the current settings?');h.id=`${prefix}-confirm-title`;
     const copy=el('p','',kind==='restore'?'This replaces the connected board’s applied settings, calibration overrides, custom library and current song with the backup retained before this update. Release all pads and controls and stop playback. The restore will save, re-export and compare the complete payload; it does not write firmware.':'Your backup will not be written. The settings currently on the verified board will be kept, including factory defaults if the update reset them. Keep the downloaded backup for a later explicit restore.');copy.id=`${prefix}-confirm-copy`;

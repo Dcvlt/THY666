@@ -4,7 +4,7 @@ import { STUDIO_MENU, MENU_ROWS } from '../../web/studio-menu.js';
 
 test('all categories put basic controls before one advanced section without selectable separator rows', () => {
   assert.equal(STUDIO_MENU.groups.length, 15);
-  assert.equal(MENU_ROWS.length, 348);
+  assert.equal(MENU_ROWS.length, 351);
   for (const group of STUDIO_MENU.groups) {
     assert.ok(group.rows.some(row => !row.advanced), group.id);
     if(!['engines','engineSettings'].includes(group.id)) assert.ok(group.rows.some(row => row.advanced), group.id);
@@ -47,7 +47,7 @@ test('musical setup moves to Chords with stable logical identities and factory s
   }
 });
 
-test('route aftertouch is a three-way selector with separate advanced bend controls', () => {
+test('legacy route expression identities are retained but retired from both editors', () => {
   const byId = new Map(MENU_ROWS.map(row => [row.id, row]));
   const aftertouch = byId.get('midi.pressure');
   assert.equal(aftertouch.type, 'select');
@@ -57,51 +57,61 @@ test('route aftertouch is a three-way selector with separate advanced bend contr
   const range = byId.get('midi.bendRange');
   assert.equal(range.min, 1); assert.equal(range.max, 24); assert.equal(range.default, 2);
   assert.equal(byId.get('midi.bendSetup').type, 'action');
+  for(const [id,index] of [['midi.velocity',164],['midi.pressure',165],['midi.pressureBend',175],['midi.bendRange',176],['midi.bendSetup',177]]){
+    assert.equal(byId.get(id).retired,true,id);
+    assert.equal(MENU_ROWS.findIndex(row=>row.id===id),index,id);
+  }
+  for(const id of ['performance.velocity','performance.pressureMode','performance.pressureBend','performance.bendRange','performance.bendSetup'])
+    assert.notEqual(byId.get(id).retired,true,id);
 });
 
-test('Performance owns scoped velocity and the shared MPE alias without pressure masters',()=>{
+test('Performance owns one physical-half target and the explicitly global MPE switch',()=>{
   const byId=new Map(MENU_ROWS.map(row=>[row.id,row]));
   const mode=byId.get('sensitivity.velocityMode');
   assert.equal(mode.group,'performance');assert.equal(mode.binding,'velocity.mode');assert.equal(mode.advanced,false);
   assert.deepEqual(mode.options.map(option=>option.label),['Fixed','Strike','Mixed']);
   const target=byId.get('performance.velocityTarget');
-  assert.equal(target.label,'Velocity for');assert.equal(target.binding,'velocity.target');
+  assert.equal(target.label,'Settings for');assert.equal(target.binding,'velocity.target');
   assert.deepEqual(target.options.map(option=>option.label),['Both','Left','Right']);
   assert.equal(byId.get('performance.mpe').binding,byId.get('expression.enabled').binding);
   assert.equal(byId.get('performance.mpe').group,'performance');
+  assert.equal(byId.get('performance.mpe').label,'MPE (global)');
+  assert.equal(byId.get('performance.mpe').advanced,true);
   assert.equal(byId.get('performance.aftertouch').retired,true);
   assert.equal(byId.get('performance.velocitySource').retired,true);
   assert.equal(byId.get('performance.velocity').label,'Default velocity');
   assert.equal(byId.get('sensitivity.profileEnabled').label,'Aftertouch stage');
 });
 
-test('Performance exposes live route response aliases beside velocity with bend range advanced', () => {
+test('Performance groups scoped velocity, aftertouch and bend above whole-board controls', () => {
   const byId = new Map(MENU_ROWS.map(row => [row.id, row]));
   const performance = STUDIO_MENU.groups.find(group => group.id === 'performance').rows;
-  const afterVelocity = performance.findIndex(row => row.id === 'performance.velocity') + 1;
-  assert.deepEqual(performance.slice(afterVelocity, afterVelocity + 3).map(row => row.id),
-    ['performance.routeTarget', 'performance.pressureMode', 'performance.pressureBend']);
-  for (const [alias, original] of [
-    ['performance.routeTarget', 'midi.routeTarget'],
-    ['performance.pressureMode', 'midi.pressure'],
-    ['performance.pressureBend', 'midi.pressureBend'],
-    ['performance.bendRange', 'midi.bendRange'],
-  ]) {
-    const row = byId.get(alias), canonical = byId.get(original);
-    assert.equal(row.group, 'performance', alias);
-    assert.equal(row.status, 'live', alias);
-    assert.equal(row.binding, canonical.binding, alias);
-    assert.equal(row.type, canonical.type, alias);
-    assert.equal(row.default, canonical.default, alias);
-    if (row.type === 'select')
-      assert.deepEqual(row.options.map(option => option.value), canonical.options.map(option => option.value), alias);
-    assert.equal(row.advanced, alias === 'performance.bendRange', alias);
+  assert.deepEqual(performance.filter(row=>!row.retired&&!row.advanced).map(row=>row.id),
+    ['performance.velocityTarget','sensitivity.velocityMode','performance.velocity','performance.pressureMode',
+      'performance.profileEnabled','performance.mpeOutput','performance.pressureBend','performance.bendRange','performance.bendSetup']);
+  for (const id of ['velocity','pressureMode','profileEnabled','mpeOutput','pressureBend','bendRange']) {
+    const row=byId.get(`performance.${id}`);
+    assert.equal(row.group,'performance',id);
+    assert.equal(row.status,'live',id);
+    assert.equal(row.binding,`performance.${id}`,id);
+    assert.equal(row.advanced,false,id);
   }
-  assert.equal(byId.get('performance.routeTarget').label, 'Response for');
+  assert.equal(byId.get('performance.routeTarget').retired,true);
+  assert.equal(byId.get('performance.pressureMode').label,'AT output');
+  assert.deepEqual(byId.get('performance.pressureMode').options.map(option => option.label), ['Off', 'Poly', 'Channel']);
   assert.deepEqual(byId.get('performance.pressureMode').options.map(option => option.value), ['off', 'poly', 'channel']);
+  assert.equal(byId.get('performance.profileEnabled').type,'toggle');
+  assert.equal(byId.get('performance.profileEnabled').label,'Aftertouch stage');
+  assert.equal(byId.get('performance.mpeOutput').default,0);
+  assert.deepEqual(byId.get('performance.mpeOutput').options.map(option=>option.label),['Pressure','CC74','CC1']);
   assert.deepEqual(byId.get('performance.pressureBend').options.map(option => option.value), ['off', 'up', 'down']);
   assert.equal(byId.get('performance.bendRange').min, 1);
   assert.equal(byId.get('performance.bendRange').max, 24);
+  assert.equal(byId.get('performance.bendSetup').type,'action');
+  assert.equal(byId.get('performance.bendSetup').binding,'performance.bendSetup');
+  assert.equal(byId.get('performance.bendSetup').advanced,false);
+  for(const id of ['mpe','padOverlays','contextLocation','contextChordOctaves','contextMelodyOctaves','contextBass','contextInversion'])
+    assert.equal(byId.get(`performance.${id}`).advanced,true,id);
 });
 
 test('broad controls stay basic while precise per-step, source and detail settings remain advanced', () => {

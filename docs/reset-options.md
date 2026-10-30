@@ -16,20 +16,20 @@ it never applies only some of the defaults. The RIGHT edge used to confirm is
 allowed. A rejected reset leaves the confirmation open for retry or cancellation.
 
 The scope is captured when the confirmation opens. Changing an editor selector
-cannot redirect the reset to another Arp, view, route or track. The connected
-Client uses this same C confirmation and a transaction identity; a stale browser
+cannot redirect the reset to another physical-half scope, Arp, view, route or
+track. The connected Client uses this same C confirmation and a transaction identity; a stale browser
 dialog cannot confirm a newer or different reset.
 
 ## What each menu resets
 
 | Menu | Scope and defaults |
 | --- | --- |
-| Performance | Playability/context options, default velocity, MPE OFF, the captured Velocity for scope and the captured Response for route. Other routes and the other velocity scope are retained. |
+| Performance | The captured Settings for physical scope: Fixed mode, default velocity 96, ordinary Aftertouch/stage OFF, bend OFF/range 2 and MPE output Pressure. The other half and all MIDI route policies are retained. Global context controls return to defaults and MPE turns OFF for the whole board. |
 | Chords | Key, scale selection, layouts, voicing, transpose/octaves, Live Update, strum and the shared key-contrast switch. Saved user scales/chords/sets are retained. |
 | Arps | The selected Arp's configuration and the menu's Quick M controls option. The other Arp is retained. |
 | Sequencer | Global tempo and start timing. Tracks and recorded content are retained. |
 | Track settings | Only that track's configuration, input mode and recording-region options. The default loop is 16 sixteenth-note steps. All events retain their pitches, durations, timing and identities, including material outside the restored loop. |
-| MIDI | Global routing/clock/input options and the captured route's channel, outputs, fixed velocity and expression policy. Other route values are retained. |
+| MIDI | Global routing/clock/input options and the captured route's channel/outputs. Retained route velocity and expression values, Performance overrides and other routes are unchanged. |
 | Expression | The default MPE configuration, with MPE disabled. No receiver-setup messages are sent. |
 | Sensitivity | The selected physical cluster's inherited response/velocity/aftertouch defaults and button response. If a single pad is selected, it identifies that pad's physical cluster. Individual overrides, calibration tables and learned guards are retained; use the separate explicit pad-inheritance action to remove a pad override. |
 | Lights | Factory note palette, contrast, idle/held brightness, highlight/fade and center brightness. |

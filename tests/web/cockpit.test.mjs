@@ -19,12 +19,13 @@ class Element {
       toggle: (name, force) => { const on = force ?? !this.classList.contains(name); on ? this.classList.add(name) : this.classList.remove(name); return on; },
     };
   }
-  set textContent(value) { this._text = String(value); this.replaceChildren(); }
+  set textContent(value) { this.ownerDocument.writes = (this.ownerDocument.writes || 0) + 1; this._text = String(value); this.replaceChildren(); }
   get textContent() { return this._text + this.children.map(node => node.textContent).join(''); }
   set innerHTML(_) { throw new Error('Cockpit device values must never become HTML.'); }
   get parentElement() { return this.parentNode; }
   get firstChild() { return this.children[0] || null; }
   setAttribute(key, value) {
+    this.ownerDocument.writes = (this.ownerDocument.writes || 0) + 1;
     this.attributes[key] = String(value);
     if (key === 'class') this.className = String(value);
     if (key.startsWith('data-')) this.dataset[dataKey(key.slice(5))] = String(value);
@@ -92,7 +93,10 @@ function snapshot() {
 
 function fixture(t) {
   let hardwareCalls = 0;
-  const document = { createElement(tag) { return new Element(this, tag); },
+  const document = { hidden: false, writes: 0, listeners: new Map(),
+    addEventListener(type, callback) { this.listeners.set(type, callback); },
+    removeEventListener(type, callback) { if (this.listeners.get(type) === callback) this.listeners.delete(type); },
+    createElement(tag) { return new Element(this, tag); },
     createElementNS(_namespace, tag) { return new Element(this, tag); } };
   document.body = document.createElement('body');
   const mount = document.createElement('section'), instrument = document.createElement('div');
@@ -119,7 +123,7 @@ function fixture(t) {
     return node.textContent;
   };
   const nodes = () => { let count = 0; const walk = node => { count++; node.children.forEach(walk); }; walk(mount); return count; };
-  return { cockpit, mount, instrument, value, nodes, hardwareCalls: () => hardwareCalls };
+  return { cockpit, mount, instrument, document, value, nodes, hardwareCalls: () => hardwareCalls };
 }
 
 test('the cockpit stays hidden offline and labels its optional local design preview explicitly', t => {
@@ -247,10 +251,132 @@ test('contextual panels follow active modes and do not invent track numbers', t 
   f.cockpit.update({...data,mpe:false,arp1:false,arp2:false,running:false,recording:false,engine:1},{connected:true});
   assert.ok(f.mount.querySelectorAll('.cockpit-context').every(n=>n.hidden));
   f.cockpit.update({...data,engine:6},{connected:true});
-  assert.equal(f.mount.querySelectorAll('.cockpit-context').filter(n=>!n.hidden).length,4);
+  assert.equal(f.mount.querySelectorAll('.cockpit-context').filter(n=>!n.hidden).length,3);
+  assert.equal(f.mount.querySelector('.cockpit-harmony-detail').hidden,false,'Harmony expands its existing harmonic instrument instead of duplicating a text card.');
   assert.equal(f.value('harmony-home'),'DORIAN A');
   f.cockpit.update({...data,engine:2,selectedTrack:-1},{connected:true});
   assert.equal(f.value('seq-track'),'—');assert.equal(f.hardwareCalls(),0);
+});
+
+test('MPE routing shows the configured axes and physical input peaks without guessing an upper-stage value', t => {
+  const f=fixture(t),data=snapshot();
+  const context={expression:{mpeOutput:[0,2],aftertouchStage:[true,false]}};
+  f.cockpit.update({...data,context},{connected:true});
+  assert.equal(f.mount.querySelector('.cockpit-pressure').hidden,true);
+  const overview=f.mount.querySelector('.cockpit-panels');
+  assert.ok(overview.contains(f.mount.querySelector('.cockpit-mpe-context')));
+  assert.equal(overview.children.filter(node=>!node.hidden).length,4,'MPE replaces the pressure slot rather than adding a fifth overview card.');
+  assert.equal(f.value('mpe-primary-0'),'Pressure → Pressure');
+  assert.equal(f.value('mpe-primary-1'),'Pressure → CC1');
+  assert.equal(f.value('mpe-upper-0'),'On → CC74');
+  assert.equal(f.value('mpe-upper-1'),'Off');
+  assert.equal(f.value('velocity-left'),'44');assert.equal(f.value('velocity-right'),'101');
+  const lanes=f.mount.querySelectorAll('.cockpit-expression-lane');
+  assert.match(lanes[0].getAttribute('aria-label'),/pressure 39, velocity 44/);
+  const bars=lanes[0].querySelectorAll('rect');
+  assert.equal(Number(bars[0].getAttribute('width')),39*220/127);
+  assert.equal(Number(bars[1].getAttribute('width')),44*220/127);
+  f.cockpit.update({...data,context:{expression:{mpeOutput:[1,null],aftertouchStage:[true,-1]}}},{connected:true});
+  assert.equal(f.value('mpe-upper-0'),'On → Pressure');assert.equal(f.value('mpe-primary-1'),'Pressure → —');
+  assert.equal(f.value('mpe-upper-1'),'Mixed');
+  f.cockpit.update({...data,context:undefined},{connected:true});
+  assert.equal(f.value('mpe-primary-0'),'Pressure → —','No configuration must not silently imply the default mapping.');
+  f.cockpit.update({...data,mpe:false},{connected:true});
+  assert.equal(f.mount.querySelector('.cockpit-pressure').hidden,false);
+  assert.equal(f.mount.querySelector('.cockpit-mpe-context').hidden,true);
+  assert.equal(f.hardwareCalls(),0);
+});
+
+test('the Arp ribbon projects the exact combined MIDI pitch sets, not inferred per-Arp phases', t => {
+  const f=fixture(t),data=snapshot();
+  f.cockpit.update({...data,pool:[0,60,60,64,127,-1,128],sounding:[64,127]},{connected:true});
+  const present=kind=>f.mount.querySelectorAll('.cockpit-ribbon-note.is-present')
+    .filter(n=>n.dataset.cockpitRibbon.startsWith(`${kind}-`)).map(n=>Number(n.dataset.cockpitRibbon.split('-')[1]));
+  assert.deepEqual(present('pool'),[0,60,64,127]);assert.deepEqual(present('output'),[64,127]);
+  assert.equal(f.value('arp-pool'),'4 pooled');assert.equal(f.value('arp-sounding'),'2 sounding');
+  assert.match(f.mount.querySelector('.cockpit-note-ribbon').getAttribute('aria-label'),/Combined Arp pool: 4.*all sounding output: 2/);
+  f.cockpit.update({...data,pool:[],sounding:[]},{connected:true});
+  assert.deepEqual(present('pool'),[]);assert.deepEqual(present('output'),[]);
+});
+
+test('the Arp pitch window fits sustained inputs and stays stable across sounding gates', t => {
+  const f=fixture(t),data={...snapshot(),pool:[60,64,67],heldPitches:[]};
+  f.cockpit.update({...data,sounding:[60]},{connected:true});
+  assert.equal(f.value('arp-range'),'C3–B4');
+  const cell=note=>f.mount.querySelector(`[data-cockpit-ribbon="pool-${note}"]`);
+  assert.equal(cell(48).getAttribute('display'),'inline');assert.equal(cell(47).getAttribute('display'),'none');
+  assert.ok(Number(cell(60).getAttribute('width'))>16,'Ordinary chord pitches are readable cells rather than two-pixel full-range slivers.');
+  const x=cell(60).getAttribute('x'),width=cell(60).getAttribute('width');
+  for(const sounding of [[64],[],[67],[60,64,67],[127]]) {
+    f.cockpit.update({...data,sounding},{connected:true});
+    assert.equal(f.value('arp-range'),'C3–B4');assert.equal(cell(60).getAttribute('x'),x);assert.equal(cell(60).getAttribute('width'),width);
+  }
+  assert.match(f.value('arp-sounding'),/1 outside range/);
+  const labels=f.mount.querySelectorAll('.cockpit-ribbon-label').filter(node=>node.getAttribute('display')==='inline').map(node=>node.textContent);
+  assert.ok(['C4','E4','G4'].every(name=>labels.includes(name)));
+  f.cockpit.update({...data,heldPitches:[84],sounding:[84]},{connected:true});assert.equal(f.value('arp-range'),'C3–B6');
+  f.cockpit.update({...data,pool:[0,127],sounding:[0,127]},{connected:true});assert.equal(f.value('arp-range'),'C−1–G9'.replace('−','-'));
+  assert.ok(f.mount.querySelectorAll('.cockpit-ribbon-note').every(node=>node.getAttribute('display')==='inline'));
+  f.cockpit.update({...data,pool:[],sounding:[]},{connected:true});assert.equal(f.value('arp-range'),'C-1–G9');
+});
+
+test('sequencer instruments distinguish queued, armed, recording and paused without a fabricated playhead', t => {
+  const f=fixture(t),data={...snapshot(),engine:2,selectedTrack:20};
+  const transport=f.mount.querySelector('.cockpit-transport-visual');
+  f.cockpit.update({...data,transport:2,capture:2},{connected:true});
+  assert.equal(f.value('seq-track'),'T21');assert.equal(f.value('seq-state'),'Paused');assert.equal(f.value('seq-capture'),'Queued');
+  assert.equal(f.mount.querySelector('.cockpit-transport-pause').getAttribute('display'),'inline');
+  assert.equal(f.mount.querySelector('.cockpit-transport-play').getAttribute('display'),'none');
+  assert.equal(f.mount.querySelector('.cockpit-capture-dot').classList.contains('is-armed'),true);
+  f.cockpit.update({...data,transport:1,capture:3},{connected:true});
+  assert.equal(f.value('seq-capture'),'Recording');assert.equal(f.mount.querySelector('.cockpit-capture-dot').classList.contains('is-recording'),true);
+  assert.match(transport.getAttribute('aria-label'),/T21.*Playing.*Recording/);
+  f.cockpit.update({...data,transport:3,capture:99,selectedTrack:255,running:undefined},{connected:true});
+  assert.equal(f.value('seq-track'),'—');assert.equal(f.value('seq-state'),'—');assert.equal(f.value('seq-capture'),'—');
+  assert.doesNotMatch(f.mount.textContent,/playhead|step position/i);
+});
+
+test('Harmony compares the C-selected chord against captured context and retains only bounded supplied history', t => {
+  const f=fixture(t),data=snapshot(),harmony={page:0,inputMask:145,inputLabel:'C MAJ',keyLabel:'C MAJOR',cursor:0,
+    selectedLabel:'F MAJ',reason:'Predominant',rows:[{mask:545}],common:4095,added:4095,cacheReady:true,
+    history:[{mask:145,root:0},{mask:580,root:2},{mask:2192,root:4},{mask:290,root:1},{mask:4095,root:11}]};
+  const input={...data,engine:6,context:{harmony}};f.cockpit.update(input,{connected:true});
+  assert.equal(f.mount.querySelector('.cockpit-contacts').hidden,true,'Harmony uses the redundant contact-map slot for its wider explanation.');
+  assert.equal(f.value('harmony-played'),'C MAJ');assert.equal(f.value('harmony-next'),'F MAJ');assert.equal(f.value('harmony-reason'),'Predominant');
+  assert.equal(f.value('harmony-home'),'C MAJOR');
+  assert.equal(f.mount.querySelector('.cockpit-tone-map').getAttribute('aria-label'),'Shared: C. New: F A. Leaving: E G.');
+  assert.equal(f.mount.querySelectorAll('.cockpit-history-item').filter(n=>!n.hidden).length,4);
+  const historyDots=f.mount.querySelectorAll('.cockpit-history-item')[0].querySelectorAll('.cockpit-history-tone');
+  assert.ok(Number(historyDots[7].getAttribute('cx'))>28&&Number(historyDots[7].getAttribute('cy'))<28,'G follows C clockwise in the fifths geometry.');
+  assert.equal(f.mount.querySelectorAll('.cockpit-pitch-node.is-current').length,3);
+  assert.equal(f.mount.querySelectorAll('.cockpit-pitch-node.is-next').length,3);
+  const count=f.nodes();for(let n=0;n<250;n++)f.cockpit.update({...input,context:{harmony:{...harmony,revision:n}}},{connected:true});
+  assert.equal(f.nodes(),count);
+  f.cockpit.update({...data,engine:6,context:undefined},{connected:true});
+  assert.equal(f.value('harmony-next'),'—');assert.equal(f.value('harmony-status'),'Context unavailable');
+  assert.equal(f.mount.querySelectorAll('.cockpit-history-item').filter(n=>!n.hidden).length,0);
+  assert.equal(f.mount.querySelector('.cockpit-tone-map').getAttribute('aria-label'),'Harmony tones unavailable');
+  f.cockpit.update(data,{connected:true});
+  assert.equal(f.mount.querySelector('.cockpit-contacts').hidden,false);
+});
+
+test('entry waits for a snapshot, motion pauses without restarting the session, and unchanged data performs no writes', t => {
+  const f=fixture(t),data=snapshot();f.cockpit.update(null,{connected:true});
+  assert.equal(f.mount.classList.contains('cockpit-active'),false);assert.equal(f.mount.dataset.cockpitSession,'0');
+  f.cockpit.update(data,{connected:true});
+  assert.equal(f.mount.classList.contains('cockpit-assembling'),true);
+  f.mount.listeners.find(([type])=>type==='animationend')[1]({target:f.mount,animationName:'cockpit-assembly-lifetime'});
+  assert.equal(f.mount.classList.contains('cockpit-assembling'),false);
+  const session=f.mount.dataset.cockpitSession,writes=f.document.writes;
+  for(let n=0;n<50;n++)f.cockpit.update(data,{connected:true});
+  assert.equal(f.document.writes,writes,'Stable values do not rewrite text or SVG attributes.');
+  assert.equal(f.mount.classList.contains('cockpit-assembling'),false,'Ordinary updates never replay the connection sequence.');
+  f.cockpit.setActive(false);assert.equal(f.mount.dataset.cockpitMotion,'paused');assert.equal(f.mount.classList.contains('cockpit-motion-paused'),true);
+  assert.equal(f.mount.classList.contains('cockpit-active'),true);f.cockpit.setActive(true);
+  assert.equal(f.mount.classList.contains('cockpit-assembling'),false,'Returning to a visible page does not replay entry.');
+  f.document.hidden=true;f.document.listeners.get('visibilitychange')();assert.equal(f.mount.dataset.cockpitMotion,'paused');
+  f.document.hidden=false;f.document.listeners.get('visibilitychange')();assert.equal(f.mount.dataset.cockpitMotion,'running');
+  assert.equal(f.mount.dataset.cockpitSession,session);f.cockpit.destroy();assert.equal(f.document.listeners.has('visibilitychange'),false);
 });
 
 test('diagnostic charts use real report fields, bound history and clear stale values', t => {

@@ -1,7 +1,7 @@
 # MIDI routing
 
 Open **Settings → MIDI & Routing**. Choose a route profile and editing target,
-then set its channel, outputs, velocity and expression policy.
+then set its channel and outputs. Velocity and expression live in Performance.
 
 | Profile | Routes |
 | --- | --- |
@@ -11,8 +11,9 @@ then set its channel, outputs, velocity and expression policy.
 
 Profiles retain independent settings. Channels are 1–16 in the interface and
 0–15 in C. Outputs are nonempty combinations of DIN, USB cable 1 and USB cable 2.
-Each route can override fixed velocity and ordinary Aftertouch/bend behavior.
-Fields that still inherit defaults follow later default changes independently.
+Older settings retain their stored route velocity and expression values as
+inheritance baselines. New playing-feel edits use Performance; its physical-half
+settings do not change channel or output routing.
 
 Changes apply to future presses. Sounding notes and pending strums keep their
 captured channel, destinations, velocity and expression policy. The ownership
@@ -21,14 +22,22 @@ USB disconnect does not disable an available DIN route.
 
 ## Performance and expression
 
-Performance provides quick Both/Left/Right velocity mode and MPE access, plus
-ordinary Aftertouch/Bend aliases using the same route policies. Velocity scope
-is separate from the selected MIDI route and sensitivity target.
+Performance → Settings for selects physical Both, Left or Right for velocity,
+Aftertouch output/stage, bend/range and MPE pressure output. This scope is
+independent of the MIDI route editor and Sensitivity picker. MPE enable and
+context-pad controls remain global. The former MIDI expression editors are
+retired; their saved values remain available to imported configurations.
 
 Aftertouch is Off, per-pitch Poly or shared Channel pressure. The receiver must
 support/map the messages for an audible result. Pressure bend is channel-wide;
 all notes on that channel hear it. Optional MPE allocates member channels
 instead of using the ordinary route channel. See [Expression](mpe-expression.md).
+
+The Play-screen USB and DIN icons combine all active pad routes. USB requires a
+mounted host; DIN reports driver readiness, not cable detection. A tick beside
+an icon marks each physical half whose routes all use it. Split ticks mean mixed
+zones; no tick means that half does not use it. To disable an icon, remove that
+output from every active side/zone, not only the current Edit route target.
 
 ## Sequencer and generated routes
 

@@ -694,7 +694,11 @@ static int test_live_navigation_and_oled_share_visible_canonical_rows(void)
             }
             if (row >= THY_ROW_VIEWS_DETAIL1 && row <= THY_ROW_VIEWS_DETAIL6) expected = 0;
             if (row == THY_ROW_SENSITIVITY_INHERIT) expected = 0;
+            if (row == THY_ROW_MIDI_VELOCITY || row == THY_ROW_MIDI_PRESSURE ||
+                row == THY_ROW_MIDI_PRESSUREBEND || row == THY_ROW_MIDI_BENDRANGE ||
+                row == THY_ROW_MIDI_BENDSETUP) expected = 0;
             if (row == THY_ROW_PERFORMANCE_AFTERTOUCH ||
+                row == THY_ROW_PERFORMANCE_ROUTETARGET ||
                 row == THY_ROW_PERFORMANCE_VELOCITYSOURCE) expected = 0;
             /* Harmony now owns exploration; the former Chords entry remains
              * an internal identity rather than a second visible path. */
@@ -1128,8 +1132,12 @@ static int matches_text(const uint8_t *actual, unsigned x, unsigned y,
 {
     memset(target, 0, sizeof target);
     thy_ui_draw_text(target, x, y, text, limit, 0);
+    unsigned end=x+limit*5u;
+    /* The final spacing column of the compact text field belongs to its
+     * enclosing frame. All four glyph columns and internal spaces remain checked. */
+    if(x==2u&&limit==21u)--end;
     for (unsigned row = y; row < y + 5u; ++row)
-        for (unsigned col = x; col < x + limit * 5u && col < THY_UI_WIDTH; ++col)
+        for (unsigned col = x; col < end && col < THY_UI_WIDTH; ++col)
             CHECK(pixel_at(actual, col, row) == pixel_at(target, col, row));
     return 1;
 }
@@ -1208,36 +1216,174 @@ static int test_compact_views_show_effective_routes_and_optional_counts(void)
     instrument.display_view = 4u;
     instrument.display_config[THY_VIEW_SIMPLE].slots[0] = THY_VIEW_INFO_VELOCITY;
     render(&still, 0u, frame);
-    CHECK(matches_text(frame, 2u, 48u, "VEL L94 R98", 25u));
-    CHECK(matches_text(frame, 2u, 58u, "PADS 0  NOTES 0", 25u));
+    CHECK(matches_text(frame, 2u, 48u, "VEL L94 R98", 21u));
+    CHECK(matches_text(frame, 2u, 58u, "PADS 0  NOTES 0", 21u));
     CHECK(thy_instrument_set_routing_profile(&instrument, THY_ROUTING_WHOLE) == THY_OK);
     CHECK(thy_instrument_set_route_velocity(&instrument, 0u, 112u) == THY_OK);
     render(&still, 1u, frame);
-    CHECK(matches_text(frame, 2u, 48u, "VEL 112", 25u));
+    CHECK(matches_text(frame, 2u, 48u, "VEL 112", 21u));
     CHECK(thy_instrument_set_routing_profile(&instrument, THY_ROUTING_ZONES) == THY_OK);
     for (uint8_t route = 3u; route < 9u; ++route)
         CHECK(thy_instrument_set_route_velocity(&instrument, route,
             (uint8_t)(91u + route)) == THY_OK);
     render(&still, 2u, frame);
-    CHECK(matches_text(frame, 2u, 48u, "V94/95/96|97/98/99", 25u));
+    CHECK(matches_text(frame, 2u, 48u, "V94/95/96|97/98/99", 21u));
     const int16_t chord[] = {60,64,67};
     CHECK(thy_core_press(&musical_core, 0u, chord, 3u, 0, 0,
         THY_ROUTE_DIN | THY_ROUTE_USB0, 96u) == THY_OK);
     render(&still, 3u, frame);
-    CHECK(matches_text(frame, 2u, 58u, "PADS 1  NOTES 3", 25u));
+    CHECK(matches_text(frame, 2u, 58u, "PADS 1  NOTES 3", 21u));
     instrument.display_config[THY_VIEW_SIMPLE].slots[1] = THY_VIEW_INFO_OFF;
     render(&still, 4u, frame);
-    CHECK(matches_text(frame, 2u, 58u, "", 22u));
+    CHECK(matches_text(frame, 2u, 58u, "", 21u));
     instrument.display_view = 5u;
     render(&still, 4u, frame);
-    CHECK(matches_text(frame, 2u, 58u, "PADS 1  NOTES 3", 25u));
+    CHECK(matches_text(frame, 2u, 58u, "PADS 1  NOTES 3", 21u));
     instrument.display_config[THY_VIEW_CHLADNI].slots[1] = THY_VIEW_INFO_OFF;
     render(&still, 4u, frame);
-    CHECK(matches_text(frame, 2u, 58u, "", 22u));
+    CHECK(matches_text(frame, 2u, 58u, "", 21u));
     /* Detailed has its own six rows regardless of compact-view preferences. */
     instrument.display_view = 0u;
     render(&still, 5u, frame);
     CHECK(matches_text(frame, 2u, 52u, "PADS 1  NOTES 3", 25u));
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_VELOCITY,1u,82)==THY_STATE_OK);
+    char line[32];
+    thy_studio_ui_view_line(&state,THY_VIEW_INFO_VELOCITY,"MAJOR C",1,1,line);
+    CHECK(!strcmp(line,"VEL L82 RMIX"));
+    return 1;
+}
+
+static unsigned rail_pixels(const uint8_t *pixels, unsigned first, unsigned last)
+{
+    unsigned count=0u;
+    for(unsigned y=first;y<=last;++y)
+        for(unsigned x=110u;x<128u;++x)count+=(unsigned)pixel_at(pixels,x,y);
+    return count;
+}
+
+static int rail_fixture_velocity(uint8_t scope,uint8_t mode)
+{
+    for(uint8_t side=0u;side<2u;++side)if(!scope||scope==side+1u){
+        thy_instrument_velocity velocity;
+        int result=thy_instrument_get_cluster_velocity(&instrument,side,&velocity);
+        if(result!=THY_OK)return result;
+        velocity.mode=mode;
+        result=thy_instrument_set_cluster_velocity(&instrument,side,&velocity);
+        if(result!=THY_OK)return result;
+    }
+    return THY_OK;
+}
+
+static int test_play_rail_uses_enabled_outputs_and_fixed_pixel_art_slots(void)
+{
+    static const uint16_t usb[]={0x38u,0x7cu,0x10u,0x390u,0x392u,0x117u,
+        0x1f2u,0x1eu,0x10u,0x10u,0x38u,0x7cu,0x10u};
+    static const uint16_t din[]={0x1c0u,0x630u,0x808u,0x1004u,0x2002u,
+        0x2002u,0x4001u,0x4411u,0x4809u,0x2222u,0x2412u,0x1084u,
+        0x888u,0x630u,0x1c0u};
+    initialize();instrument.display_view=THY_VIEW_SIMPLE;
+    CHECK(rail_fixture_velocity(0u,THY_VELOCITY_FIXED)==THY_OK);
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_PRESSUREMODE,0u,THY_CHANNEL_PRESSURE_OFF)==THY_STATE_OK);
+    CHECK(thy_instrument_set_routing_profile(&instrument,THY_ROUTING_WHOLE)==THY_OK);
+    CHECK(thy_instrument_set_pad_route(&instrument,0u,0u,THY_ROUTE_USB0|THY_ROUTE_DIN)==THY_OK);
+    struct {uint8_t prefix[16],pixels[THY_UI_FRAME_BYTES],suffix[16];} guarded;
+    memset(&guarded,0xa5,sizeof guarded);
+    thy_studio_ui_render(&still,&state,"MAJOR C",1,1,1u,guarded.pixels);
+    for(unsigned y=0u;y<13u;++y)for(unsigned x=0u;x<10u;++x)
+        CHECK(pixel_at(guarded.pixels,114u+x,1u+y)==!!(usb[y]&(1u<<x)));
+    for(unsigned y=0u;y<15u;++y)for(unsigned x=0u;x<15u;++x)
+        CHECK(pixel_at(guarded.pixels,111u+x,16u+y)==!!(din[y]&(1u<<x)));
+    CHECK(rail_pixels(guarded.pixels,14u,15u)==0u);
+    CHECK(rail_pixels(guarded.pixels,31u,63u)==0u);
+    for(unsigned n=0u;n<16u;++n)CHECK(guarded.prefix[n]==0xa5u&&guarded.suffix[n]==0xa5u);
+    thy_studio_ui_render(&still,&state,"MAJOR C",1,0,2u,frame);
+    CHECK(rail_pixels(frame,1u,13u)==0u && rail_pixels(frame,16u,30u)>0u);
+    thy_studio_ui_render(&still,&state,"MAJOR C",0,1,3u,frame);
+    CHECK(rail_pixels(frame,1u,13u)>0u && rail_pixels(frame,16u,30u)==0u);
+    CHECK(thy_instrument_set_pad_route(&instrument,0u,0u,THY_ROUTE_USB1)==THY_OK);
+    render(&still,4u,frame);CHECK(rail_pixels(frame,1u,13u)>0u&&rail_pixels(frame,16u,30u)==0u);
+    thy_studio_ui_render(&still,&state,"MAJOR C",0,0,5u,frame);
+    CHECK(rail_pixels(frame,1u,63u)==0u);
+    /* A configured zone on either musical role enables its actual output. */
+    CHECK(thy_instrument_set_routing_profile(&instrument,THY_ROUTING_ZONES)==THY_OK);
+    for(uint8_t zone=3u;zone<9u;++zone)CHECK(thy_instrument_set_pad_route(&instrument,zone,0u,THY_ROUTE_USB0)==THY_OK);
+    CHECK(thy_instrument_set_pad_route(&instrument,8u,0u,THY_ROUTE_DIN)==THY_OK);
+    CHECK(thy_instrument_set_cluster_swap(&instrument,1u)==THY_OK);
+    render(&still,6u,frame);CHECK(rail_pixels(frame,1u,13u)>0u&&rail_pixels(frame,16u,30u)>0u);
+    return 1;
+}
+
+static int test_play_rail_reports_physical_expression_halves_without_mpe_at_alias(void)
+{
+    initialize();instrument.display_view=THY_VIEW_SIMPLE;
+    CHECK(rail_fixture_velocity(0u,THY_VELOCITY_FIXED)==THY_OK);
+    CHECK(rail_fixture_velocity(1u,THY_VELOCITY_STRIKE)==THY_OK);
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_PRESSUREMODE,1u,THY_CHANNEL_PRESSURE_POLY)==THY_STATE_OK);
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_PRESSUREMODE,2u,THY_CHANNEL_PRESSURE_CHANNEL)==THY_STATE_OK);
+    render(&still,1u,frame);
+    CHECK(pixel_at(frame,110u,56u)&&!pixel_at(frame,126u,56u));
+    CHECK(pixel_at(frame,112u,48u)&&!pixel_at(frame,126u,48u)); /* P / C */
+    CHECK(pixel_at(frame,110u,50u)&&pixel_at(frame,126u,51u));
+    CHECK(pixel_at(frame,115u,47u)&&pixel_at(frame,121u,47u)); /* centered AT */
+    CHECK(!rail_pixels(frame,31u,46u));
+    CHECK(thy_instrument_set_cluster_swap(&instrument,1u)==THY_OK);
+    render(&still,2u,frame);
+    CHECK(pixel_at(frame,110u,56u)&&!pixel_at(frame,126u,56u));
+    CHECK(pixel_at(frame,112u,48u)&&!pixel_at(frame,126u,48u));
+    /* One pad override must not claim uniform Strike for that half. */
+    for(uint8_t pad=0u;pad<THY_PAD_COUNT;++pad)if(instrument.mapping[pad]<48u){
+        thy_instrument_velocity velocity;uint8_t overridden;
+        CHECK(thy_instrument_get_velocity(&instrument,pad,&velocity,&overridden)==THY_OK);
+        velocity.mode=THY_VELOCITY_FIXED;
+        CHECK(thy_instrument_set_pad_velocity(&instrument,pad,&velocity)==THY_OK);break;
+    }
+    render(&still,3u,frame);
+    CHECK(!pixel_at(frame,110u,56u)&&pixel_at(frame,110u,55u)&&pixel_at(frame,110u,57u));
+    engine.expression_config.enabled=1u;engine.arps[1].config.enabled=1u;
+    before_state=state;render(&still,4u,frame);
+    CHECK(!memcmp(&state,&before_state,sizeof state));
+    CHECK(rail_pixels(frame,33u,37u)>0u&&rail_pixels(frame,40u,44u)>0u);
+    CHECK(!rail_pixels(frame,47u,51u)); /* MPE is not ordinary channel AT. */
+    CHECK(!rail_pixels(frame,31u,32u)&&!rail_pixels(frame,38u,39u)&&
+        !rail_pixels(frame,45u,46u)&&!rail_pixels(frame,52u,53u));
+    CHECK(rail_pixels(frame,54u,58u)>0u);
+    return 1;
+}
+
+static int test_output_side_ticks_follow_split_zones_and_physical_swap(void)
+{
+    initialize();instrument.display_view=THY_VIEW_SIMPLE;
+    CHECK(rail_fixture_velocity(0u,THY_VELOCITY_FIXED)==THY_OK);
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_PRESSUREMODE,0u,THY_CHANNEL_PRESSURE_OFF)==THY_STATE_OK);
+    CHECK(thy_instrument_set_routing_profile(&instrument,THY_ROUTING_SPLIT)==THY_OK);
+    CHECK(thy_instrument_set_pad_route(&instrument,1u,0u,THY_ROUTE_USB0)==THY_OK);
+    CHECK(thy_instrument_set_pad_route(&instrument,2u,0u,THY_ROUTE_DIN)==THY_OK);
+    render(&still,1u,frame);
+    CHECK(pixel_at(frame,110u,7u)&&!pixel_at(frame,127u,7u));
+    CHECK(!pixel_at(frame,110u,23u)&&pixel_at(frame,127u,23u));
+    CHECK(rail_pixels(frame,1u,13u)>0u&&rail_pixels(frame,16u,30u)>0u);
+    CHECK(thy_instrument_set_cluster_swap(&instrument,1u)==THY_OK);
+    render(&still,2u,frame);
+    CHECK(!pixel_at(frame,110u,7u)&&pixel_at(frame,127u,7u));
+    CHECK(pixel_at(frame,110u,23u)&&!pixel_at(frame,127u,23u));
+    CHECK(thy_instrument_set_cluster_swap(&instrument,0u)==THY_OK);
+    CHECK(thy_instrument_set_routing_profile(&instrument,THY_ROUTING_ZONES)==THY_OK);
+    for(uint8_t zone=3u;zone<9u;++zone)CHECK(thy_instrument_set_pad_route(&instrument,zone,0u,THY_ROUTE_USB0)==THY_OK);
+    CHECK(thy_instrument_set_pad_route(&instrument,3u,0u,THY_ROUTE_USB0|THY_ROUTE_DIN)==THY_OK);
+    CHECK(thy_instrument_set_pad_route(&instrument,5u,0u,THY_ROUTE_DIN)==THY_OK);
+    render(&still,3u,frame);
+    CHECK(pixel_at(frame,110u,6u)&&!pixel_at(frame,110u,7u)&&pixel_at(frame,110u,8u));
+    CHECK(pixel_at(frame,110u,22u)&&!pixel_at(frame,110u,23u)&&pixel_at(frame,110u,24u));
+    CHECK(pixel_at(frame,127u,7u)&&!pixel_at(frame,127u,23u));
+    /* Clearing the final DIN zone removes both its bitmap and old side ticks. */
+    CHECK(thy_instrument_set_pad_route(&instrument,3u,0u,THY_ROUTE_USB0)==THY_OK);
+    CHECK(thy_instrument_set_pad_route(&instrument,5u,0u,THY_ROUTE_USB1)==THY_OK);
+    render(&still,4u,frame);
+    CHECK(pixel_at(frame,110u,7u)&&pixel_at(frame,127u,7u));
+    CHECK(!pixel_at(frame,110u,6u)&&!pixel_at(frame,110u,8u));
+    CHECK(rail_pixels(frame,16u,30u)==0u);
+    thy_studio_ui_render(&still,&state,"MAJOR C",1,0,5u,frame);
+    CHECK(rail_pixels(frame,1u,30u)==0u); /* Host-ready gates ticks and bitmap together. */
     return 1;
 }
 
@@ -1252,6 +1398,52 @@ static void expected_note_label(uint8_t *out, const char *label,
             if (pixel_at(glyphs, gx, gy))
                 thy_ui_draw_rectangle(out, x + gx * scale, y + gy * scale,
                     scale, scale, 1);
+}
+
+static int test_simple_frame_matches_reference_pixels_and_retains_content_anchors(void)
+{
+    initialize();instrument.display_view=THY_VIEW_SIMPLE;
+    render(&still,1u,frame);
+    /* Supplied pixel reference, columns 100..109. The two solid end pixels
+     * at y13/14 and y50/51 join the 2px diagonals to the dotted spine. */
+    for(unsigned y=8u;y<=56u;++y){
+        unsigned expected=0u;
+        if(y==10u||y==54u)expected=0x1fu;
+        else if(y==11u||y==53u)expected=0x20u;
+        else if(y==12u||y==52u)expected=0x40u;
+        else if(y==13u||y==51u||(y>=14u&&y<=50u&&!(y&1u)))expected=0x80u;
+        for(unsigned x=0u;x<10u;++x)
+            CHECK(pixel_at(frame,100u+x,y)==!!(expected&(1u<<x)));
+    }
+    thy_view_config *config=&instrument.display_config[THY_VIEW_SIMPLE];
+    config->slots[0]=THY_VIEW_INFO_OFF;
+    config->slots[1]=THY_VIEW_INFO_ROOT_SCALE;
+    const char *long_title="ABCDEFGHIJKLMNOPQRSTU";
+    thy_studio_ui_render(&still,&state,long_title,1,1,2u,frame);
+    memset(before,0,sizeof before);
+    thy_ui_draw_rule(before,9u,108u,2u,long_title,21u,0);
+    char footer[32];thy_studio_ui_view_line(&state,config->slots[1],long_title,1,1,footer);
+    thy_ui_draw_rule(before,55u,108u,2u,footer,21u,1);
+    for(unsigned x=0u;x<=104u;++x){
+        for(unsigned y=8u;y<=10u;++y)CHECK(pixel_at(frame,x,y)==pixel_at(before,x,y));
+        for(unsigned y=54u;y<=56u;++y)CHECK(pixel_at(frame,x,y)==pixel_at(before,x,y));
+    }
+    CHECK(pixel_at(frame,104u,8u)&&pixel_at(frame,105u,9u)&&
+        pixel_at(frame,106u,10u)&&pixel_at(frame,107u,11u)&&pixel_at(frame,107u,12u));
+    CHECK(pixel_at(frame,104u,56u)&&pixel_at(frame,105u,55u)&&
+        pixel_at(frame,106u,54u)&&pixel_at(frame,107u,53u)&&pixel_at(frame,107u,52u));
+    CHECK(matches_text(frame,2u,58u,footer,21u));
+    /* Hidden information does not invent horizontal bars or erase content. */
+    config->header=0u;config->slots[1]=THY_VIEW_INFO_OFF;
+    thy_studio_ui_render(&still,&state,"MAJOR C",1,1,3u,frame);
+    for(unsigned x=0u;x<=104u;++x){
+        for(unsigned y=8u;y<=10u;++y)CHECK(!pixel_at(frame,x,y));
+        for(unsigned y=54u;y<=56u;++y)CHECK(!pixel_at(frame,x,y));
+    }
+    CHECK(matches_text(frame,2u,48u,"",21u)&&matches_text(frame,2u,58u,"",21u));
+    CHECK(pixel_at(frame,105u,11u)&&pixel_at(frame,106u,12u)&&pixel_at(frame,107u,13u));
+    CHECK(pixel_at(frame,107u,51u)&&pixel_at(frame,106u,52u)&&pixel_at(frame,105u,53u));
+    return 1;
 }
 
 static int test_simple_five_notes_use_four_large_corners_and_large_center(void)
@@ -1287,15 +1479,16 @@ static int test_simple_five_notes_use_four_large_corners_and_large_center(void)
             expected_note_label(before, chords[chord].names[note],
                 chords[chord].x[note], y[note], 2u);
         }
-        for (unsigned py = 11u; py < 47u; ++py)
+        for (unsigned py = 12u; py < 47u; ++py)
             for (unsigned px = 0u; px < 106u; ++px)
                 CHECK(pixel_at(frame, px, py) == pixel_at(before, px, py));
-        CHECK(pixel_at(frame,106u,16u) && pixel_at(frame,107u,22u));
+        CHECK(pixel_at(frame,105u,11u) && pixel_at(frame,106u,12u) &&
+            pixel_at(frame,107u,13u) && pixel_at(frame,107u,22u));
         char musical_name[32];
         thy_studio_ui_view_line(&state,THY_VIEW_INFO_MUSICAL_NAMES,"MAJOR C",1,1,musical_name);
         CHECK(matches_text(frame,strlen(musical_name)<=19u?12u:2u,1u,musical_name,strlen(musical_name)<=19u?19u:21u));
         CHECK(matches_text(frame, 2u, 48u, musical_name, 21u));
-        CHECK(matches_text(frame, 2u, 58u, "PADS 1  NOTES 5", 25u));
+        CHECK(matches_text(frame, 2u, 58u, "PADS 1  NOTES 5", 21u));
         CHECK(thy_core_release(&musical_core, 0u) == THY_OK);
     }
     return 1;
@@ -1320,14 +1513,14 @@ static int test_simple_six_notes_begin_compact_wrapping_without_ownership_change
     memset(before, 0, sizeof before);
     for (unsigned note = 0u; note < 6u; ++note)
         expected_note_label(before, labels[note], x[note], y[note], 1u);
-    for (unsigned py = 11u; py < 47u; ++py)
+    for (unsigned py = 12u; py < 47u; ++py)
         for (unsigned px = 0u; px < 106u; ++px)
             CHECK(pixel_at(frame, px, py) == pixel_at(before, px, py));
     char musical_name[32];
         thy_studio_ui_view_line(&state,THY_VIEW_INFO_MUSICAL_NAMES,"MAJOR C",1,1,musical_name);
         CHECK(matches_text(frame,strlen(musical_name)<=19u?12u:2u,1u,musical_name,strlen(musical_name)<=19u?19u:21u));
     CHECK(matches_text(frame, 2u, 48u, musical_name, 21u));
-    CHECK(matches_text(frame, 2u, 58u, "PADS 1  NOTES 6", 25u));
+    CHECK(matches_text(frame, 2u, 58u, "PADS 1  NOTES 6", 21u));
     CHECK(thy_core_release(&musical_core, 0u) == THY_OK);
     return 1;
 }
@@ -1997,6 +2190,12 @@ static int test_harmony_workspace_frames_are_live_read_only_and_preview_only(voi
     CHECK(matches_text(guarded.pixels, 68u, 43u, "D MIN", 12u));
     CHECK(pixel_at(guarded.pixels, 30u, 19u)); /* Current C: solid. */
     CHECK(!pixel_at(guarded.pixels, 47u, 27u)); /* Suggested D: open. */
+    for(unsigned y=14u;y<55u;++y){
+        CHECK(pixel_at(guarded.pixels,63u,y)==(!(y&1u)&&(y<28u||y>38u)));
+        CHECK(pixel_at(guarded.pixels,64u,y)==(y==27u||y==39u));
+        CHECK(pixel_at(guarded.pixels,65u,y)==(!(y&1u)&&y>=28u&&y<=38u));
+        CHECK(!pixel_at(guarded.pixels,66u,y));
+    }
     CHECK(matches_text(guarded.pixels, 2u, 58u, "SUG R+0 <BANK >SET O MENU", 25u));
     CHECK(!memcmp(&engine, &frozen_engine, sizeof engine));
     CHECK(!memcmp(&instrument, &frozen_instrument, sizeof instrument));
@@ -2172,6 +2371,10 @@ int main(int argc,char **argv)
         !test_boot_wrap_and_stalls_advance_one_completed_frame() ||
         !test_navigation_legends_and_center_escape_from_editor() ||
         !test_compact_views_show_effective_routes_and_optional_counts() ||
+        !test_play_rail_uses_enabled_outputs_and_fixed_pixel_art_slots() ||
+        !test_play_rail_reports_physical_expression_halves_without_mpe_at_alias() ||
+        !test_output_side_ticks_follow_split_zones_and_physical_swap() ||
+        !test_simple_frame_matches_reference_pixels_and_retains_content_anchors() ||
         !test_simple_five_notes_use_four_large_corners_and_large_center() ||
         !test_simple_six_notes_begin_compact_wrapping_without_ownership_changes() ||
         !test_pretty_is_note_driven_bounded_and_respects_reduced_motion() ||
@@ -2194,6 +2397,6 @@ int main(int argc,char **argv)
         !test_harmony_focus_separates_base_chord_and_complete_melody_classes() ||
         !test_harmony_four_views_status_and_details_follow_physical_clusters() ||
         !test_harmony_key_and_scale_pages_override_chord_view_without_key_changes()) return 1;
-    printf("46 shared studio UI/transfer scenarios passed (%u assertions)\n", assertions);
+    printf("50 shared studio UI/transfer scenarios passed (%u assertions)\n", assertions);
     return 0;
 }

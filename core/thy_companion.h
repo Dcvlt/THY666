@@ -12,6 +12,12 @@
 #define THY_COMPANION_IDLE_MS 2000u
 #define THY_COMPANION_MAX_AGE_MS 5000u
 #define THY_COMPANION_MIN_CAPTURE_MS 50u
+#define THY_COMPANION_PAD_MAP_BYTES 1672u
+#define THY_COMPANION_PAD_MAP_RECORDS 136u
+enum thy_companion_pad_kind {
+    THY_COMPANION_PAD_HOLE, THY_COMPANION_PAD_NOTE, THY_COMPANION_PAD_CHORD,
+    THY_COMPANION_PAD_CONTROL, THY_COMPANION_PAD_STEP
+};
 enum thy_companion_offset {
     THY_COMPANION_OLED=136, THY_COMPANION_RGB=1160, THY_COMPANION_CENTER=1448,
     THY_COMPANION_HELD=1467, THY_COMPANION_CONTROLS=1479,
@@ -82,19 +88,28 @@ typedef struct thy_companion {
     thy_companion_identity identity;
     thy_companion_visual_fn visual;
     void *context;
-    uint32_t sequence,crc,captured_ms,last_ms,last_visual_ms;
+    uint32_t sequence,crc,captured_ms,last_ms,last_visual_ms,map_key;
     uint16_t captured_bytes;
-    uint8_t active,captured,selected_pad;
+    uint8_t active,captured,selected_pad,map_state,map_cursor;
 } thy_companion;
 void thy_companion_init(thy_companion *,uint8_t *,size_t,
     const thy_companion_identity *,thy_companion_visual_fn,void *);
 int thy_companion_expire(thy_companion *,uint32_t now);
+/* Optional THYMAP1 v1: header20 map key,24 layout revision,28 UI revision;
+ * physical pad records136+16*n are kind:u8 and15-byte NUL-terminated ASCII.
+ * One actual read-only pad plan per foreground call; no MIDI or ownership
+ * changes. A pending job reserves the same caller-owned snapshot staging.
+ * Returns1 only on atomic completed publication,0 otherwise. */
+int thy_companion_service(thy_companion *,const thy_engine *,uint32_t now);
 /* Strict COMPANION/1 ASCII commands, one response per line. All fields are
  * little-endian in the frozen binary snapshot. CRC32 is standard reflected
  * 0xedb88320, init/final XOR allones. Commands:
  * companion caps | status | snapshot | get <seq> <offset> <count1..128>
  * companion release <seq> | pad <logical0..95>
  * companion harmony snapshot (optional512-byte cached Harmony projection)
+ * companion pad-map [known-map-key] (optional1672-byte physical pad labels;
+ * pending replies include the reserved seq for cancellation through RELEASE;
+ * unchanged replies create no staging lease)
  * companion harmony <schema64> <action0..9> <signed-int32>
  * companion read <schema64> <row> <instance>  (255 means current selection)
  * companion set <schema64> <row> <explicit-instance> <signed-int32>

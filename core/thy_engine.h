@@ -16,6 +16,12 @@ typedef struct thy_engine_channel_config {
     uint8_t aftertouch,bend,range; /* 0 inherit,1 Off,2 Poly,3 Channel; bend0..2. */
 } thy_engine_channel_config;
 
+/* Physical-half playing policies. Zero inherits the MIDI route; nonzero
+ * response modes store menu value + 1, preserving old routed configurations. */
+typedef struct thy_engine_performance_config {
+    uint8_t velocity, aftertouch, bend, range;
+} thy_engine_performance_config;
+
 enum thy_engine_rhythm_result {
     THY_ENGINE_STALE_RUN = 5,
     THY_ENGINE_SOURCE_NOT_READY = 6,
@@ -74,6 +80,7 @@ typedef struct thy_engine {
     thy_mpe_config expression_config;
     thy_channel_expression *channel_expression;
     thy_engine_channel_config channel_routes[THY_INSTRUMENT_ROUTE_TARGETS];
+    thy_engine_performance_config performance[2];
     uint32_t expression_service_ms;
     uint8_t calibration_open;
     uint8_t calibration_pick, calibration_pick_pad;
@@ -127,6 +134,10 @@ void thy_engine_bind_channel_expression(thy_engine *,thy_channel_expression *);
 int thy_engine_channel_quiet(const thy_engine *);
 int thy_engine_channel_configure(thy_engine *,uint8_t target,const thy_engine_channel_config *);
 uint8_t thy_engine_channel_aftertouch(const thy_engine *,uint8_t target);
+int thy_engine_performance_get(const thy_engine *,uint16_t row,uint8_t scope,int32_t *);
+int thy_engine_performance_set(thy_engine *,uint16_t row,uint8_t scope,int32_t);
+uint8_t thy_engine_performance_route(const thy_engine *,uint8_t pad);
+thy_engine_channel_config thy_engine_performance_response(const thy_engine *,uint8_t pad,uint8_t target);
 int thy_engine_channel_send_setup(thy_engine *);
 int thy_engine_expression_pressure_axes(thy_engine *,uint8_t pad,uint8_t pressure,uint8_t aftertouch);
 int thy_engine_profile_get(const thy_engine *,uint8_t instance,thy_expression_profile *);

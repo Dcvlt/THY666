@@ -258,6 +258,11 @@ int thy_sequencer_ui_pad_role(const thy_sequencer_ui *u,uint8_t pad,uint8_t *tra
     }
     return u->open?role(u,pad,track,tick,pitch):THY_SEQ_PAD_NONE;
 }
+int thy_sequencer_ui_preview_pad_role(const thy_sequencer_ui *u,uint8_t pad,uint8_t *track,uint32_t *tick,uint8_t *pitch)
+{
+    if(!u||!u->sequencer||pad>=96u||!track||!tick||!pitch)return THY_SEQ_PAD_NONE;
+    return u->open?role(u,pad,track,tick,pitch):THY_SEQ_PAD_NONE;
+}
 int thy_sequencer_ui_assign(thy_sequencer_ui *u,uint8_t source,const int16_t *notes,size_t count,uint8_t velocity,uint8_t chord)
 {
     if(!u || !u->open || !notes || !count || source>=96u || !thy_sequencer_ui_input(u,source) ||

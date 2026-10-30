@@ -72,6 +72,7 @@ def package():
                                     "generated/build-info.json", "generated/menu-schema.js")]
     paths += [web / "cockpit.js", web / "cockpit.css", web / "typography.css",
               web / "companion-display.js", web / "companion-display.css"]
+    paths += [web / "ui-system.js", web / "ui-system.css"]
     paths += [web / "startup.js", web / "startup.css", web / "updater-panel.js", web / "updater-client.js", web / "updater-art.js", web / "updater-checks.js", web / "updater-layout.js", web / "updater-wizard.css", web / "desktop-runtime.js", web / "desktop-chrome.js", web / "desktop-chrome.css"]
     paths += [web / "browser-hid.js", web / "browser-updater-client.js"]
     paths += [web / "backup-migration.js"]
@@ -110,6 +111,10 @@ def package():
     if app.count(startup_import) != 1:
         raise ValueError("Unexpected startup presentation import")
     app = app.replace(startup_import, "", 1)
+    interface_import = "import { initializeUIComponents } from './ui-system.js';"
+    if app.count(interface_import) != 1:
+        raise ValueError("Unexpected shared interface import")
+    app = app.replace(interface_import, "", 1)
     import_line = "import { createCore } from './core.js';"
     if app.count(import_line) != 1:
         raise ValueError("Unexpected core import in browser adapter")
@@ -187,17 +192,22 @@ def package():
     model = "const StudioModel = (() => {\n" + model + "\nreturn StudioModel;\n})();"
     engine_studio = assets["engine-studio.js"].decode("utf-8")
     engine_studio = engine_studio.replace("import { StudioModel } from './studio-model.js';", "", 1).replace("import { OLEDFramebuffer } from './oled.js';", "", 1)
+    icon_import = "import { createUIIcon } from './ui-system.js';"
+    if engine_studio.count(icon_import) != 1:
+        raise ValueError("Unexpected parameter editor icon import")
+    engine_studio = engine_studio.replace(icon_import, "", 1)
     engine_studio = re.sub(r"^export\s+", "", engine_studio, flags=re.M)
     engine_studio = "const initializeEngineStudio = (() => {\n" + engine_studio + "\nreturn initializeEngineStudio;\n})();"
     firmware = inline_named_module(assets["firmware.js"], "firmware.js", ("./studio-menu.js",))
     controller = re.sub(r"^export\s+", "", assets["controller.js"].decode("utf-8"), flags=re.M)
     device_client = inline_named_module(assets["device-client.js"], "device-client.js")
-    backup_migration = inline_named_module(assets["backup-migration.js"], "backup-migration.js")
+    backup_migration = inline_named_module(assets["backup-migration.js"], "backup-migration.js", ("./device-client.js",))
     companion_protocol = inline_named_module(assets["companion-protocol.js"], "companion-protocol.js")
     help_topics = inline_named_module(assets["help-topics.js"], "help-topics.js", ("./studio-menu.js",))
     help_ui = inline_named_module(assets["help.js"], "help.js", ("./help-topics.js",))
-    app_settings = inline_named_module(assets["app-settings.js"], "app-settings.js")
-    backup_panel = inline_named_module(assets["backup-panel.js"], "backup-panel.js", ("./device-client.js",))
+    ui_system = inline_named_module(assets["ui-system.js"], "ui-system.js")
+    app_settings = inline_named_module(assets["app-settings.js"], "app-settings.js", ("./ui-system.js",))
+    backup_panel = inline_named_module(assets["backup-panel.js"], "backup-panel.js", ("./device-client.js", "./ui-system.js"))
     updater_client = inline_named_module(assets["updater-client.js"], "updater-client.js")
     browser_hid = inline_named_module(assets["browser-hid.js"], "browser-hid.js")
     browser_updater = inline_named_module(assets["browser-updater-client.js"], "browser-updater-client.js",
@@ -205,7 +215,7 @@ def package():
     browser_adapter = browser_updater_adapter(browser_assets)
     desktop_runtime = inline_named_module(assets["desktop-runtime.js"], "desktop-runtime.js", ("./device-client.js", "./updater-client.js"))
     desktop_chrome = inline_named_module(assets["desktop-chrome.js"], "desktop-chrome.js")
-    updater_checks = inline_named_module(assets["updater-checks.js"], "updater-checks.js")
+    updater_checks = inline_named_module(assets["updater-checks.js"], "updater-checks.js", ("./device-client.js",))
     updater_art = inline_named_module(assets["updater-art.js"], "updater-art.js")
     updater_layout = inline_named_module(assets["updater-layout.js"], "updater-layout.js", ("./updater-art.js", "./updater-checks.js"))
     updater_panel = inline_named_module(assets["updater-panel.js"], "updater-panel.js", ("./device-client.js", "./updater-client.js", "./updater-layout.js", "./updater-checks.js", "./updater-art.js"))
@@ -214,7 +224,7 @@ def package():
     startup = inline_named_module(assets["startup.js"], "startup.js")
     harmony_guide = inline_named_module(assets["harmony-guide.js"], "harmony-guide.js")
     companion = inline_named_module(assets["companion-shell.js"], "companion-shell.js",
-        ("./studio-menu.js", "./device-client.js", "./core.js", "./backup-migration.js", "./companion-protocol.js", "./companion-display.js", "./help.js", "./backup-panel.js", "./updater-panel.js", "./browser-updater-client.js", "./app-settings.js", "./cockpit.js", "./harmony-guide.js"))
+        ("./studio-menu.js", "./device-client.js", "./core.js", "./backup-migration.js", "./companion-protocol.js", "./companion-display.js", "./help.js", "./backup-panel.js", "./updater-panel.js", "./browser-updater-client.js", "./app-settings.js", "./cockpit.js", "./harmony-guide.js", "./ui-system.js"))
     factory = "createBrowserUpdaterClient({"
     browser_guard = "&&globalThis.isSecureContext===true;"
     if companion.count(factory) != 1 or companion.count(browser_guard) != 1:
@@ -224,7 +234,7 @@ def package():
     # same-origin WebHID installation route. Keep the explicit helper there.
     companion = companion.replace(browser_guard,
         "&&globalThis.isSecureContext===true&&['http:','https:'].includes(location.protocol);", 1)
-    javascript = "\n".join((core, oled, controller, menu, firmware, schema, model, engine_studio, settings,
+    javascript = "\n".join((core, oled, controller, menu, firmware, schema, model, ui_system, engine_studio, settings,
         rhythm, arp, mpe, library, sequencer_midi, device_song, sequencer, device_client, backup_migration,
         companion_protocol, help_topics, help_ui, app_settings, cockpit, companion_display, backup_panel, updater_client,
         browser_hid, browser_updater, browser_adapter, desktop_runtime, desktop_chrome, updater_checks, updater_art, updater_layout, updater_panel, harmony_guide, companion, startup, app)).replace("</script", "<\\/script")
@@ -236,7 +246,7 @@ def package():
                 '<script id="thy-updater-notices" type="application/json">' + json.dumps(browser_assets["THIRD_PARTY_LICENSES.txt"].decode("utf-8")).replace('<', '\\u003c') + '</script>\n' +
                 '<script type="module">\n' + javascript + '\n</script>')
     html = html.replace(style_tag, '<style>\n' + assets["styles.css"].decode("utf-8") + '\n</style>')
-    for name in ("startup.css", "typography.css", "companion-shell.css", "help.css", "companion-theme.css", "updater-wizard.css", "cockpit.css", "companion-display.css", "desktop-chrome.css"):
+    for name in ("startup.css", "typography.css", "companion-shell.css", "help.css", "companion-theme.css", "ui-system.css", "updater-wizard.css", "cockpit.css", "companion-display.css", "desktop-chrome.css"):
         tag = f'<link rel="stylesheet" href="./{name}">'
         if html.count(tag) != 1:
             raise ValueError(f"Missing explicit stylesheet: {name}")

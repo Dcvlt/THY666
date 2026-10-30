@@ -366,6 +366,12 @@ int thy_engine_press_shaped(thy_engine *engine, uint8_t pad, const int16_t *note
     if (result != THY_OK) return result;
     unsigned logical = thy_instrument_role_pad(i,i->mapping[pad]);
     if (logical >= THY_PAD_COUNT) return THY_INVALID_ARGUMENT;
+    unsigned physical_side=i->mapping[pad]/48u;
+    if(engine->performance[physical_side].velocity){
+        thy_instrument_velocity sensor;uint8_t custom;
+        if(thy_instrument_get_velocity(i,pad,&sensor,&custom)!=THY_OK)return THY_INVALID_ARGUMENT;
+        if(sensor.mode==THY_VELOCITY_FIXED){velocity=engine->performance[physical_side].velocity;i->sensors[pad].strike_velocity=velocity;}
+    }
     int input = thy_sequencer_ui_input(&engine->sequencer_ui, (uint8_t)logical);
     uint8_t role = input ? (uint8_t)(input == 2) : (uint8_t)(logical < 48u);
     unsigned musical_source = input ? logical % 48u + (input == 1 ? 48u : 0u) : logical;
@@ -379,8 +385,10 @@ int thy_engine_press_shaped(thy_engine *engine, uint8_t pad, const int16_t *note
             if(resolved[n]<reference)reference=(uint8_t)resolved[n];
         thy_expression_profile profile;uint8_t custom;
         if(thy_instrument_get_expression_profile(i,pad,&profile,&custom)!=THY_OK)return THY_INVALID_ARGUMENT;
-        result=thy_mpe_press_ex(engine->expression,pad,(uint8_t)logical,reference,
-            resolved,muted?0u:resolved_count,destinations,velocity,shape->strum_ms,&consumed,profile.enabled?0u:64u);
+        uint8_t secondary=engine->expression_config.pressure_output[physical_side]==THY_MPE_PRESSURE&&!profile.enabled?64u:0u;
+        result=thy_mpe_press_ex(engine->expression,pad,i->mapping[pad],reference,
+            resolved,muted?0u:resolved_count,destinations,velocity,shape->strum_ms,&consumed,secondary);
+        if(result==THY_OK&&!consumed)engine->input_velocity[pad]=velocity;
         if(result==THY_OK && !consumed && muted && resolved_count)
             thy_instrument_capture_silent_input(i,pad,(uint8_t)musical_source,resolved,resolved_count);
         if(result==THY_OK && !consumed && role)
@@ -407,7 +415,8 @@ int thy_engine_press_shaped(thy_engine *engine, uint8_t pad, const int16_t *note
      * Valid Arp admissions cannot fail for output pressure: their scheduler
      * records/skips a whole attack instead of publishing a partial chord. */
     uint8_t target=thy_instrument_route_target(i,(uint8_t)musical_source);
-    uint8_t flags=thy_channel_expression_flags(thy_engine_channel_aftertouch(engine,target),engine->channel_routes[target].bend);
+    thy_engine_channel_config response=thy_engine_performance_response(engine,pad,target);
+    uint8_t flags=thy_channel_expression_flags(response.aftertouch,response.bend);
     uint16_t queue_before=core->queue_count;
     if(engine->channel_expression && !muted && (!admitted||layer) && resolved_count) {
         result=thy_channel_expression_prepare_attack(engine->channel_expression,channel,destinations,flags);

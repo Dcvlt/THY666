@@ -213,7 +213,7 @@ static int menu_alias_uses_one_guarded_mpe_configuration_without_setup(void)
 static int performance_policy_edits_preserve_captured_expression_and_release(void)
 {
     init();thy_engine_bind_channel_expression(&engine,&ordinary);
-    CHECK(thy_state_set(&engine.state,THY_ROW_PERFORMANCE_ROUTETARGET,1)==THY_STATE_OK);
+    CHECK(thy_state_set(&engine.state,THY_ROW_PERFORMANCE_VELOCITYTARGET,1)==THY_STATE_OK);
     CHECK(thy_state_set(&engine.state,THY_ROW_PERFORMANCE_PRESSUREMODE,THY_CHANNEL_PRESSURE_CHANNEL)==THY_STATE_OK);
     CHECK(thy_state_set(&engine.state,THY_ROW_PERFORMANCE_PRESSUREBEND,THY_CHANNEL_BEND_UP)==THY_STATE_OK);
     CHECK(thy_state_set(&engine.state,THY_ROW_PERFORMANCE_BENDRANGE,2)==THY_STATE_OK);
@@ -232,7 +232,9 @@ static int performance_policy_edits_preserve_captured_expression_and_release(voi
     CHECK(!memcmp(&owner,&core.owners[0],sizeof owner) && ordinary.flags[0]==flags && !drain(0));
     /* New left-side attacks use the new policy; the held owner's route and
      * contribution remain captured even while another editor target changes. */
-    CHECK(thy_state_set(&engine.state,THY_ROW_PERFORMANCE_ROUTETARGET,2)==THY_STATE_OK);
+    CHECK(thy_state_set(&engine.state,THY_ROW_PERFORMANCE_VELOCITYTARGET,2)==THY_STATE_OK);
+    CHECK(thy_state_set(&engine.state,THY_ROW_PERFORMANCE_PRESSUREMODE,THY_CHANNEL_PRESSURE_OFF)==THY_STATE_OK);
+    CHECK(thy_state_set(&engine.state,THY_ROW_PERFORMANCE_PRESSUREBEND,THY_CHANNEL_BEND_DOWN)==THY_STATE_OK);
     CHECK(thy_engine_press_shaped(&engine,4,&next,1,0,7,5,96,NULL)==THY_OK);drain(0);
     CHECK((ordinary.flags[4]&3u)==THY_CHANNEL_PRESSURE_OFF && (ordinary.flags[4]>>2u)==THY_CHANNEL_BEND_DOWN);
     CHECK(thy_engine_expression_pressure_axes(&engine,4,127,125)==THY_OK);
@@ -251,12 +253,134 @@ static int performance_policy_edits_preserve_captured_expression_and_release(voi
     return 1;
 }
 
+static int scoped_mpe_mapping_follows_physical_half_after_role_swap(void)
+{
+    init();
+    CHECK(thy_instrument_set_cluster_swap(&instrument,1)==THY_OK);
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_MPEOUTPUT,1,THY_MPE_CC1)==THY_STATE_OK);
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_MPEOUTPUT,2,THY_MPE_CC74)==THY_STATE_OK);
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_PROFILEENABLED,1,1)==THY_STATE_OK);
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_VELOCITY,1,71)==THY_STATE_OK);
+    thy_mpe_config c=engine.expression_config;c.enabled=1;
+    CHECK(thy_engine_expression_configure(&engine,&c)==THY_OK);
+    const int16_t note=60;
+    CHECK(thy_engine_press_shaped(&engine,0,&note,1,0,0,4,96,NULL)==THY_OK);
+    CHECK(engine.input_velocity[0]==71u && instrument.sensors[0].strike_velocity==71u);
+    thy_midi_event event;unsigned initial=0;
+    while(thy_core_poll(&core,&event)){
+        if(initial==0u)CHECK(event.status==0xb1u&&event.data1==1u&&event.data2==0u);
+        if(initial==2u)CHECK(event.status==0xd1u&&event.data1==0u);
+        if((event.status&0xf0u)==0x90u)CHECK(event.data2==71u);
+        ++initial;
+    }
+    CHECK(initial==4u);
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_MPEOUTPUT,1,THY_MPE_PRESSURE)==THY_STATE_BLOCKED);
+    CHECK(thy_engine_expression_pressure_axes(&engine,0,83,27)==THY_OK);
+    CHECK(thy_engine_advance(&engine,8)==THY_OK);
+    unsigned primary=0,upper=0;
+    while(thy_core_poll(&core,&event)){
+        if(event.status==0xb1u&&event.data1==1u&&event.data2==83u)++primary;
+        if(event.status==0xd1u&&event.data1==27u)++upper;
+    }
+    CHECK(primary==1u&&upper==1u);
+    CHECK(thy_instrument_release_pad(&instrument,0)==THY_OK);drain(0);
+    CHECK(thy_engine_advance(&engine,16)==THY_OK);drain(0);
+    CHECK(thy_mpe_quiet(&mpe));
+    thy_instrument_velocity velocity=instrument.cluster_velocity[0];velocity.mode=THY_VELOCITY_STRIKE;
+    CHECK(thy_instrument_set_cluster_velocity(&instrument,0,&velocity)==THY_OK);
+    CHECK(thy_engine_press_shaped(&engine,0,&note,1,0,0,4,103,NULL)==THY_OK);
+    CHECK(engine.input_velocity[0]==103u);
+    unsigned attacks=0;while(thy_core_poll(&core,&event))if((event.status&0xf0u)==0x90u){CHECK(event.data2==103u);++attacks;}
+    CHECK(attacks==1u);
+    CHECK(thy_instrument_release_pad(&instrument,0)==THY_OK);drain(0);
+    CHECK(thy_engine_advance(&engine,24)==THY_OK);drain(0);
+    CHECK(thy_mpe_quiet(&mpe));return 1;
+}
+static int sequencer_input_route_projection_and_setup_follow_roles(void)
+{
+    for(unsigned swapped=0;swapped<2u;++swapped)for(unsigned chords=0;chords<2u;++chords){
+        init();
+        const int16_t degrees[]={0,2,4,5,7,9,11};
+        for(unsigned p=0;p<96u;++p)layout[p]=(thy_instrument_pad){.notes={60,64,67},.valid_mask=p<48u?7u:1u,.color=1u};
+        CHECK(thy_instrument_set_layout(&instrument,layout,60,degrees,7)==THY_OK);
+        CHECK(thy_instrument_set_route(&instrument,0,3,THY_ROUTE_DIN,0)==THY_OK);
+        CHECK(thy_instrument_set_route(&instrument,1,7,THY_ROUTE_DIN,0)==THY_OK);
+        CHECK(thy_instrument_set_route_velocity(&instrument,1,77)==THY_OK);
+        CHECK(thy_instrument_set_route_velocity(&instrument,2,99)==THY_OK);
+        CHECK(thy_instrument_set_cluster_swap(&instrument,(uint8_t)swapped)==THY_OK);
+        CHECK(thy_sequencer_create(&engine.sequencer,0)==THY_OK);
+        CHECK(thy_engine_sequencer_open(&engine,THY_SEQ_VIEW_STEPS)==THY_STATE_OK);
+        CHECK(thy_sequencer_ui_configure(&engine.sequencer_ui,THY_SEQ_UI_INPUT,chords)==THY_OK);
+        const uint8_t physical_input=swapped?0u:48u,scope=swapped?1u:2u;
+        const uint8_t target=chords?1u:2u,channel=chords?3u:7u;
+        /* Setup is necessarily done with the input pads released. Its target
+         * must project the current chord/note editor role before any attack. */
+        CHECK(!core.owners[physical_input].held && !engine.sequencer_ui.pads[48].held);
+        CHECK(thy_engine_performance_route(&engine,physical_input)==target);
+        int32_t value=-1;
+        CHECK(thy_engine_performance_get(&engine,THY_ROW_PERFORMANCE_VELOCITY,scope,&value)==THY_STATE_OK);
+        CHECK(value==(chords?77:99));
+        CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_BENDRANGE,scope,12)==THY_STATE_OK);
+        CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_BENDSETUP,scope,1)==THY_STATE_OK);
+        thy_midi_event event;unsigned total=0,ranges=0;
+        while(thy_core_poll(&core,&event)){
+            CHECK(event.destination==2u && event.status==(uint8_t)(0xb0u|channel));++total;
+            if(event.data1==6u){CHECK(event.data2==12u);++ranges;}
+        }
+        CHECK(total==6u && ranges==1u);
+        CHECK(thy_instrument_press_pad(&instrument,physical_input)==THY_OK);
+        CHECK(thy_engine_performance_route(&engine,physical_input)==target);
+        unsigned attacks=0;while(thy_core_poll(&core,&event))if((event.status&0xf0u)==0x90u){
+            CHECK(event.status==(uint8_t)(0x90u|channel));CHECK(event.data2==(chords?77u:99u));++attacks;
+        }
+        CHECK(attacks==(chords?3u:1u));
+        CHECK(thy_sequencer_ui_configure(&engine.sequencer_ui,THY_SEQ_UI_INPUT,!chords)==THY_OK);
+        CHECK(thy_engine_performance_route(&engine,physical_input)==target); /* Held role stays frozen. */
+        CHECK(thy_instrument_release_pad(&instrument,physical_input)==THY_OK);drain(0);
+        CHECK(!thy_core_sounding(&core));
+        CHECK(thy_engine_performance_route(&engine,physical_input)==(chords?2u:1u));
+        /* Global menus use ordinary Play routing, while track options retain
+         * the editor surface, matching the physical input filter. */
+        engine.state.level=THY_STATE_ROWS;engine.sequencer_ui.options_open=0u;
+        CHECK(thy_engine_performance_route(&engine,physical_input)==2u);
+        engine.sequencer_ui.options_open=1u;
+        CHECK(thy_engine_performance_route(&engine,physical_input)==(chords?2u:1u));
+    }
+    return 1;
+}
+static int scoped_bend_setup_is_explicit_bounded_and_atomic(void)
+{
+    init();
+    CHECK(thy_state_set(&engine.state,THY_ROW_MIDI_ROUTINGPROFILE,THY_ROUTING_WHOLE)==THY_STATE_OK);
+    CHECK(thy_instrument_set_pad_route(&instrument,0,0,THY_ROUTE_USB0|THY_ROUTE_DIN)==THY_OK);
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_BENDRANGE,1,4)==THY_STATE_OK);
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_BENDRANGE,2,12)==THY_STATE_OK);
+    CHECK(!drain(0));
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_BENDSETUP,0,1)==THY_STATE_INVALID);
+    CHECK(!drain(0));
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_BENDRANGE,0,7)==THY_STATE_OK);
+    CHECK(thy_state_begin_edit(&engine.state,THY_ROW_PERFORMANCE_BENDSETUP)==THY_STATE_OK);
+    thy_midi_event event;unsigned total=0,ranges=0;
+    while(thy_core_poll(&core,&event)){CHECK((event.status&0xf0u)==0xb0u);++total;
+        if(event.data1==6u){CHECK(event.data2==7u);++ranges;}}
+    CHECK(total==12u&&ranges==2u); /* Shared DIN/USB destinations, deduplicated. */
+    core.queue_count=THY_QUEUE_CAPACITY-1u;
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_BENDSETUP,0,1)==THY_STATE_BLOCKED);
+    CHECK(core.queue_count==THY_QUEUE_CAPACITY-1u);core.queue_count=0u;
+    instrument.sensors[0].held=1u;
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_BENDSETUP,2,1)==THY_STATE_BLOCKED);
+    instrument.sensors[0].held=0u;
+    CHECK(!drain(0));return 1;
+}
+
 int main(void)
 {
-    if(!chord_pressure_routes_and_panic() || !modifier_capture_and_live_only() ||
+    if(!sequencer_input_route_projection_and_setup_follow_roles() ||
+        !scoped_mpe_mapping_follows_physical_half_after_role_swap() || !scoped_bend_setup_is_explicit_bounded_and_atomic() ||
+        !chord_pressure_routes_and_panic() || !modifier_capture_and_live_only() ||
         !alternating_strum_keeps_glide_reference() || !sensor_pressure_callback_and_standard_compatibility() ||
         !ordinary_capture_and_independent_axes() || !raw_dual_stage_feeds_mpe_and_preserves_release() ||
         !menu_alias_uses_one_guarded_mpe_configuration_without_setup() ||
         !performance_policy_edits_preserve_captured_expression_and_release())return 1;
-    printf("Expression engine: 8 scenarios passed (%u assertions)\n",assertions);return 0;
+    printf("Expression engine: 11 scenarios passed (%u assertions)\n",assertions);return 0;
 }

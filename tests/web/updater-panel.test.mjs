@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createUpdaterClient, initializeUpdaterPanel, UPDATE_HELPER_PROTOCOL, UPDATE_PACKAGE_MAX_BYTES } from '../../web/updater-panel.js';
 import { consumeUpdaterHandoff } from '../../web/updater-client.js';
 import { deviceCRC32 } from '../../web/device-client.js';
@@ -14,11 +15,11 @@ const healthReports = () => ({
   settings: 'SETTINGS version=13 status=saved errors=0',
   display: 'DISPLAY version=2 faulted=0 failed_chunks=0 initial_complete=1 frames=2',
 });
-function backupBytes() {
+function backupBytes(settingsVersion=13) {
   const bytes = new Uint8Array(5697), view = new DataView(bytes.buffer);
   bytes.set(new TextEncoder().encode('THYB')); view.setUint16(4, 1, true); view.setUint16(6, 64, true);
   view.setUint32(8, 5633, true); view.setUint32(12, deviceCRC32(bytes.subarray(64)), true);
-  view.setUint16(16, 13, true); view.setUint16(18, 0x413, true); view.setUint32(20, 0x10001, true);
+  view.setUint16(16, settingsVersion, true); view.setUint16(18, 0x413, true); view.setUint32(20, 0x10001, true);
   bytes.set(Uint8Array.from(UID.match(/../g), value => parseInt(value, 16)), 24);
   bytes.set(Uint8Array.from(BUILD.match(/../g), value => parseInt(value, 16)), 36);
   view.setUint32(52, 1, true); view.setUint32(60, deviceCRC32(bytes.subarray(0, 60)), true); return bytes;
@@ -60,7 +61,7 @@ class Element {
   get isConnected() { return this.ownerDocument.body.contains(this); }
   click() { if (this.tagName === 'A') this.ownerDocument.downloads.push({ name: this.download, href: this.href }); }
 }
-function fixture({ connected = false, install, progress, read, restore, afterRestore, connect, inspectResult, statusRead, releaseCatalog, selectRelease, telemetry, handoff,runtime } = {}) {
+function fixture({ connected = false, install, progress, read, restore, prepareRestore, afterRestore, connect, inspectResult, statusRead, releaseCatalog, selectRelease, telemetry, handoff,runtime, developmentPreview=false } = {}) {
   const blobs = new Map(), downloads = [], notifications = [], ownership = [], calls = [];
   const timers = new Map(); let timerId = 0;
   const document = { activeElement: null, listeners: new Map(), downloads,
@@ -85,9 +86,10 @@ function fixture({ connected = false, install, progress, read, restore, afterRes
     async disconnect() { calls.push(['application-disconnect']); this.connected = false; },
     async telemetry(id) { calls.push(['telemetry', id]); return telemetry ? telemetry(id) : healthReports()[id]; },
     async downloadBackup() { calls.push(['backup']); return read ? read() : backupBytes(); },
+    async prepareBackupRestore(bytes){calls.push(['prepare-restore',bytes.slice()]);return prepareRestore?prepareRestore(bytes):{sourceSettingsVersion:18,settingsVersion:19,migrated:true};},
     async restoreBackup(bytes) { calls.push(['restore',bytes.slice()]);return restore?restore(bytes):{verified:true,payloadCRC:deviceCRC32(bytes.subarray(64)),generation:2}; } };
   let companionVisits = 0;
-  const panel = initializeUpdaterPanel({ mount, client, createHelper: () => helper, operationId: () => ID, handoff,runtime,
+  const panel = initializeUpdaterPanel({ mount, client, createHelper: () => helper, operationId: () => ID, handoff,runtime, developmentPreview,
     notify: (...args) => notifications.push(args), onOwnershipChange: value => ownership.push(value), onCompanion: () => companionVisits++,
     onRestored:async()=>{calls.push(['restore-refresh']);await afterRestore?.();},
     setTimer(callback, delay) { timers.set(++timerId, { callback, delay }); return timerId; }, clearTimer(id) { timers.delete(id); } });
@@ -142,8 +144,35 @@ test('updater mounts offline with no helper requests, physical writes or implici
   assert.equal(f.panel.refresh().step, 1); assert.equal(f.panel.refresh().source, 'thy666');
   assert.equal(f.visible(f.find('updaterAction', 'install')), false);
   assert.equal(f.find('updaterReadout', 'notice').hidden, true);
+  assert.equal(f.find('updaterAction','preview'),undefined);
+  assert.doesNotMatch(f.mount.textContent,/Development preview/);
   assert.match(f.mount.querySelector('.update-backup-disclaimer').textContent, /automatic rollback is not available/);
   assert.equal(f.mount.querySelectorAll('.update-board-pad').length, 96); assert.equal(f.mount.querySelectorAll('.update-board-control').length, 43);
+});
+
+test('firmware choices keep both text lines together and reserve enough width for the artwork at every breakpoint',()=>{
+  const f=fixture();
+  const choices=f.mount.querySelectorAll('.update-firmware-choice');
+  assert.equal(choices.length,3);
+  for(const choice of choices){
+    const copy=choice.querySelector('.update-firmware-copy');
+    assert.equal(choice.children.length,2,'The icon and complete text block are separate grid items.');
+    assert.equal(choice.children[1],copy);
+    assert.deepEqual(copy.children.map(node=>node.tagName),['STRONG','SPAN']);
+    assert.ok(copy.children.every(node=>node.textContent.length>0));
+  }
+  const css=readFileSync(new URL('../../web/updater-wizard.css',import.meta.url),'utf8');
+  const logoRule=/\.update-firmware-choice \.update-firmware-logo\s*\{([^}]+)\}/.exec(css)[1];
+  const logoWidth=Number(/\bwidth:\s*(\d+)px/.exec(logoRule)[1]);
+  let tracks=0;
+  for(const [,body] of css.matchAll(/\.update-firmware-choice\s*\{([^}]+)\}/g)){
+    const columns=/grid-template-columns:\s*(\d+)px\s+([^;]+)/.exec(body);
+    if(!columns)continue;
+    tracks++;
+    assert.ok(Number(columns[1])>=logoWidth,'A responsive icon track cannot be narrower than its logo.');
+    assert.match(columns[2],/minmax\(0,\s*1fr\)/,'The text track can shrink and wrap without pushing into the icon.');
+  }
+  assert.ok(tracks>0);
 });
 
 test('desktop startup connects only the in-process updater status and never discovers USB or offers an external helper',async()=>{
@@ -497,6 +526,47 @@ test('verification fails before green success for a mismatched board or failed t
   faulty = false; failed.act('verify'); await flush(); assert.equal(failed.panel.refresh().applicationVerification.verified, true);
   assert.equal(failed.calls.some(([name]) => name === 'install'), false);
 });
+
+test('V19 health verification checks the connected settings version without installing again',async()=>{
+  const f=fixture({connected:true,connect:async()=>({operation:status('awaiting-verification',2)}),
+    telemetry:async id=>id==='settings'?'SETTINGS version=19 status=saved errors=0':healthReports()[id]});
+  f.client.backupIdentity.settings='19';f.act('connect');await flush();f.act('verify');await flush();
+  assert.equal(f.panel.refresh().applicationVerification.verified,true);
+  assert.equal(f.calls.some(([name])=>['install','restore','prepare-restore'].includes(name)),false);
+  const mismatch=fixture({connected:true,connect:async()=>({operation:status('awaiting-verification',2)}),
+    telemetry:async id=>id==='settings'?'SETTINGS version=19 status=saved errors=0':healthReports()[id]});
+  mismatch.client.backupIdentity.settings='18';mismatch.act('connect');await flush();mismatch.act('verify');await flush();
+  assert.equal(mismatch.panel.refresh().applicationVerification.verified,false);
+  assert.match(mismatch.panel.refresh().notice,/capabilities disagree/);
+});
+
+test('verification prepares an older retained backup through the shared client without restoring it',async()=>{
+  let f;f=fixture({connected:true,read:()=>backupBytes(18),
+    progress:async()=>{f.client.backupIdentity.settings='19';return status('awaiting-verification',2);},
+    telemetry:async id=>id==='settings'?'SETTINGS version=19 status=saved errors=0':healthReports()[id],
+    prepareRestore:async bytes=>{assert.deepEqual(bytes,backupBytes(18));return{sourceSettingsVersion:18,settingsVersion:19,migrated:true};}});
+  f.client.backupIdentity.settings='18';await installWithRetainedBackup(f);
+  assert.equal(f.panel.refresh().applicationVerification.verified,true);
+  assert.equal(f.calls.filter(([name])=>name==='prepare-restore').length,1);
+  assert.equal(f.calls.some(([name])=>name==='restore'),false);
+  assert.equal(f.find('updaterAction','restore').disabled,false);
+  assert.match(f.find('updaterReadout','restoration-status').textContent,/V18.*V19 off-device/);
+  assert.deepEqual(f.calls.find(([name])=>name==='prepare-restore')[1],backupBytes(18));
+});
+
+test('backup conversion failure leaves firmware health separate and blocks restoration without defaults or a retry',async()=>{
+  let f;f=fixture({connected:true,read:()=>backupBytes(18),
+    progress:async()=>{f.client.backupIdentity.settings='19';return status('awaiting-verification',2);},
+    telemetry:async id=>id==='settings'?'SETTINGS version=19 status=saved errors=0':healthReports()[id],
+    prepareRestore:async()=>{throw Error('The shared C settings codec rejected this backup.');}});
+  f.client.backupIdentity.settings='18';await installWithRetainedBackup(f);
+  assert.equal(f.panel.refresh().applicationVerification.verified,true,'Read-only application health is independent of backup conversion.');
+  assert.equal(f.find('updaterAction','restore').disabled,true);
+  assert.equal(f.find('updaterAction','keep-settings').disabled,false);
+  assert.match(f.find('updaterReadout','restoration-status').textContent,/codec rejected.*no restore was sent/i);
+  assert.equal(f.calls.some(([name])=>name==='restore'),false);
+  assert.equal(f.calls.filter(([name])=>name==='install').length,1);
+});
 test('simulation stays visibly marked, never claims physical USB ownership and cannot verify a separately connected board', async () => {
   const f = fixture({ connect: async () => ({ mode: 'simulation', simulation: true }),
     install: async () => ({ ...status(), simulation: true }),
@@ -615,7 +685,7 @@ test('a handoff that cannot scrub history never becomes a helper connection and 
 });
 
 test('development preview traverses synthetic screens without transport calls or real verification', async () => {
-  const f=fixture();const baseline=f.calls.length;
+  const f=fixture({developmentPreview:true});const baseline=f.calls.length;
   f.act('preview');
   for(const action of ['backup','install','progress','verify','restore','companion']) {
     const target=f.all().filter(n=>n.dataset.updaterAction===action).at(-1);
@@ -630,7 +700,7 @@ test('development preview traverses synthetic screens without transport calls or
 });
 
 test('preview animates backup, transfer and restore without hardware and cancels timers on exit', () => {
-  const f=fixture();f.act('preview');const baseline=f.calls.length;
+  const f=fixture({developmentPreview:true});f.act('preview');const baseline=f.calls.length;
   const previewAction=name=>f.all().filter(n=>n.dataset.updaterAction===name).at(-1);
   const meter=name=>f.all().filter(n=>n.attributes['aria-label']===name).at(-1);
   const finish=()=>{for(let i=0;i<32;i++)f.tick();};
@@ -658,7 +728,7 @@ test('preview animates backup, transfer and restore without hardware and cancels
 });
 
 test('custom-file preview shows the selected name and checks without reading bytes or contacting transport', () => {
-  const f=fixture();f.act('preview');
+  const f=fixture({developmentPreview:true});f.act('preview');
   const last=(key,value)=>f.all().filter(n=>n.dataset[key]===value).at(-1);
   f.fire(last('updaterAction','skip-backup'));
   f.fire(last('firmwareSource','custom'));
@@ -675,7 +745,7 @@ test('custom-file preview shows the selected name and checks without reading byt
 
 test('preview honors the backup restore toggle and never asks for another backup file',()=>{
   for(const checked of [true,false]){
-    const f=fixture();f.act('preview');
+    const f=fixture({developmentPreview:true});f.act('preview');
     const last=(key,value)=>f.all().filter(n=>n.dataset[key]===value).at(-1);
     last('updaterField','restore-wanted').checked=checked;
     f.fire(last('updaterAction','backup'));for(let i=0;i<32;i++)f.tick();

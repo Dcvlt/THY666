@@ -57,6 +57,7 @@ static int invariant(const thy_mpe *mpe)
         CHECK(voice->bend <= 16383u && voice->sent_bend <= 16383u);
         CHECK(voice->pressure <= 127u && voice->sent_pressure <= 127u);
         CHECK(voice->timbre <= 127u && voice->sent_timbre <= 127u);
+        CHECK(voice->pressure_output <= THY_MPE_CC1);
         for (j = 0u; j < i; ++j) {
             const thy_mpe_voice *other = thy_mpe_voice_at(mpe, j);
             CHECK(other == NULL || other->channel != voice->channel);
@@ -91,6 +92,13 @@ static int test_defaults_and_atomic_configuration(void)
     CHECK(!mpe.config.enabled && mpe.config.members == 15u);
     CHECK(mpe.config.bend_range == 48u && mpe.config.manager_bend_range == 2u);
     CHECK(!mpe.config.glide && mpe.config.pad_window == 1u && mpe.config.semitone_window == 2u);
+    CHECK(mpe.config.pressure_output[0] == THY_MPE_PRESSURE &&
+        mpe.config.pressure_output[1] == THY_MPE_PRESSURE);
+    for (unsigned side = 0u; side < 2u; ++side) {
+        config = mpe.config;config.pressure_output[side] = 3u;
+        CHECK(!thy_mpe_config_valid(&config));
+        CHECK(thy_mpe_configure(&mpe,&config) == THY_INVALID_ARGUMENT);
+    }
     CHECK(thy_mpe_press(&mpe, 0u, 0u, 60u, &note, 1u, THY_ROUTE_DIN, 96u, 0u,
         &consumed) == THY_INVALID_ARGUMENT && consumed == -1);
     CHECK(thy_core_queued(&core) == 0u);
@@ -591,6 +599,134 @@ static int test_timbre_modifier_isolation_and_sustained_cleanup(void)
     return 1;
 }
 
+static int test_member_output_uses_physical_position_and_distinct_upper_stage(void)
+{
+    thy_core core;thy_mpe mpe;thy_mpe_config config;
+    CHECK(enable(&mpe,&core,2u));
+    config=mpe.config;config.pressure_output[0]=THY_MPE_CC74;config.pressure_output[1]=THY_MPE_CC1;
+    CHECK(thy_mpe_configure(&mpe,&config) == THY_OK);
+    /* Electrical sensor numbering is unrelated to the mapped physical half.
+     * These reversed IDs catch accidentally selecting the policy by pad/48. */
+    CHECK(press(&mpe,0u,48u,60u));
+    CHECK(take(&core,THY_DIN,0xb1u,1u,0u));
+    CHECK(take(&core,THY_DIN,0xe1u,0u,64u));
+    CHECK(take(&core,THY_DIN,0xd1u,0u,0u));
+    CHECK(take(&core,THY_DIN,0x91u,60u,96u));
+    CHECK(mpe.voices[0].pressure_output == THY_MPE_CC1);
+    CHECK(press(&mpe,48u,0u,67u));
+    CHECK(take(&core,THY_DIN,0xb2u,74u,0u));
+    CHECK(take(&core,THY_DIN,0xe2u,0u,64u));
+    CHECK(take(&core,THY_DIN,0xd2u,0u,0u));
+    CHECK(take(&core,THY_DIN,0x92u,67u,96u));
+    CHECK(mpe.voices[1].pressure_output == THY_MPE_CC74);
+    CHECK(thy_mpe_pressure(&mpe,0u,40u) == THY_OK);
+    CHECK(thy_mpe_timbre(&mpe,0u,100u) == THY_OK);
+    CHECK(thy_mpe_pressure(&mpe,48u,90u) == THY_OK);
+    CHECK(thy_mpe_timbre(&mpe,48u,25u) == THY_OK);
+    CHECK(thy_mpe_service(&mpe) == THY_OK);
+    CHECK(take(&core,THY_DIN,0xb1u,1u,40u));
+    CHECK(take(&core,THY_DIN,0xd1u,100u,0u));
+    CHECK(take(&core,THY_DIN,0xb2u,74u,90u));
+    CHECK(take(&core,THY_DIN,0xd2u,25u,0u));
+    CHECK(!thy_core_queued(&core)); /* No second writer to CC74. */
+    config.pressure_output[0]=THY_MPE_PRESSURE;
+    CHECK(thy_mpe_configure(&mpe,&config) == THY_OWNER_LIMIT);
+    CHECK(mpe.config.pressure_output[0] == THY_MPE_CC74);
+    CHECK(thy_mpe_release(&mpe,0u) == THY_OK);
+    CHECK(take(&core,THY_DIN,0x81u,60u,0u));
+    CHECK(take(&core,THY_DIN,0xb1u,1u,0u));
+    CHECK(take(&core,THY_DIN,0xe1u,0u,64u));
+    CHECK(take(&core,THY_DIN,0xd1u,0u,0u));
+    CHECK(thy_mpe_release(&mpe,48u) == THY_OK);
+    CHECK(take(&core,THY_DIN,0x82u,67u,0u));
+    CHECK(take(&core,THY_DIN,0xb2u,74u,64u));
+    CHECK(take(&core,THY_DIN,0xe2u,0u,64u));
+    CHECK(take(&core,THY_DIN,0xd2u,0u,0u));
+    CHECK(thy_mpe_quiet(&mpe) && !thy_core_queued(&core));
+    CHECK(invariant(&mpe));return 1;
+}
+
+static int test_mapped_output_backpressure_sustain_and_reuse(void)
+{
+    for(unsigned output=THY_MPE_CC74;output<=THY_MPE_CC1;++output) {
+        thy_core core;thy_mpe mpe;thy_mpe_config config;
+        const int16_t note=60;
+        thy_midi_event event,events[THY_QUEUE_CAPACITY];unsigned count=0u;
+        CHECK(enable(&mpe,&core,1u));
+        config=mpe.config;config.pressure_output[0]=(uint8_t)output;
+        CHECK(thy_mpe_configure(&mpe,&config) == THY_OK);
+        CHECK(thy_mpe_press_ex(&mpe,0u,0u,60u,&note,1u,THY_ROUTE_ALL,96u,0u,NULL,0u) == THY_OK);
+        drain(&core);
+        CHECK(thy_mpe_pressure(&mpe,0u,99u) == THY_OK);
+        CHECK(thy_mpe_timbre(&mpe,0u,127u) == THY_OK);
+        CHECK(thy_mpe_bend(&mpe,0u,0) == THY_OK);
+        while(thy_core_cc(&core,THY_ROUTE_DIN,0u,2u,0u) == THY_OK) { }
+        CHECK(thy_mpe_service(&mpe) == THY_QUEUE_FULL);
+        CHECK(!mpe.voices[0].sent_pressure && !mpe.voices[0].sent_timbre && mpe.voices[0].sent_bend==8192u);
+        for(unsigned n=0;n<9u;++n)CHECK(thy_core_poll(&core,&event));
+        CHECK(thy_mpe_service(&mpe) == THY_OK);
+        CHECK(mpe.voices[0].sent_pressure==99u && mpe.voices[0].sent_timbre==127u && !mpe.voices[0].sent_bend);
+        CHECK(thy_mpe_release(&mpe,0u) == THY_OK && thy_core_queued(&core)==THY_QUEUE_CAPACITY);
+        CHECK(mpe.voices[0].state==THY_MPE_RETIRING);
+        for(unsigned n=0;n<8u;++n)CHECK(thy_core_poll(&core,&event));
+        count=thy_core_queued(&core);
+        CHECK(thy_mpe_service(&mpe) == THY_QUEUE_FULL && thy_core_queued(&core)==count);
+        CHECK(mpe.voices[0].state==THY_MPE_RETIRING);
+        CHECK(thy_core_poll(&core,&event));
+        CHECK(thy_mpe_service(&mpe) == THY_OK && thy_mpe_quiet(&mpe));
+        count=0u;while(thy_core_poll(&core,&event))events[count++]=event;
+        CHECK(count==THY_QUEUE_CAPACITY);
+        for(unsigned d=0;d<3u;++d) {
+            const thy_midi_event *off=&events[count-12u+d],*reset=&events[count-9u+3u*d];
+            CHECK(off->destination==d && off->status==0x81u && off->data1==60u);
+            CHECK(reset[0].destination==d && reset[0].status==0xb1u &&
+                reset[0].data1==(output==THY_MPE_CC74?74u:1u) &&
+                reset[0].data2==(output==THY_MPE_CC74?64u:0u));
+            CHECK(reset[1].destination==d && reset[1].status==0xe1u && reset[1].data1==0u && reset[1].data2==64u);
+            CHECK(reset[2].destination==d && reset[2].status==0xd1u && reset[2].data1==0u && reset[2].data2==0u);
+        }
+        CHECK(thy_mpe_press_ex(&mpe,1u,4u,60u,&note,1u,THY_ROUTE_ALL,96u,0u,NULL,0u) == THY_OK);
+        drain(&core);
+        CHECK(thy_core_sustain(&core,THY_ROUTE_ALL,1u,1) == THY_OK);drain(&core);
+        CHECK(thy_mpe_release(&mpe,1u) == THY_OK && mpe.voices[0].state==THY_MPE_RETIRING);
+        CHECK(thy_mpe_service(&mpe) == THY_OK && !thy_core_queued(&core));
+        const int16_t blocked_note=62;
+        CHECK(thy_mpe_press(&mpe,2u,8u,62u,&blocked_note,1u,THY_ROUTE_DIN,96u,0u,NULL) == THY_OWNER_LIMIT);
+        CHECK(!thy_core_queued(&core));
+        CHECK(thy_core_sustain(&core,THY_ROUTE_ALL,1u,0) == THY_OK);drain(&core);
+        CHECK(thy_mpe_service(&mpe) == THY_OK && thy_mpe_quiet(&mpe));
+        for(unsigned d=0;d<3u;++d) {
+            CHECK(take(&core,(uint8_t)d,0xb1u,output==THY_MPE_CC74?74u:1u,output==THY_MPE_CC74?64u:0u));
+            CHECK(take(&core,(uint8_t)d,0xe1u,0u,64u));
+            CHECK(take(&core,(uint8_t)d,0xd1u,0u,0u));
+        }
+        CHECK(!thy_core_queued(&core));CHECK(invariant(&mpe));
+    }
+    return 1;
+}
+
+static int test_cc74_primary_keeps_modifier_glide_separate(void)
+{
+    thy_core core;thy_mpe mpe;thy_mpe_config config;
+    int consumed=-1;const int16_t note=62;
+    CHECK(enable(&mpe,&core,1u));
+    config=mpe.config;config.pressure_output[0]=THY_MPE_CC74;config.glide=1u;
+    CHECK(thy_mpe_configure(&mpe,&config) == THY_OK);
+    CHECK(press(&mpe,0u,0u,60u));drain(&core);
+    CHECK(thy_mpe_pressure(&mpe,0u,64u) == THY_OK);
+    CHECK(thy_mpe_timbre(&mpe,0u,100u) == THY_OK);
+    CHECK(thy_mpe_service(&mpe) == THY_OK);drain(&core);
+    CHECK(thy_mpe_press(&mpe,4u,4u,62u,&note,1u,THY_ROUTE_DIN,96u,0u,&consumed) == THY_OK && consumed);
+    CHECK(thy_mpe_pressure(&mpe,4u,64u) == THY_OK);
+    CHECK(thy_mpe_timbre(&mpe,4u,127u) == THY_OK);
+    CHECK(thy_mpe_service(&mpe) == THY_OK);
+    uint16_t bend=thy_mpe_glide_bend(64u,64u,2,48u);
+    CHECK(take(&core,THY_DIN,0xe1u,(uint8_t)(bend&127u),(uint8_t)(bend>>7u)));
+    CHECK(!thy_core_queued(&core) && mpe.voices[0].pressure==64u && mpe.voices[0].timbre==100u);
+    thy_mpe_release_all(&mpe);drain(&core);
+    CHECK(thy_mpe_quiet(&mpe));CHECK(invariant(&mpe));return 1;
+}
+
 static int test_deterministic_stress(void)
 {
     thy_core core;
@@ -641,6 +777,9 @@ int main(void)
         test_timbre_initialization_chord_coalescing_and_defaults,
         test_timbre_full_batch_retry_and_reset_before_reuse,
         test_timbre_modifier_isolation_and_sustained_cleanup,
+        test_member_output_uses_physical_position_and_distinct_upper_stage,
+        test_mapped_output_backpressure_sustain_and_reuse,
+        test_cc74_primary_keeps_modifier_glide_separate,
         test_deterministic_stress};
     size_t i;
     for (i = 0u; i < sizeof(tests) / sizeof(tests[0]); ++i) if (!tests[i]()) return 1;

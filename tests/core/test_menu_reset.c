@@ -122,15 +122,22 @@ static int performance_and_midi_scopes(void)
     engine.channel_routes[1]=(thy_engine_channel_config){3,2,24};engine.channel_routes[2]=(thy_engine_channel_config){3,1,12};
     CHECK(open("performance.resetOptions"));CHECK(confirm());
     CHECK(instrument.cluster_velocity[0].mode==THY_VELOCITY_FIXED&&instrument.cluster_velocity[1].mode==THY_VELOCITY_STRIKE);
-    CHECK(instrument.fixed_velocity==96u&&thy_engine_channel_aftertouch(&engine,2)==THY_CHANNEL_PRESSURE_OFF);
+    CHECK(instrument.fixed_velocity==80u&&engine.performance[0].velocity==96u&&!engine.performance[1].velocity);
+    CHECK(engine.performance[0].aftertouch==1u&&!engine.performance[1].aftertouch);
+    CHECK(thy_engine_channel_aftertouch(&engine,2)==THY_CHANNEL_PRESSURE_CHANNEL);
     CHECK(engine.channel_routes[1].bend==2u&&engine.channel_routes[1].range==24u);
     instrument.channels[0]=7;instrument.channels[1]=9;instrument.route_velocity[1]=77;instrument.route_velocity[2]=88;
+    instrument.route_pressure[1]=2u;instrument.route_pressure[2]=1u;
+    const thy_engine_channel_config left_response=engine.channel_routes[1],right_response=engine.channel_routes[2];
     engine.usb_input_velocity[2][60]=91u;
     engine.route_target=2u;CHECK(open("midi.resetOptions"));engine.route_target=1u;CHECK(confirm());
     CHECK(instrument.channels[0]==7&&instrument.channels[1]==1);
-    CHECK(instrument.route_velocity[1]==77&&instrument.route_velocity[2]==96);
+    CHECK(instrument.route_velocity[1]==77&&instrument.route_velocity[2]==88);
+    CHECK(instrument.route_pressure[1]==2u&&instrument.route_pressure[2]==1u);
+    CHECK(!memcmp(&engine.channel_routes[1],&left_response,sizeof left_response));
+    CHECK(!memcmp(&engine.channel_routes[2],&right_response,sizeof right_response));
     CHECK(engine.musical_clock.source==THY_CLOCK_SOURCE_INTERNAL&&engine.musical_clock.tempo_milli_bpm==120000u);
-    CHECK(thy_engine_channel_aftertouch(&engine,2)==THY_CHANNEL_PRESSURE_OFF);
+    CHECK(thy_engine_channel_aftertouch(&engine,2)==THY_CHANNEL_PRESSURE_CHANNEL);
     CHECK(!engine.usb_input_velocity[2][60]);return 1;
 }
 static int system_reset_respects_partial_contacts(void)

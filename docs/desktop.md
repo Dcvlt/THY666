@@ -191,3 +191,7 @@ GPL-3.0-or-later license.
 The startup splash applies the saved light/dark appearance before rendering.
 The public app area is named **Client**; existing preference keys and internal
 `companion` module paths remain compatible with prior builds.
+
+The bundled component library reuses the desktop window frame, controls and
+resize handles. Its examples remain read-only; opening the library does not
+discover or connect a board. The browser reference loads no native window code.

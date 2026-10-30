@@ -409,6 +409,8 @@ int thy_instrument_get_expression_profile(const thy_instrument *,uint8_t pad,
     thy_expression_profile *,uint8_t *overridden);
 int thy_instrument_set_cluster_expression_profile(thy_instrument *,uint8_t side,
     const thy_expression_profile *);
+int thy_instrument_check_expression_profile(const thy_instrument *,uint8_t pad,
+    const thy_expression_profile *);
 int thy_instrument_set_pad_expression_profile(thy_instrument *,uint8_t pad,
     const thy_expression_profile *);
 int thy_instrument_clear_expression_profile(thy_instrument *,uint8_t pad);

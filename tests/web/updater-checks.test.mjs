@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { UPDATE_HEALTH_CHECKS, checkUpdateIdentity, checkUpdateHealth } from '../../web/updater-checks.js';
+import {readFile} from 'node:fs/promises';
+import {createCore} from '../../web/core.js';
+import {BACKUP_SETTINGS_CURRENT_VERSION, BACKUP_SETTINGS_MIN_VERSION, supportsBackupSettingsVersion} from '../../web/device-client.js';
+import { UPDATE_HEALTH_CHECKS, checkUpdateIdentity, checkUpdateHealth as rawHealth } from '../../web/updater-checks.js';
 
 const BUILD = '1234567890abcdef', UID = '0123456789abcdef01234567';
 const operation = () => ({ firmware_kind: 'thy666', simulation: false, expected_build: BUILD, target_uid: UID });
+const identity=version=>({uid:UID,build:BUILD,settings:String(version)});
+const checkUpdateHealth=(id,line,op,backup=identity(Number(/\bversion=(\d+)/.exec(line)?.[1])))=>rawHealth(id,line,op,backup);
 
 // Synthetic healthy counterparts of firmware/instrument/protocol.c and the
 // exact report shapes exercised by tests/core/test_instrument_protocol.c.
@@ -67,7 +72,7 @@ test('settings saving, unsupported formats, unavailable storage and errors never
   for (const status of ['pending', 'saving', 'error', 'unsupported', 'unavailable', 'unknown']) {
     assert.throws(() => checkUpdateHealth('settings', replace('settings', 'status', status), operation()), status);
   }
-  for (const version of ['0', '12', '19', '999']) assert.throws(() => checkUpdateHealth('settings', replace('settings', 'version', version), operation()), `version ${version}`);
+  for (const version of ['0', '12', String(BACKUP_SETTINGS_CURRENT_VERSION+1), '999']) assert.throws(() => checkUpdateHealth('settings', replace('settings', 'version', version), operation()), `version ${version}`);
   assert.throws(() => checkUpdateHealth('settings', replace('settings', 'errors', '1'), operation()));
 });
 test('display checks require the known report version, an initial completed frame and no transfer or driver faults', () => {
@@ -107,7 +112,7 @@ test('wrong report families, failed commands, oversized output and nonstrings ne
 
 test('settings health accepts v14 while retaining v13 compatibility', () => {
   assert.match(checkUpdateHealth('settings', reports.settings.replace('version=13', 'version=14'), operation()), /Saved settings/);
-  assert.throws(() => checkUpdateHealth('settings', reports.settings.replace('version=13', 'version=19'), operation()), /not supported/);
+  assert.throws(() => checkUpdateHealth('settings', reports.settings.replace('version=13', `version=${BACKUP_SETTINGS_CURRENT_VERSION+1}`), operation()), /not supported/);
 });
 
  test('settings health accepts current v15 without dropping prior format support',()=>{
@@ -121,4 +126,30 @@ test('Harmony v16 storage passes only when idle and healthy', () => {
   for (const status of ['pending', 'saving', 'error'])
     assert.throws(() => checkUpdateHealth('settings', report.replace('status=saved', `status=${status}`), operation()));
   assert.throws(() => checkUpdateHealth('settings', report.replace('errors=0', 'errors=1'), operation()));
+});
+
+test('the central version contract matches both current C source and generated C codec',async()=>{
+  const header=await readFile(new URL('../../core/thy_settings.h',import.meta.url),'utf8');
+  const sourceVersion=Number(/^#define THY_SETTINGS_VERSION (\d+)u$/m.exec(header)?.[1]);
+  const engine=await createCore({bytes:await readFile(new URL('../../web/generated/core.wasm',import.meta.url))});
+  assert.equal(BACKUP_SETTINGS_CURRENT_VERSION,sourceVersion,'A settings schema change must update the single Client contract.');
+  assert.equal(BACKUP_SETTINGS_CURRENT_VERSION,engine.settings.version,'The Client contract must match the shipped C codec.');
+  for(let version=BACKUP_SETTINGS_MIN_VERSION;version<=engine.settings.version;version++){
+    assert.equal(supportsBackupSettingsVersion(version),true);
+    assert.match(rawHealth('settings',replace('settings','version',version),operation(),identity(version)),/Saved settings/);
+  }
+  for(const version of [BACKUP_SETTINGS_MIN_VERSION-1,engine.settings.version+1,19.5,'19',null,NaN])
+    assert.equal(supportsBackupSettingsVersion(version),false);
+});
+
+test('current V19 and legacy V18 verify only when the connected capabilities agree',()=>{
+  for(const version of [18,19]){
+    const report=replace('settings','version',version);
+    assert.match(rawHealth('settings',report,operation(),identity(version)),/Saved settings/);
+    for(const caps of [undefined,{},identity(version===19?18:19),{...identity(version),uid:'f'.repeat(24)},
+      {...identity(version),build:'f'.repeat(16)},{...identity(version),settings:'019'},identity(20)])
+      assert.throws(()=>rawHealth('settings',report,operation(),caps),/capabilities disagree/);
+    for(const [key,value] of [['status','saving'],['status','unsupported'],['errors','1']])
+      assert.throws(()=>rawHealth('settings',report.replace(new RegExp(`\\b${key}=[^\\s]+`),`${key}=${value}`),operation(),identity(version)));
+  }
 });

@@ -18,6 +18,8 @@ PAD_FIELDS = {"sensitivity." + name for name in ("amount", "linkedRelease", "rel
 TYPES = {"toggle": 0, "select": 1, "number": 2, "text": 3, "action": 4, "info": 5}
 STRUMMER_FIELDS = {"chords." + name for name in ("continuous", "strumLatch", "cutoff", "repeatDelay", "pattern", "destinations", "channel")}
 TRACK_FIELDS = {"sequencer." + name for name in ("active", "interaction", "playMode", "quantize", "followScale", "root", "name", "position", "destinations", "channel", "scale", "source", "processor", "mute", "loopStart", "loopEnd", "length", "grid", "recordControllers", "sendPressure")}
+PERFORMANCE_SIDE_FIELDS = {"sensitivity.velocityMode", *("performance." + name for name in
+    ("velocity", "pressureMode", "profileEnabled", "mpeOutput", "pressureBend", "bendRange", "bendSetup"))}
 
 
 def identifier(value):
@@ -36,7 +38,7 @@ def oled_label(value):
 def family(row):
     if row["id"] == "sequencer.resetTrack":
         return "track"
-    if row["id"] == "sensitivity.velocityMode":
+    if row["id"] in PERFORMANCE_SIDE_FIELDS:
         return "side"
     if row["id"] in PAD_FIELDS:
         return "pad"
@@ -135,7 +137,7 @@ def projection():
                 item["text_offset"] = text_count
                 text_count += COUNTS[item["family"]]
             rows.append(item)
-    if len(rows) != 348 or len(groups) != 15:
+    if len(rows) != 351 or len(groups) != 15:
         raise ValueError("Menu cardinality changed; review stable C row IDs and shared-contract tests.")
     if len({row["id"] for row in rows}) != len(rows):
         raise ValueError("Duplicate row IDs")
