@@ -62,7 +62,7 @@ class WorkbenchBundleTests(unittest.TestCase):
         self.assertIn("const initializeLibraryLab = (() =>", module)
         self.assertIn('id="library-lab"', BUNDLE.read_text(encoding="utf-8"))
         self.assertIn("library-lab.js", self.manifest["assets_sha256"])
-        for name in ("companion-shell.js", "companion-display.js", "companion-display.css", "device-client.js", "backup-panel.js", "updater-panel.js", "help-topics.js", "app-settings.js", "companion-theme.css", "cockpit.js", "cockpit.css", "typography.css", "assets/fonts/manifest.json"):
+        for name in ("companion-shell.js", "companion-display.js", "companion-display.css", "device-client.js", "backup-panel.js", "updater-panel.js", "help-topics.js", "app-settings.js", "companion-theme.css", "cockpit.js", "cockpit.css", "typography.css", "ui-system.js", "ui-system.css", "assets/fonts/manifest.json"):
             self.assertIn(name, self.manifest["assets_sha256"])
         self.assertIn("function initializeCompanionShell", module)
         self.assertIn("function initializeAppSettings", module)
@@ -92,6 +92,17 @@ class WorkbenchBundleTests(unittest.TestCase):
             source.write_text(module, encoding="utf-8")
             checked = subprocess.run([node, "--check", str(source)], capture_output=True, text=True)
         self.assertEqual(checked.returncode, 0, checked.stderr[-1500:])
+
+    def test_shared_interface_is_embedded_without_the_reference_page(self):
+        html = BUNDLE.read_text(encoding="utf-8")
+        for name in ("ui-system.js", "ui-system.css"):
+            raw = (ROOT / "web" / name).read_bytes()
+            self.assertEqual(self.manifest["assets_sha256"][name], hashlib.sha256(raw).hexdigest())
+        self.assertIn((ROOT / "web/ui-system.css").read_text(encoding="utf-8"), html)
+        self.assertNotIn('href="./ui-system.css"', html)
+        self.assertNotIn("from './ui-system.js'", self.parsed.scripts["module"])
+        for name in ("design-system.html", "design-system.js", "design-system.css"):
+            self.assertNotIn(name, self.manifest["assets_sha256"])
 
     def test_bundle_and_inputs_match_recorded_identities(self):
         self.assertEqual(hashlib.sha256(BUNDLE.read_bytes()).hexdigest(), self.manifest["sha256"])

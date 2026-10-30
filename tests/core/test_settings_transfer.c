@@ -147,7 +147,7 @@ static void restore_requires_current_agreeing_header_and_payload(void)
     ++scenarios;setup_backup();export_file();memcpy(original_file,backup_file,backup_size);
     uint32_t original_size=backup_size;
     const unsigned versions[][2]={
-        {13u,13u},{14u,14u},{15u,15u},{16u,16u},{17u,17u},{14u,THY_SETTINGS_VERSION},
+        {13u,13u},{14u,14u},{15u,15u},{16u,16u},{17u,17u},{18u,18u},{14u,THY_SETTINGS_VERSION},
         {THY_SETTINGS_VERSION,14u},{THY_SETTINGS_VERSION+1u,THY_SETTINGS_VERSION+1u},
         {THY_SETTINGS_VERSION,THY_SETTINGS_VERSION+1u},{THY_SETTINGS_VERSION+1u,THY_SETTINGS_VERSION}
     };
@@ -155,12 +155,12 @@ static void restore_requires_current_agreeing_header_and_payload(void)
         backup_size=original_size;memcpy(backup_file,original_file,backup_size);
         backup_file[16u]=(uint8_t)versions[n][0];backup_file[17u]=(uint8_t)(versions[n][0]>>8u);
         backup_file[64u+6u]=(uint8_t)versions[n][1];
-        if(versions[n][1]>=13u&&versions[n][1]<=17u){
-            unsigned prefix=versions[n][1]==17u?THY_SETTINGS_V17_PARAMETER_BYTES:versions[n][1]==16u?THY_SETTINGS_V16_PARAMETER_BYTES:THY_SETTINGS_V15_PARAMETER_BYTES;
+        if(versions[n][1]>=13u&&versions[n][1]<=18u){
+            unsigned prefix=versions[n][1]==18u?THY_SETTINGS_V18_PARAMETER_BYTES:versions[n][1]==17u?THY_SETTINGS_V17_PARAMETER_BYTES:versions[n][1]==16u?THY_SETTINGS_V16_PARAMETER_BYTES:THY_SETTINGS_V15_PARAMETER_BYTES;
             memmove(backup_file+64u+prefix,
-                backup_file+64u+THY_SETTINGS_V18_PARAMETER_BYTES,
-                backup_size-64u-THY_SETTINGS_V18_PARAMETER_BYTES);
-            backup_size-=THY_SETTINGS_V18_PARAMETER_BYTES-prefix;
+                backup_file+64u+THY_SETTINGS_V19_PARAMETER_BYTES,
+                backup_size-64u-THY_SETTINGS_V19_PARAMETER_BYTES);
+            backup_size-=THY_SETTINGS_V19_PARAMETER_BYTES-prefix;
             put32(backup_file+8u,backup_size-64u);
         }
         put32(backup_file+12u,thy_settings_crc32(backup_file+64u,backup_size-64u));

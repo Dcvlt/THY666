@@ -1,5 +1,6 @@
 /* Basic read-only installation checks. Passing these is not a playing test,
  * raw-flash readback, backup restoration or interrupted-update qualification. */
+import {supportsBackupSettingsVersion} from './device-client.js';
 export const UPDATE_HEALTH_CHECKS = Object.freeze([
   { id: 'identity', label: 'Correct board and firmware' },
   { id: 'status', label: 'Instrument startup' },
@@ -38,7 +39,7 @@ export function checkUpdateIdentity(operation, identity) {
     throw new Error('This is a different board or firmware. Keep your backup and check the selected device.');
   return 'The running build and board identity match.';
 }
-export function checkUpdateHealth(id, line, operation) {
+export function checkUpdateHealth(id, line, operation, backupIdentity) {
   if (operation?.simulation || operation?.firmware_kind === 'stock' || !/^[0-9a-f]{16}$/i.test(operation?.expected_build || ''))
     throw new Error('Only a supported THY666 installation can run these health checks.');
   if (id === 'status') {
@@ -60,7 +61,13 @@ export function checkUpdateHealth(id, line, operation) {
   }
   if (id === 'settings') {
     const v = fields(line, 'SETTINGS ');
-    if (![13, 14, 15, 16, 17, 18].includes(number(v, 'version'))) throw new Error('This settings format is not supported by the verifier.');
+    const version=number(v,'version');
+    if (!supportsBackupSettingsVersion(version)) throw new Error('This settings format is not supported by this Client. Update the Client before verifying it.');
+    if(!backupIdentity||!/^(?:0|[1-9][0-9]*)$/.test(String(backupIdentity.settings))||
+      !/^[0-9a-f]{24}$/i.test(operation.target_uid||'')||!supportsBackupSettingsVersion(Number(backupIdentity.settings))||
+      Number(backupIdentity.settings)!==version||backupIdentity.uid?.toLowerCase()!==operation.target_uid?.toLowerCase()||
+      backupIdentity.build?.toLowerCase()!==operation.expected_build?.toLowerCase())
+      throw new Error('The settings report and connected backup capabilities disagree. Reconnect the intended board before verifying it.');
     if (!['saved', 'defaults'].includes(v.status)) throw new Error(['pending', 'saving'].includes(v.status) ? 'Settings are still saving. Wait, then check again.' : 'Settings storage needs attention. Keep your configuration backup.');
     equals(v, 'errors', 0, 'Settings storage reports an error. Keep your configuration backup.');
     return v.status === 'defaults' ? 'Factory settings loaded normally.' : 'Saved settings loaded normally.';

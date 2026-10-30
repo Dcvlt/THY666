@@ -1,6 +1,6 @@
 THY666 Rust updater third-party license and attribution bundle
 Bundle format: THY666-UPDATER-LICENSES/1
-Cargo.lock SHA-256: 168f092488602857927e9b8bd458dce99f932aebc818e252270fa10cc78a528c
+Cargo.lock SHA-256: 48c7a6568c70f0f46001f61319c75e704d6e1624a5123b49e57c885c94ee6d30
 
 Scope: every registry package in updater/Cargo.lock, including build-only
 and target-specific packages. A package listed here is not necessarily

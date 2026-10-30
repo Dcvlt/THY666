@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { COMPANION_SNAPSHOT_BYTES, decodeCompanionSnapshot, companionNoteName, paintDeviceOLED } from '../../web/companion-protocol.js';
+import { COMPANION_SNAPSHOT_BYTES, decodeCompanionSnapshot, decodePadMapSnapshot, companionNoteName, paintDeviceOLED } from '../../web/companion-protocol.js';
 
 const identity = { uid: '0123456789abcdef01234567', build: '90d128d90324c978', schema: 'ab'.repeat(32) };
 const ascii = (bytes, offset, value) => bytes.set(new TextEncoder().encode(value), offset);
@@ -88,6 +88,28 @@ test('note labels preserve MIDI octaves and readable accidentals', () => {
   assert.equal(companionNoteName(0), 'C-1'); assert.equal(companionNoteName(60), 'C4');
   assert.equal(companionNoteName(61), 'C♯4'); assert.equal(companionNoteName(63), 'E♭4');
   assert.equal(companionNoteName(127), 'G9');
+});
+
+function padMap(){
+  const bytes=new Uint8Array(1672),view=new DataView(bytes.buffer);ascii(bytes,0,'THYMAP1');
+  view.setUint16(8,1,true);view.setUint16(10,1672,true);view.setUint32(12,7,true);view.setUint32(20,17,true);
+  view.setUint32(24,25,true);view.setUint32(28,42,true);
+  ascii(bytes,32,identity.build);ascii(bytes,48,identity.uid);ascii(bytes,72,identity.schema);
+  bytes[136]=2;ascii(bytes,137,'Cmaj7');bytes[136+48*16]=1;ascii(bytes,137+48*16,'C#4');
+  return bytes;
+}
+
+test('pad-label maps preserve device strings and physical positions with checked framing',()=>{
+  const bytes=padMap(),map=decodePadMapSnapshot(bytes,identity);
+  assert.equal(map.revision,17);assert.equal(map.layoutRevision,25);assert.equal(map.stateRevision,42);
+  assert.equal(map.pads.length,96);assert.deepEqual(map.pads[0],{pad:0,kind:2,label:'Cmaj7'});
+  assert.deepEqual(map.pads[48],{pad:48,kind:1,label:'C#4'});assert.equal(map.pads[95].label,'');
+  bytes[137]=88;assert.equal(map.pads[0].label,'Cmaj7','Decoded labels do not retain a mutable transfer buffer.');
+  const padded=new Uint8Array(1700);padded.set(padMap(),9);assert.equal(decodePadMapSnapshot(padded.subarray(9,1681),identity).pads[48].label,'C#4');
+  assert.throws(()=>decodePadMapSnapshot(padMap(),{...identity,build:'ff'.repeat(8)}),/identity/);
+  for(const mutate of [b=>b[8]=2,b=>b[10]=0,b=>b[136]=5,b=>b.fill(65,137,152),b=>b[137]=10,b=>b[137]=255]){
+    const bad=padMap();mutate(bad);assert.throws(()=>decodePadMapSnapshot(bad,identity));
+  }
 });
 
 test('OLED painting uses vertical page bits at native resolution and rejects incomplete frames', () => {

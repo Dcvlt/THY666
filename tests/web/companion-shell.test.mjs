@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {createCore} from '../../web/core.js';
 const guidanceCore=await createCore({bytes:await readFile(new URL('../../web/generated/core.wasm',import.meta.url))});
 import assert from 'node:assert/strict';
-import { initializeCompanionShell, renderCompanionScreen } from '../../web/companion-shell.js';
+import { initializeCompanionShell, renderCompanionScreen, createCockpitContextCache } from '../../web/companion-shell.js';
 import { STUDIO_MENU, MENU_ROWS } from '../../web/studio-menu.js';
 import { deviceCRC32 } from '../../web/device-client.js';
 import { initializeAppSettings, APP_THEME_KEY, APP_POLL_KEY, DEFAULT_POLL_INTERVAL_MS } from '../../web/app-settings.js';
@@ -105,7 +105,7 @@ class Node {
   getContext() { return { createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData:()=>{this.writes.canvas++;} }; }
 }
 
-function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, hash = '', runtime=null, projectSite=false,harmonySupport=false,resetSupport=false } = {}) {
+function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, hash = '', runtime=null, projectSite=false,harmonySupport=false,resetSupport=false,padMapSupport=false } = {}) {
   const document = { hidden: false, listeners: new Map(), activeElement: null,
     createElement(tag) { return new Node(this, tag); },
     createElementNS(namespace,tag) { return new Node(this,tag); },
@@ -144,6 +144,7 @@ function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, h
   const identity = { uid: UID, build: BUILD, schema: SCHEMA };
   const client = { connected: false, compatible: true, busy: false, identity,
     harmonySupported:harmonySupport,harmonyRevision:0,harmonyActive:false,menuLevel:0,resetSupported:resetSupport,resetOpen:false,resetEpoch:0,resetChoice:0,resetApplications:0,
+    padMapSupported:padMapSupport,padMapRevision:17,padMapPendingCount:1,padMapByteReads:0,
     backupIdentity: { ...identity, settings: '13', target: '1043', compatibility: '65537' },
     get status() { return { connected: this.connected, compatible: this.compatible, busy: this.busy, connecting: false, identity: this.connected ? identity : null }; },
     async connect() { calls.push(['connect']); this.connected = true; stateChange(this.status); return identity; },
@@ -151,7 +152,7 @@ function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, h
     async downloadBackup() { calls.push(['backup']); return backup(); },
     async telemetry(command) { calls.push(['telemetry', command]); return updateHealthReports[command]; },
     async restoreBackup() { throw new Error('Unexpected restore'); },
-    async snapshot() { calls.push(['snapshot']); const bytes=snapshot();const view=new DataView(bytes.buffer);view.setUint32(1654,this.savedGeneration??20,true);view.setUint32(1668,this.harmonyRevision,true);
+    async snapshot() { calls.push(['snapshot']); const bytes=snapshot();const view=new DataView(bytes.buffer);view.setUint32(24,this.instrumentRevision??0,true);view.setUint32(28,this.settingsRevision??0,true);view.setUint32(1650,this.layoutRevision??0,true);view.setUint32(1654,this.savedGeneration??20,true);view.setUint32(1668,this.harmonyRevision,true);
       bytes[1582]=this.menuLevel;bytes[1588]=Number(Boolean(this.arpQuick));bytes[1662]=this.harmonyActive?6:0;
       bytes[1672]=Number(this.resetOpen);bytes[1673]=this.resetChoice;bytes[1674]=this.resetGroup??0;bytes[1675]=this.resetTrack??255;view.setUint32(1676,this.resetEpoch,true);return { bytes, generation: 7 }; },
     async harmonySnapshot(){
@@ -163,6 +164,18 @@ function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, h
       bytes[523]=127;bytes[571]=255;
       bytes.set(encoder.encode('C Major'),224);bytes.set(encoder.encode('G Major'),256);return {bytes,generation:8};
     },
+    async padMapSnapshot(knownRevision=null){
+      calls.push(['padMapSnapshot',knownRevision]);
+      if(knownRevision===this.padMapRevision)return {unchanged:true,revision:this.padMapRevision};
+      if(this.padMapPendingCount>0){this.padMapPendingCount--;return {pending:true,generation:9};}
+      const bytes=new Uint8Array(1672),view=new DataView(bytes.buffer);bytes.set(encoder.encode('THYMAP1'));
+      view.setUint16(8,1,true);view.setUint16(10,1672,true);view.setUint32(12,9,true);view.setUint32(20,this.padMapRevision,true);
+      view.setUint32(24,this.layoutRevision??0,true);view.setUint32(28,this.settingsRevision??0,true);
+      bytes.set(encoder.encode(BUILD),32);bytes.set(encoder.encode(UID),48);bytes.set(encoder.encode(SCHEMA),72);
+      bytes[136]=2;bytes.set(encoder.encode(this.padMapChord||'Cmaj7'),137);bytes[904]=1;bytes.set(encoder.encode('C#4'),905);
+      this.padMapByteReads++;return {pending:false,bytes,generation:9};
+    },
+    async cancelPadMap(){calls.push(['cancelPadMap']);return true;},
     async harmonyAction(code,value){calls.push(['harmonyAction',code,value]);if(code===0)this.harmonyActive=Boolean(value);this.harmonyRevision++;},
     async harmonyControl(bank,index){calls.push(['harmonyControl',bank,index]);if(this.menuLevel||this.arpQuick)throw new Error('COMPANION/1 ERR harmony-context');this.harmonyRevision++;},
     async confirmReset(epoch,confirmed){calls.push(['confirmReset',epoch,confirmed]);if(!this.resetOpen||this.resetEpoch!==epoch)throw new Error('COMPANION/1 ERR reset-context');
@@ -173,13 +186,13 @@ function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, h
     async navigate(action) { calls.push(['navigate', action]); },
     async action(row, instance) { calls.push(['action', row, instance]);if(MENU_ROWS[row]?.id.endsWith('.resetOptions')){this.resetOpen=true;this.resetEpoch++;this.resetGroup=STUDIO_MENU.groups.findIndex(group=>group.id===MENU_ROWS[row].group);}},
     async set(row, instance, raw) { if (!this.compatible) throw new Error('read-only'); calls.push(['set', row, instance, raw]); },
-    async read(row, instance=255) { calls.push(['read', row, instance]); return this.readOverride?.(row,instance)??{ row, instance: 1, value: 0 }; },
+    async read(row, instance=255) { calls.push(['read', row, instance]); return this.readOverride?.(row,instance)??{ row, instance: instance===255?1:instance, value: MENU_ROWS[row]?.id==='performance.bendRange'?2:0 }; },
   };
   const counts={
     'arps.clear':2,'arps.enabled':2,'sequencer.channel':21,'sequencer.length':21,
-    'midi.pressure':9,'performance.pressureMode':9,'midi.channel':9,'midi.bendSetup':9,
+    'midi.pressure':9,'midi.channel':9,'midi.bendSetup':9,
     'views.slot1':9,'views.slot2':9,'sensitivity.amount':98,'sensitivity.reset':98,
-    'sensitivity.velocityMode':3,
+    'sensitivity.velocityMode':3,...Object.fromEntries(['velocity','pressureMode','profileEnabled','mpeOutput','pressureBend','bendRange','bendSetup'].map(id=>['performance.'+id,3])),
   };
   const engine = { guidance:guidanceCore.guidance, state: { schemaHash: () => SCHEMA, instanceCount: row => counts[MENU_ROWS[row]?.id]??1 }, settings: { encode: () => previewBytes.slice() } };
   const selected={groupId:'performance',selectedId:'performance.pressureMode'};
@@ -520,8 +533,12 @@ test('live Harmony reads only while visible and changed; actions refresh authori
   assert.ok(f.calls.some(c=>c[0]==='harmonyAction'&&c[1]===0&&c[2]===1));
   assert.equal(f.calls.filter(c=>c[0]==='harmonySnapshot').length,3);
   f.shell.showPage('board');f.client.harmonyRevision=4;await clock.advance(200);
-  assert.equal(f.calls.filter(c=>c[0]==='harmonySnapshot').length,3);
-  f.shell.showPage('harmony');await flush();assert.equal(f.calls.filter(c=>c[0]==='harmonySnapshot').length,4);
+  assert.equal(f.calls.filter(c=>c[0]==='harmonySnapshot').length,4,'Visible Board Harmony uses the same cached extension.');
+  assert.equal(f.shell.snapshot.context.harmony.revision,4);
+  await clock.advance(200);assert.equal(f.calls.filter(c=>c[0]==='harmonySnapshot').length,4);
+  f.shell.showArea('documentation');f.client.harmonyRevision=5;await clock.advance(1000);
+  assert.equal(f.calls.filter(c=>c[0]==='harmonySnapshot').length,4,'Hidden Harmony adds no extension traffic.');
+  f.shell.showPage('harmony');await flush();assert.equal(f.calls.filter(c=>c[0]==='harmonySnapshot').length,5);
 });
 
 test('cluster swap metadata never swaps physical RGB, held pads or inspection a second time',async t=>{
@@ -596,6 +613,7 @@ test('physical reset confirmation appears on Backups without triggering a backgr
 
 test('app settings open independently offline, change the whole-app theme and never touch the instrument',t=>{
   const f=fixture(t),gear=f.document.querySelector('.app-settings-toggle');
+  assert.ok(gear.classList.contains('hud-icon-button'));
   assert.equal(f.document.body.dataset.theme,'red');
   f.fire(gear,'click');const picker=f.document.querySelector('.app-accent-trigger');
   assert.ok(picker);f.fire(picker,'click');f.fire(f.document.querySelector('.app-accent-option[data-accent="cyan"]'),'click');assert.equal(f.document.body.dataset.theme,'cyan');
@@ -681,6 +699,7 @@ test('connected display tools resize the existing center screen in place without
   assert.ok(tools.parentNode.children.indexOf(tools) < tools.parentNode.children.indexOf(physical));
   assert.equal(doc.querySelector('.board-toolbar').contains(tools), false);
   assert.ok(expand.querySelector('svg'));
+  assert.ok(expand.classList.contains('hud-icon-button'));
   assert.equal(expand.attributes['aria-label'], 'Expand screen');
   assert.equal(expand.attributes['aria-expanded'], 'false');
   assert.equal(expand.attributes['aria-controls'], physical.id);
@@ -719,6 +738,81 @@ test('connected display and sidebar presentation controls never forward navigati
   assert.equal(f.notes(), 0); assert.equal(f.keys(), 0);
 });
 
+test('the Board always fits its available width without Fit or one-to-one controls',async t=>{
+  const f=fixture(t),scroll=f.document.querySelector('.controller-scroll'),face=f.document.querySelector('.controller-face');
+  const scale=f.document.querySelector('.companion-board-scale');
+  assert.equal(f.byText('Fit'),undefined);assert.equal(f.byText('1:1'),undefined);
+  Object.defineProperty(scroll,'clientWidth',{configurable:true,value:240});
+  f.fire(f.document.querySelector('.rail-toggle'),'click');
+  assert.equal(face.style.transform,`scale(${236/1280})`);
+  assert.equal(scale.style.width,'236px','Even a narrow viewport must not be forced wider by a minimum scale.');
+  f.fire(f.byText('Connect board'),'click');await flush();f.calls.length=0;
+  f.fire(f.document.querySelector('.screen-expand'),'click');
+  assert.equal(face.style.transform,`scale(${236/1536})`);
+  assert.equal(scale.style.width,'236px','Expanding the center screen preserves responsive fit.');
+  assert.deepEqual(f.calls,[],'Fitting is presentation only.');
+});
+
+test('Labels projects device-generated musical names only on demand and caches unchanged maps',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock,padMapSupport:true});
+  f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);
+  assert.equal(f.calls.some(call=>call[0]==='padMapSnapshot'),false);
+  const labels=f.byText('Labels');f.fire(labels,'click');await flush();
+  assert.equal(labels.getAttribute('aria-pressed'),'true');assert.equal(labels.getAttribute('aria-busy'),'true');
+  assert.equal(f.pad.querySelector('.pad-name').textContent,'','No local-core approximation fills the loading state.');
+  f.calls.length=0;await clock.advance(100);
+  assert.equal(f.calls[0][0],'padMapSnapshot','A pending label lease finishes before the next visual snapshot.');
+  assert.ok(f.calls.findIndex(call=>call[0]==='snapshot')>0);
+  assert.equal(f.pad.querySelector('.pad-name').textContent,'Cmaj7');
+  assert.equal(f.rightPad.querySelector('.pad-name').textContent,'C#4');
+  assert.equal(labels.getAttribute('aria-busy'),'false');assert.equal(f.client.padMapByteReads,1);
+  const reads=f.calls.filter(call=>call[0]==='padMapSnapshot').length;
+  for(let n=0;n<9;n++){f.client.instrumentRevision=n+1;await clock.advance(100);}
+  assert.equal(f.calls.filter(call=>call[0]==='padMapSnapshot').length,reads,'Ordinary playing cannot force full pad-map reads each frame.');
+  f.client.instrumentRevision=10;await clock.advance(100);
+  assert.equal(f.calls.filter(call=>call[0]==='padMapSnapshot').length,reads+1);
+  assert.equal(f.calls.filter(call=>call[0]==='padMapSnapshot').at(-1)[1],17,'Only a cheap known-key query follows playing activity.');
+  assert.equal(f.client.padMapByteReads,1);
+  f.client.layoutRevision=1;f.client.padMapRevision=18;f.client.padMapChord='Dmin9';await clock.advance(100);
+  assert.equal(f.pad.querySelector('.pad-name').textContent,'Dmin9');assert.equal(f.client.padMapByteReads,2);
+  f.fire(labels,'click');f.calls.length=0;await clock.advance(1000);
+  assert.equal(f.pad.querySelector('.pad-name').textContent,'');assert.equal(labels.getAttribute('aria-pressed'),'false');
+  assert.equal(f.calls.some(call=>call[0]==='padMapSnapshot'),false,'Labels OFF adds no map requests.');
+  assert.equal(f.calls.some(call=>['set','control','action','navigate'].includes(call[0])),false);
+});
+
+test('unsupported labels explain the firmware requirement without displaying invented names',async t=>{
+  const f=fixture(t);f.fire(f.byText('Connect board'),'click');await flush();f.calls.length=0;
+  f.fire(f.byText('Labels'),'click');await flush();
+  assert.equal(f.document.querySelector('.companion-notice-text').textContent,'Labels require newer firmware.');
+  assert.equal(f.byText('Labels').getAttribute('aria-pressed'),'false');
+  assert.equal(f.pad.querySelector('.pad-name').textContent,'');assert.deepEqual(f.calls,[]);
+});
+
+test('hiding Labels cancels pending staging and late completions cannot publish names',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock,padMapSupport:true});f.client.padMapPendingCount=10;
+  f.fire(f.byText('Connect board'),'click');await flush();f.fire(f.byText('Labels'),'click');await flush();
+  f.calls.length=0;f.shell.showArea('documentation');await flush();
+  assert.equal(f.calls.filter(call=>call[0]==='cancelPadMap').length,1);
+  await clock.advance(1000);assert.equal(f.calls.some(call=>call[0]==='padMapSnapshot'),false);
+  f.shell.showPage('board');f.fire(f.byText('Labels'),'click');await flush();
+  let finish;f.client.padMapSnapshot=()=>new Promise(resolve=>{finish=()=>resolve({pending:true,generation:9});});
+  f.fire(f.byText('Labels'),'click');await flush();assert.equal(typeof finish,'function');
+  f.fire(f.byText('Labels'),'click');f.calls.length=0;finish();await flush();
+  assert.equal(f.calls.filter(call=>call[0]==='cancelPadMap').length,1);
+  assert.equal(f.byText('Labels').getAttribute('aria-pressed'),'false');assert.equal(f.pad.querySelector('.pad-name').textContent,'');
+});
+
+test('an unstable label map yields staging so live board snapshots cannot starve',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock,padMapSupport:true});f.client.padMapPendingCount=99;
+  f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);f.calls.length=0;
+  f.fire(f.byText('Labels'),'click');await flush();await clock.advance(500);
+  assert.equal(f.calls.filter(call=>call[0]==='padMapSnapshot').length,3,'Initial request and two pending checks are bounded.');
+  assert.equal(f.calls.filter(call=>call[0]==='cancelPadMap').length,1);
+  assert.ok(f.calls.filter(call=>call[0]==='snapshot').length>=4,'Base feedback resumes while label retry is deferred.');
+  assert.equal(f.pad.querySelector('.pad-name').textContent,'');assert.equal(clock.pending(),1);
+});
+
 test('disconnected presentation controls cannot start keyboard sustain or navigation', t => {
   const f = fixture(t), tools = f.document.querySelector('.companion-display-tools');
   for (const control of [...tools.querySelectorAll('button'), f.document.querySelector('.rail-toggle')]) {
@@ -748,6 +842,7 @@ test('compact sidebar retains accessible page names, disabled reasons and browse
   const storage = new Map(), key = 'thy666.companion.sidebar.v1';
   let f = fixture(t, { storage }), workspace = f.document.querySelector('.companion-workspace');
   let toggle = f.document.querySelector('.rail-toggle');
+  assert.equal(toggle.classList.contains('hud-rail-toggle'), true, 'Sidebar collapse has a divider tab, separate from a page choice.');
   assert.equal(toggle.attributes['aria-expanded'], 'true');
   assert.equal(toggle.attributes['aria-controls'], f.document.querySelector('.companion-client-nav').id);
   f.fire(toggle, 'click'); assert.equal(toggle.attributes['aria-expanded'], 'false');
@@ -778,6 +873,18 @@ test('sidebar defaults safely when storage is invalid or inaccessible', async t 
   assert.equal(toggle.attributes['aria-expanded'], 'true');
   f.fire(toggle, 'click'); assert.equal(toggle.attributes['aria-expanded'], 'false');
   assert.deepEqual(f.calls, []);
+});
+
+test('component library navigation cannot abandon a connected or busy Client', async t => {
+  const f=fixture(t),docs=f.document.querySelector('#documentation');
+  const link=f.document.createElement('a'),label=f.document.createElement('span');
+  link.className='thy-help-inline-link';link.href='./design-system.html';link.append(label);docs.append(link);
+  assert.equal(Boolean(f.fire(label,'click').defaultPrevented),false,'A disconnected Client can open its bundled reference.');
+  f.client.busy=true;assert.equal(f.fire(label,'click').defaultPrevented,true);f.client.busy=false;
+  f.fire(f.byText('Connect board'),'click');await flush();f.calls.length=0;
+  assert.equal(f.fire(label,'click').defaultPrevented,true);
+  assert.match(f.document.querySelector('.companion-notice').textContent,/Disconnect your board/);
+  assert.deepEqual(f.calls,[],'Opening documentation must not drop or change a live device.');
 });
 
 test('Board heading shows firmware identity without redundant status or pad-help panels', async t => {
@@ -822,10 +929,14 @@ test('Diagnostics report remains clickable during background polling and locks o
   assert.equal(output.textContent, 'Read failed. Try again.');
   assert.equal(f.document.querySelector('.companion-notice-text').textContent, 'Report transport failed');
   assert.equal(f.document.querySelector('.companion-notice-icon').getAttribute('aria-hidden'),'true');
+  assert.ok(f.document.querySelector('.companion-notice').classList.contains('hud-notice--banner'));
+  assert.ok(f.document.querySelector('.companion-topbar').classList.contains('has-notice'));
   const dismiss=f.document.querySelector('.companion-notice-close');
+  assert.ok(dismiss.classList.contains('hud-icon-button'));
   assert.equal(dismiss.getAttribute('aria-label'),'Dismiss message');
   f.fire(dismiss,'click');
   assert.equal(f.document.querySelector('.companion-notice').hidden,true);
+  assert.equal(f.document.querySelector('.companion-topbar').classList.contains('has-notice'),false);
   assert.equal(read.disabled, false); assert.equal(pick.disabled, false);
   await f.client.disconnect(); await flush();
   assert.equal(read.disabled, true); assert.equal(pick.disabled, true);
@@ -953,17 +1064,18 @@ test('adaptive polling starts at the healthy default, stays read-only offline an
 test('a slow snapshot never overlaps another poll and the next deadline subtracts actual transfer time',async t=>{
   const clock=manualClock(),f=fixture(t,{clock});f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);
   f.calls.length=0;let active=0,maximum=0,finish;
+  const snapshots=()=>f.calls.filter(call=>call[0]==='snapshot').length;
   f.client.snapshot=()=>{
     f.calls.push(['snapshot']);active++;maximum=Math.max(maximum,active);
     return new Promise(resolve=>{finish=()=>{active--;resolve({bytes:snapshot(),generation:7});};});
   };
   await clock.advance(100);assert.equal(active,1);
-  await clock.advance(40);assert.equal(f.calls.length,1);
+  await clock.advance(40);assert.equal(snapshots(),1);
   finish();await flush();
   assert.equal(clock.pending(),1);assert.equal(clock.nextDelay(),60,'A 40ms transfer leaves 60ms of the 100ms target cadence.');
-  await clock.advance(59);assert.equal(f.calls.length,1);
-  await clock.advance(1);assert.equal(active,1);assert.equal(f.calls.length,2);
-  await clock.advance(350);assert.equal(f.calls.length,2,'Elapsed timer boundaries cannot queue concurrent serial snapshots.');
+  await clock.advance(59);assert.equal(snapshots(),1);
+  await clock.advance(1);assert.equal(active,1);assert.equal(snapshots(),2);
+  await clock.advance(350);assert.equal(snapshots(),2,'Elapsed timer boundaries cannot queue concurrent serial snapshots.');
   finish();await flush();
   assert.equal(maximum,1);assert.equal(clock.pending(),1);assert.equal(clock.nextDelay(),5,'A slow transfer yields briefly rather than queuing missed intervals.');
 });
@@ -971,19 +1083,20 @@ test('a slow snapshot never overlaps another poll and the next deadline subtract
 test('changing refresh while a snapshot is pending keeps one request and one future timer',async t=>{
   const clock=manualClock(),f=fixture(t,{clock});f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);
   f.calls.length=0;let finish,active=0,maximum=0;
+  const snapshots=()=>f.calls.filter(call=>call[0]==='snapshot').length;
   f.client.snapshot=()=>{
     f.calls.push(['snapshot']);active++;maximum=Math.max(maximum,active);
     return new Promise(resolve=>{finish=()=>{active--;resolve({bytes:snapshot(),generation:7});};});
   };
   await clock.advance(100);assert.equal(active,1);
   choosePollInterval(f,50);assert.equal(f.storage.get(APP_POLL_KEY),'50');
-  await clock.advance(60);assert.equal(f.calls.length,1,'Even a new interval deadline must wait for the outstanding request.');
+  await clock.advance(60);assert.equal(snapshots(),1,'Even a new interval deadline must wait for the outstanding request.');
   choosePollInterval(f,250);assert.equal(f.storage.get(APP_POLL_KEY),'250');
-  await clock.advance(40);assert.equal(f.calls.length,1,'Preference changes do not start a second request beside the first.');
+  await clock.advance(40);assert.equal(snapshots(),1,'Preference changes do not start a second request beside the first.');
   finish();await flush();
   assert.equal(clock.pending(),1,'Only the newest interval owns the completion timer.');
   assert.ok(clock.nextDelay()>=5&&clock.nextDelay()<=250);
-  await clock.advance(clock.nextDelay());assert.equal(f.calls.length,2);assert.equal(active,1);assert.equal(maximum,1);
+  await clock.advance(clock.nextDelay());assert.equal(snapshots(),2);assert.equal(active,1);assert.equal(maximum,1);
   finish();await flush();assert.equal(clock.pending(),1);
 });
 
@@ -1070,14 +1183,22 @@ test('public site Client exposes Install, Client, User guide and project navigat
 test('compact navigation moves existing actions, traps focus and restores desktop layout', async t => {
   const media={matches:true,addEventListener(type,fn){this.change=fn;},removeEventListener(){this.change=null;}};
   const original=Object.getOwnPropertyDescriptor(globalThis,'matchMedia');
-  Object.defineProperty(globalThis,'matchMedia',{configurable:true,value:()=>media});
+  Object.defineProperty(globalThis,'matchMedia',{configurable:true,value:query=>
+    query==='(max-width: 900px)'?media:{matches:false,addEventListener(){},removeEventListener(){}}});
   const f=fixture(t),doc=f.document;
   try {
     const toggle=doc.querySelector('.compact-nav-toggle'),overlay=doc.querySelector('.compact-nav-overlay');
+    assert.ok(toggle.classList.contains('hud-icon-button'));
     const nav=doc.querySelector('.companion-client-nav'),panel=doc.querySelector('.compact-nav-panel');
+    const stripes=toggle.querySelectorAll('svg path');
+    assert.equal(stripes.length,3);
+    assert.equal(new Set(stripes.map(path=>path.getAttribute('d'))).size,1,'The three rising stripes are identical.');
+    assert.deepEqual(stripes.map(path=>path.getAttribute('transform')),['translate(0 0)','translate(0 5)','translate(0 10)']);
+    assert.ok(stripes.every(path=>path.getAttribute('stroke')==='currentColor'));
     assert.equal(overlay.hidden,true);assert.ok(panel.contains(nav));
     f.fire(toggle,'click');assert.equal(overlay.hidden,false);assert.equal(doc.body.children[0].inert,true);
     const close=doc.querySelector('.compact-nav-heading button');assert.equal(doc.activeElement,close);
+    assert.ok(close.classList.contains('hud-icon-button'));
     f.fire(close,'keydown',{key:'Escape'});assert.equal(overlay.hidden,true);assert.equal(doc.activeElement,toggle);
     assert.notEqual(doc.body.children[0].inert,true);
     f.fire(toggle,'click');f.shell.showArea('documentation');assert.equal(overlay.hidden,true);
@@ -1113,4 +1234,118 @@ test('a late failed report from a stopped session cannot stop its replacement',a
   reject(new Error('Old session failure'));await flush();
   assert.ok(f.byText('Stop live session'));
   assert.doesNotMatch(f.document.querySelector('.telemetry-session').textContent,/Session stopped/);
+});
+
+test('cockpit settings cache reads explicit physical halves in bounded batches and reuses unchanged settings',async()=>{
+  const calls=[],live={uid:UID,build:BUILD,schema:SCHEMA,stateRevision:1,savedGeneration:20};
+  const values={mpeOutput:[1,2],profileEnabled:[1,-1],pressureMode:[1,2],pressureBend:[0,1],bendRange:[2,12]};
+  const cache=createCockpitContextCache({read:async(row,instance)=>{
+    calls.push([MENU_ROWS[row].id,instance]);
+    return {row,instance,value:values[MENU_ROWS[row].id.split('.')[1]][instance-1]};
+  }});
+  assert.equal(cache.current,null);
+  await cache.refresh(live,{eligible:false});assert.deepEqual(calls,[],'Hidden/read-only/disconnected callers do no optional work.');
+  for(let n=0;n<5;n++){
+    const before=calls.length;await cache.refresh(live);
+    assert.equal(calls.length-before,2,'One snapshot poll permits at most two additional scalar reads.');
+  }
+  assert.equal(cache.current.pending,false);
+  assert.deepEqual(cache.current.expression,{mpeOutput:[1,2],aftertouchStage:[true,-1],atMode:[1,2],bend:[0,1],bendRange:[2,12]});
+  assert.ok(calls.every(([,instance])=>instance===1||instance===2),'No temporary Settings for selector is written or guessed.');
+  const revision=cache.current.revision;
+  await cache.refresh({...live,instrumentRevision:99,pressure:[120,80]});
+  assert.equal(calls.length,10);assert.equal(cache.current.revision,revision,'Pad/pressure changes do not re-read settings.');
+  await cache.refresh({...live,stateRevision:2});
+  assert.equal(calls.length,12);assert.ok(cache.current.revision>revision);assert.equal(cache.current.pending,true);
+  assert.deepEqual(cache.current.expression.aftertouchStage,[null,null],'A new revision never presents old stages as current.');
+});
+
+test('cockpit cache discards stale scalar completions and never overlaps its read batch',async()=>{
+  const live={uid:UID,build:BUILD,schema:SCHEMA,stateRevision:1,savedGeneration:20};
+  let finish,reads=0;
+  const cache=createCockpitContextCache({read:(row,instance)=>{
+    reads++;return new Promise(resolve=>{finish=()=>resolve({row,instance,value:2});});
+  }});
+  const pending=cache.refresh(live);await Promise.resolve();assert.equal(reads,1);
+  await cache.refresh(live);assert.equal(reads,1);
+  cache.reset();finish();await pending;
+  assert.equal(cache.current,null,'Disconnect/reset invalidates the old read, even if it succeeds later.');
+});
+
+test('busy or malformed cockpit scalar replies cannot fabricate expression values',async()=>{
+  const live={uid:UID,build:BUILD,schema:SCHEMA,stateRevision:1,savedGeneration:20};
+  let busy=true;
+  const cache=createCockpitContextCache({read:async(row,instance)=>{
+    if(busy)throw Error('COMPANION/1 ERR busy');
+    return {row,instance:instance===1?2:1,value:2};
+  }});
+  await cache.refresh(live);assert.deepEqual(cache.current.expression.mpeOutput,[null,null]);assert.equal(cache.deferred,true);
+  busy=false;await assert.rejects(cache.refresh(live),/invalid expression settings/);
+  assert.deepEqual(cache.current.expression.mpeOutput,[null,null],'Another physical half is not an acceptable replacement.');
+});
+
+test('cockpit activates only after a validated snapshot and pauses when hidden or host-inactive',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock});let finish;
+  f.client.snapshot=()=>new Promise(resolve=>{finish=()=>resolve({bytes:snapshot(),generation:7});});
+  f.fire(f.byText('Connect board'),'click');await flush();
+  const cockpit=f.document.querySelector('.companion-cockpit');
+  assert.equal(f.client.connected,true);assert.equal(cockpit.dataset.cockpitState,'offline');
+  assert.equal(cockpit.classList.contains('cockpit-motion-paused'),true);
+  assert.equal(f.calls.some(call=>call[0]==='read'&&call[2]!==255),false);
+  finish();await flush();
+  assert.equal(cockpit.dataset.cockpitState,'device');assert.equal(cockpit.dataset.cockpitMotion,'running');
+  f.shell.setHostActive(false);assert.equal(cockpit.dataset.cockpitMotion,'paused');
+  f.shell.setHostActive(true);assert.equal(cockpit.dataset.cockpitMotion,'running');
+  f.document.hidden=true;f.fire(f.document.body,'visibilitychange');assert.equal(cockpit.dataset.cockpitMotion,'paused');
+  f.document.hidden=false;f.fire(f.document.body,'visibilitychange');assert.equal(cockpit.dataset.cockpitMotion,'running');
+  f.shell.showArea('documentation');assert.equal(cockpit.dataset.cockpitMotion,'paused');
+  f.shell.showPage('board');assert.equal(cockpit.dataset.cockpitMotion,'running');
+  await f.client.disconnect();await flush();assert.equal(cockpit.dataset.cockpitState,'offline');assert.equal(f.shell.snapshot,null);
+});
+
+test('disconnected late context reads cannot reactivate the cockpit or fetch the other half',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock});let finish;
+  f.client.readOverride=(row,instance)=>instance===1&&MENU_ROWS[row].id==='performance.mpeOutput'?
+    new Promise(resolve=>{finish=()=>resolve({row,instance,value:2});}):undefined;
+  f.fire(f.byText('Connect board'),'click');await flush();assert.equal(typeof finish,'function');
+  await f.client.disconnect();await flush();const before=f.calls.length;
+  finish();await flush();
+  assert.equal(f.calls.length,before,'A completed old read cannot continue its batch after disconnect.');
+  assert.equal(f.document.querySelector('.companion-cockpit').dataset.cockpitState,'offline');
+  assert.equal(f.shell.snapshot,null);assert.equal(clock.pending(),0);
+});
+
+test('held velocity changes refresh cockpit feedback without waiting for a settings revision',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock});let bytes=snapshot();bytes[1612]=96;bytes[1613]=96;
+  f.client.snapshot=async()=>({bytes:bytes.slice(),generation:7});
+  f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(500);
+  const reads=f.calls.filter(call=>call[0]==='read').length,revision=f.shell.snapshot.context.revision;
+  const left=f.document.querySelector('[data-cockpit-value="velocity-left"]');assert.equal(left.textContent,'—');
+  bytes=bytes.slice();bytes[1616]=91;bytes[1614]=1;await clock.advance(100);
+  assert.equal(left.textContent,'91');assert.equal(f.shell.snapshot.context.revision,revision);
+  assert.equal(f.calls.filter(call=>call[0]==='read').length,reads,'Playing adds no settings reads.');
+});
+
+test('invalid first snapshots cannot activate the cockpit or start contextual reads',async t=>{
+  const f=fixture(t);f.client.snapshot=async()=>({bytes:snapshot().subarray(0,1679),generation:7});
+  f.fire(f.byText('Connect board'),'click');await flush();
+  assert.equal(f.document.querySelector('.companion-cockpit').dataset.cockpitState,'offline');
+  assert.equal(f.shell.snapshot,null);
+  assert.equal(f.calls.some(call=>call[0]==='read'&&call[2]!==255),false);
+});
+
+test('context backpressure defers optional Harmony work without dropping the validated musical frame',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock,harmonySupport:true});f.client.harmonyActive=true;
+  let busy=true;
+  f.client.readOverride=(row,instance)=>{
+    if(instance===1&&MENU_ROWS[row].id==='performance.mpeOutput'&&busy)throw Error('COMPANION/1 ERR busy');
+  };
+  f.fire(f.byText('Connect board'),'click');await flush();
+  assert.equal(f.document.querySelector('.companion-cockpit').dataset.cockpitState,'device');
+  assert.equal(f.calls.some(call=>call[0]==='harmonySnapshot'),false,'Busy scalar work stops optional reads for this poll.');
+  assert.equal(f.shell.snapshot.context.expression.mpeOutput[0],null);
+  busy=false;await clock.advance(100);
+  assert.equal(f.calls.filter(call=>call[0]==='harmonySnapshot').length,1);
+  assert.equal(f.shell.snapshot.context.harmony.active,true);
+  assert.equal(clock.pending(),1,'Context work shares the existing scheduler.');
 });

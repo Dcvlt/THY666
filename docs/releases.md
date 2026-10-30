@@ -2,7 +2,7 @@
 
 Versions use **vX.X.X** tags, with X.X.X in package metadata. Prerelease status
 is a GitHub release property rather than a different version spelling.
-`python tools/check_release_version.py --tag v0.2.1` checks the JavaScript,
+`python tools/check_release_version.py --tag v0.2.2` checks the JavaScript,
 Tauri, Rust package and lockfile versions together.
 
 ## Downloads
@@ -21,12 +21,20 @@ The browser Client needs no desktop download. GitHub also adds **Source code**
 ZIP/TAR archives automatically; these contain project source, not built apps or
 firmware, and do not include the separate musical input needed to build firmware.
 
-The historical v0.1.0 release provides source only. The v0.2.0 prerelease includes
+The historical v0.1.0 release provides source only. The current v0.2.2 release includes
 standalone firmware, matching source/input, Windows and macOS Clients, and
 checksums. Read the notes attached to the release for platform and device-test
 limits.
 
 ## Release history
+
+- **v0.2.2:** Split physical-half expression settings, selectable MPE pressure
+  output and the shared HUD component system. The approved site and Client design
+  includes a divider-integrated sidebar tab, continuous hover/focus trace,
+  closer icon accents and a linked component reference in the guide. macOS
+  window controls remain available in the bundled reference. V19 expression
+  checks have focused board evidence; later routing indicators/menu cleanup
+  remain host-tested. macOS/Linux USB and recovery limits remain unchanged.
 
 - **v0.2.1:** Client navigation, backups, Harmony controls and
   live diagnostics are refined; CPU, RAM, stack and flash resources are exposed

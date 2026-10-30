@@ -37,7 +37,7 @@ export const STUDIO_MENU = {
       info('performance.liveUpdateNoteColor', 'Live Update · Note Color', 'Independent behavior unresolved', ['playing.live_update'], 'The legacy row duplicates a Lock Scale assignment; an independent musical/lighting effect is not established and is not claimed by the preview.'),
       number('performance.velocity', 'Default velocity', 96, 1, 127, 1, ['playing.expression_velocity'], 'Fallback fixed velocity for routes without their own value. MIDI routes have separate fixed velocities; Velocity mode selects Fixed or Strike for the chosen half. This fallback does not change strike calibration or aftertouch.', live('core.velocity')),
       select('performance.velocitySource', 'Velocity source', 'fixed', ['fixed', 'strike'], ['playing.expression_velocity', 'controls.velocity-presets'], 'Strike-derived velocity is approved future work; selecting it here only changes the design draft.'),
-      toggle('performance.aftertouch', 'Legacy pressure default', false, ['midi.poly-aftertouch'], 'Compatibility default for inherited routes. Configure Aftertouch and Pressure bend in MIDI; each application uses pad pressure without a separate master switch.', {retired:true,...live('core.aftertouch')}),
+      toggle('performance.aftertouch', 'Legacy pressure default', false, ['midi.poly-aftertouch'], 'Compatibility default for inherited routes. Configure Aftertouch and Pressure bend in Performance; each application uses pad pressure without a separate master switch.', {retired:true,...live('core.aftertouch')}),
       select('performance.pressureMode', 'Aftertouch', 'off', [{value:'off',label:'Off'},{value:'poly',label:'Poly AT'},{value:'channel',label:'Channel AT'}], ['midi.poly-aftertouch'], 'Ordinary MIDI aftertouch for Response for: Off, per-note Poly AT, or Channel AT shared by notes on that channel. Same policy as MIDI; held notes retain their captured response. MPE uses its own member pressure and optional upper stage instead.', live('midi.pressure')),
       number('performance.bendRange', 'Bend range', 2, 1, 24, 1, ['midi.pressure-pitchbend'], 'Ordinary pressure-bend range in semitones for Response for. Same value as MIDI; match the receiver range. This edit sends no setup messages and does not change the separate MPE glide range.', live('midi.bendRange')),
       toggle('performance.padOverlays', 'Context pad controls', false, ['playing.control_overlays'], 'Enable the optional context pads at the selected upper-right or lower-left position. Chord/melody octave pairs, inversion and bass octave are independently selectable. Change only with all pads released.', live('core.contextPads')),
@@ -481,24 +481,48 @@ const movedSetup = musicalSetup.map(id => {
 chordGroup.rows.unshift(...movedSetup);
 chordGroup.description = 'Root, scales, left/right layouts, chord voicing and strum.';
 STUDIO_MENU.groups.find(group => group.id === 'performance').description = 'Live pad response, expression and optional context controls.';
-// Keep the velocity identity and persisted sensor values stable; its new
-// Performance scope is independent from the calibration/pad-picker target.
+// One Performance target edits expressive response on either physical half or
+// both. Whole-board MPE admission and context controls remain explicitly global.
+// Keep the existing target identity and calibration picker independent.
 const velocityModeIndex=sensitivityRows.findIndex(item=>item.id==='sensitivity.velocityMode');
 const velocityMode=sensitivityRows.splice(velocityModeIndex,1)[0];
 performanceRows.unshift(
-  select('performance.velocityTarget','Velocity for',0,[{value:0,label:'Both'},{value:1,label:'Left'},{value:2,label:'Right'}],['controls.velocity-presets'],'Scope for Velocity mode only; Default velocity is a separate legacy fallback and each MIDI route has its own fixed velocity. This editor selection does not change MIDI routes, calibration targets or held notes.',live('velocity.target')),
+  select('performance.velocityTarget','Settings for',0,[{value:0,label:'Both'},{value:1,label:'Left'},{value:2,label:'Right'}],['controls.velocity-presets'],'Choose the half for velocity, aftertouch and bend settings above the divider. Both applies a change to both halves. This editor selection does not change MIDI routes, calibration targets or held notes.',live('velocity.target')),
   velocityMode,
-  toggle('performance.mpe','MPE',false,['midi.poly-aftertouch','midi.pressure-pitchbend'],'Same MPE switch as Expression. Live pads only; change while released with Arps and sequencer stopped. Receiver setup remains a separate explicit action.',live('expression.enabled')));
+  toggle('performance.mpe','MPE (global)',false,['midi.poly-aftertouch','midi.pressure-pitchbend'],'Whole-board MPE mode, shared with Expression. Settings for does not change its scope. Live pads only; change while released with Arps and sequencer stopped. Receiver setup is a separate action.',live('expression.enabled')));
 performanceRows.find(item=>item.id==='performance.velocitySource').retired=true;
-// Ordinary expression is edited here and in MIDI through the same route fields.
-// Keep a visible target: Velocity for is deliberately independent from routing.
 const responseIndex=performanceRows.findIndex(item=>item.id==='performance.pressureMode');
 const responseMode=performanceRows.splice(responseIndex,1)[0];
 const midiRouteTarget=STUDIO_MENU.groups.find(group=>group.id==='midi').rows.find(item=>item.id==='midi.routeTarget');
 performanceRows.splice(performanceRows.findIndex(item=>item.id==='performance.velocity')+1,0,
-  select('performance.routeTarget','Response for',midiRouteTarget.default,midiRouteTarget.options,['midi.bank-route-modes'],'Side or zone for ordinary Aftertouch, Bend and Bend range. Shares the MIDI route selector: Whole Board, Left/Right, or six zones according to the routing profile. Does not change Velocity for or MPE.',live('midi.routeTarget')),
+  select('performance.routeTarget','Legacy response target',midiRouteTarget.default,midiRouteTarget.options,['midi.bank-route-modes'],'Retired Performance selector. MIDI retains its route editor; Settings for selects Performance response.',{retired:true,...live('midi.routeTarget')}),
   responseMode,
-  select('performance.pressureBend','Bend','off',[{value:'off',label:'Off'},{value:'up',label:'Up'},{value:'down',label:'Down'}],['midi.pressure-pitchbend'],'Ordinary MIDI pressure bend for Response for. Same Off/Up/Down policy as MIDI; held notes keep their captured response. With MPE ON, the separate MPE pressure-glide settings apply instead.',live('midi.pressureBend')));
+  toggle('performance.profileEnabled','Aftertouch stage',false,['midi.poly-aftertouch','midi.pressure-pitchbend'],'Enable the upper aftertouch stage for Settings for. Pressure reaches its full range before this stage begins. The split point and curves remain in Sensitivity. Change while released.',live('performance.profileEnabled')),
+  select('performance.mpeOutput','MPE output',0,[{value:0,label:'Pressure'},{value:1,label:'CC74'},{value:2,label:'CC1'}],['midi.poly-aftertouch'],'Send the selected half\'s MPE pressure as member-channel Pressure, CC74 or CC1. Match the receiving patch; Pressure is the default. Change while released.',live('performance.mpeOutput')),
+  select('performance.pressureBend','Bend','off',[{value:'off',label:'Off'},{value:'up',label:'Up'},{value:'down',label:'Down'}],['midi.pressure-pitchbend'],'Ordinary MIDI pressure bend for Settings for. Held notes retain their captured response. MPE uses its separate pressure-glide settings.',live('performance.pressureBend')));
+Object.assign(performanceRows.find(item=>item.id==='performance.velocity'),{
+  binding:'performance.velocity',
+  description:'Fixed attack velocity for Settings for. Velocity mode chooses Fixed or Strike; this value does not change strike calibration.'
+});
+Object.assign(responseMode,{
+  label:'AT output',shortLabel:'AT output',binding:'performance.pressureMode',
+  options:[{value:'off',label:'Off'},{value:'poly',label:'Poly'},{value:'channel',label:'Channel'}],
+  description:'Ordinary MIDI aftertouch for Settings for: Off, per-note Poly AT, or Channel AT. Aftertouch stage separately enables the upper pressure region; MPE output selects the MPE pressure message.'
+});
+Object.assign(performanceRows.find(item=>item.id==='performance.bendRange'),{
+  binding:'performance.bendRange',
+  description:'Ordinary pressure-bend range for Settings for, in semitones. Match the receiver with Send bend setup; changing this value sends no MIDI setup. MPE glide has its own bend range.'
+});
+performanceRows.splice(performanceRows.findIndex(item=>item.id==='performance.bendRange')+1,0,
+  action('performance.bendSetup','Send bend setup',['midi.pressure-pitchbend'],'Send the selected halves\' ordinary bend range to their MIDI receivers. Release all pads and stop playback first. Different ranges cannot share a destination and channel.',live('performance.bendSetup')));
+Object.assign(performanceRows.find(item=>item.id==='performance.padOverlays'),{
+  label:'Context pads (global)',shortLabel:'Context (global)',
+  description:'Whole-board context-pad layout. Settings for does not change its scope. Enable the selected octave, inversion and bass controls at the configured position; change while released.'
+});
+Object.assign(performanceRows.find(item=>item.id==='performance.contextLocation'),{
+  label:'Pad position (global)',shortLabel:'Position (global)',
+  description:'Whole-board context-pad position: upper right or lower left. Settings for does not change this layout.'
+});
 
 const engineRows = STUDIO_MENU.groups.find(g=>g.id==='engines').rows;
 engineRows.push(action('engines.settings','Settings',['chords.harmony','sequencers.tracks'],'Settings for each engine.',live('engines.settings')));
@@ -529,7 +553,7 @@ STUDIO_MENU.groups.sort((a,b)=>rootOrder.indexOf(a.id)-rootOrder.indexOf(b.id));
 for(const g of STUDIO_MENU.groups)if(['harmony','sequencer','engineSettings'].includes(g.id))g.nested=true;
 const BASIC_ROWS = {
   engines: ['play', 'harmony', 'sequencer', 'arp', 'drums'],
-  performance: ['velocityTarget', 'mpe', 'velocity', 'routeTarget', 'pressureMode', 'pressureBend', 'padOverlays'],
+  performance: ['velocityTarget', 'velocity', 'pressureMode', 'profileEnabled', 'mpeOutput', 'pressureBend', 'bendRange', 'bendSetup'],
   harmony: ['direction','outside','stayInKey','lockMap','palette','rightMode','analysis','voicing','highlights'],
   engineSettings: ['harmony','sequencer'],
   chords: ['layout','quality','userScale','sixBank','voicingMode','editScales','editChords','editSix', 'inversion', 'spread', 'strum', 'strumDirection', 'strummerTarget', 'continuous', 'strumLatch'],
@@ -560,6 +584,11 @@ for (const group of STUDIO_MENU.groups) {
     'Restore this menu’s settings and selected editing scope to defaults. Songs, the custom library, calibration and individual pad overrides are retained. Opens a confirmation with Cancel selected.',
     {icon:'reset',advanced:true,...live('menu.reset')}));
 }
+
+// Preserve row identities and legacy inheritance data. Performance owns the
+// visible playing controls; these older route editors are no longer exposed.
+for(const item of STUDIO_MENU.groups.find(group=>group.id==='midi').rows)
+  if(['midi.velocity','midi.pressure','midi.pressureBend','midi.bendRange','midi.bendSetup'].includes(item.id))item.retired=true;
 
 export const MENU_ROWS = STUDIO_MENU.groups.flatMap(group => group.rows.map(item => ({ ...item, group: group.id })));
 export const MENU_BY_ID = new Map(MENU_ROWS.map(item => [item.id, item]));

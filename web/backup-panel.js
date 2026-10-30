@@ -1,4 +1,5 @@
 /* Explicit applied-state files only. No connection, firmware update or note input. */
+import { createUIIcon, createUIIconCorners } from './ui-system.js';
 import { BACKUP_HEADER_BYTES, BACKUP_MAX_BYTES, inspectDeviceBackup } from './device-client.js';
 
 let panelSequence = 0;
@@ -8,7 +9,7 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
     throw new TypeError('Backups require a DOM mount and the shared device client.');
   const doc = mount.ownerDocument, prefix = `thy-backup-${++panelSequence}`, listeners = [];
   let disposed = false, working = false, selection = null, fileTicket = 0, dialog = null, returnFocus = null;
-  let notice = '',flow='',completed=false;
+  let notice = '',noticeTone='info',flow='',completed=false;
   const journey=doc.createElement('ol');journey.className='backup-journey';journey.setAttribute('aria-label','Backup steps');
   const el = (tag, className = '', text) => {
     const node = doc.createElement(tag); if (className) node.className = className;
@@ -19,34 +20,34 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
     listeners.push(() => node.removeEventListener(type, handler, options));
   };
   const button = (text, action) => {
-    const node = el('button', 'button', text); node.type = 'button'; node.dataset.backupAction = action; return node;
+    const node = el('button', 'button hud-action' + (action === 'cancel' ? ' hud-action--quiet' : ''), text); node.type = 'button'; node.dataset.backupAction = action; return node;
   };
-  const root = el('section', 'panel backup-panel'); root.setAttribute('aria-labelledby', `${prefix}-title`);
+  const root = el('section', 'panel backup-panel hud-frame hud-frame--task'); root.setAttribute('aria-labelledby', `${prefix}-title`);
   const heading = el('div', 'panel-heading'), title = el('h2', '', 'Save or restore'); title.id = `${prefix}-title`;
-  const help = button('?', 'help'); help.dataset.help = 'backup'; help.setAttribute('aria-label', 'Help with backups');
+  const help = button('', 'help'); help.append(createUIIcon('help',{document:doc}),createUIIconCorners({document:doc})); help.className+=' hud-icon-button'; help.dataset.help = 'backup'; help.setAttribute('aria-label', 'Help with backups');
   heading.append(title, help);
   const coverage = el('p', 'panel-copy', 'Save your settings, pad adjustments, custom library and current song.');
   const flows = el('div', 'backup-flow-choices');
   const saveChoice = button('', 'choose-save'), restoreChoice = button('', 'choose-restore');
-  for (const [choice, icon, label, copy] of [[saveChoice, '↓', 'Back up', 'Save a copy on this computer.'], [restoreChoice, '↑', 'Restore', 'Apply a previously saved backup.']]) {
-    choice.className = 'backup-flow-choice';
-    const glyph = el('span', 'backup-flow-icon', icon); glyph.setAttribute('aria-hidden', 'true');
+  for (const [choice, icon, label, copy] of [[saveChoice, 'download', 'Back up', 'Save a copy on this computer.'], [restoreChoice, 'upload', 'Restore', 'Apply a previously saved backup.']]) {
+    choice.className = 'backup-flow-choice hud-choice';choice.dataset.traceOrigin='left';
+    const glyph = el('span', 'backup-flow-icon'); glyph.setAttribute('aria-hidden', 'true');glyph.append(createUIIcon(icon,{document:doc}));
     choice.append(glyph, el('strong', '', label), el('span', '', copy));
     choice.setAttribute('aria-expanded', 'false'); flows.append(choice);
   }
   const body = el('div', 'pad-inspector backup-body');
   const identity = el('p', 'backup-identity'); identity.dataset.backupReadout = 'identity';
   const actions = el('div', 'backup-actions');
-  const read = button('Read backup', 'read'); actions.append(read);
+  const read = button('Read backup', 'read');read.className+=' hud-action--primary'; actions.append(read);
   const choose = el('label', 'library-field backup-file-label', 'Choose a .thyb backup file');
-  const input = el('input', 'backup-file'); input.type = 'file'; input.accept = '.thyb,application/octet-stream';
+  const input = el('input', 'backup-file hud-field'); input.type = 'file'; input.accept = '.thyb,application/octet-stream';
   input.dataset.backupField = 'file'; input.setAttribute('aria-label', 'Choose a THY666 backup file'); choose.append(input);
-  const fileSummary = el('div', 'backup-summary'); fileSummary.dataset.backupReadout = 'file';
+  const fileSummary = el('div', 'backup-summary hud-frame hud-frame--inset'); fileSummary.dataset.backupReadout = 'file';
   fileSummary.setAttribute('aria-live', 'polite');
-  const restore = button('Restore backup', 'restore');
-  const status = el('p', 'library-notice backup-notice'); status.dataset.backupReadout = 'notice';
+  const restore = button('Restore backup', 'restore');restore.className+=' hud-action--primary';
+  const status = el('p', 'library-notice backup-notice hud-notice'); status.dataset.backupReadout = 'notice';
   status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
-  const preview = el('details', 'backup-limits');
+  const preview = el('details', 'backup-limits hud-disclosure');
   preview.append(el('summary', '', 'Backup limits'), el('p', 'inspector-notice', 'Backups contain saved configuration, not firmware, the bootloader or unsaved edits. Restore requires the same board.'));
   const saveFlow = el('section', 'backup-flow'), restoreFlow = el('section', 'backup-flow');
   saveFlow.id = `${prefix}-save`; restoreFlow.id = `${prefix}-restore`;
@@ -94,7 +95,7 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
       if (current.info) {
         const info = current.info;
         fileSummary.append(el('p', '', current.error || (connected ? 'Verified backup for this board.' : 'Valid backup. Connect the matching board to restore.')));
-        const details = el('details', 'backup-file-details');
+        const details = el('details', 'backup-file-details hud-disclosure');
         details.append(el('summary', '', 'File details'),
           el('p', '', `THYB ${info.fileVersion} · settings V${info.settingsVersion} · ${info.bytes} bytes`),
           el('p', '', `Board ${info.uid} · source build ${info.build}`));
@@ -102,13 +103,14 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
       } else fileSummary.append(el('p', '', current.error || 'File rejected. Choose a complete THY666 backup.'));
     } else fileSummary.append(el('p', 'inspector-notice', 'Choose a backup to restore.'));
     status.textContent = working && client.status?.message ? client.status.message : notice;
+    status.dataset.tone=working?'info':noticeTone;
     status.hidden = !status.textContent;
     if (!connected && dialog) closeConfirmation();
     return { connected, busy, selected: selection?.name || null, canRestore: !restore.disabled, confirmationOpen: Boolean(dialog), notice: status.textContent };
   }
   function say(message, kind = 'info') {
     if (disposed) return;
-    notice = String(message); notify(notice, kind); refresh();
+    notice = String(message);noticeTone=kind; notify(notice, kind); refresh();
   }
   function download(bytes, name) {
     if(runtime?.kind==='desktop')return runtime.saveFile(bytes,name);
@@ -166,13 +168,13 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
     const current = selectionStatus(); if (!current.valid) { say(current.error, 'error'); return; }
     returnFocus = doc.activeElement || restore;
     dialog = el('div', 'thy-help-overlay backup-confirmation'); dialog.dataset.backupDialog = '';
-    const card = el('section', 'thy-help-dialog'); card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true');
+    const card = el('section', 'thy-help-dialog hud-frame hud-frame--task'); card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true');
     card.setAttribute('aria-labelledby', `${prefix}-confirm-title`); card.setAttribute('aria-describedby', `${prefix}-confirm-copy`);
     const h = el('h2', '', 'Restore this backup?'); h.id = `${prefix}-confirm-title`;
     const copy = el('p', '', 'Stop playback and release all pads and controls. This replaces the board’s whole applied configuration, per-pad settings, custom library and current song. It does not restore firmware or the bootloader.'); copy.id = `${prefix}-confirm-copy`;
     card.append(h, copy, el('p', '', `File: ${selection.name} · source build ${current.info.build}`));
     const cancel = button('Cancel', 'cancel'), confirm = button('Restore backup', 'confirm');
-    cancel.className += ' backup-cancel'; confirm.className += ' backup-confirm';
+    cancel.className += ' backup-cancel'; confirm.className += ' backup-confirm hud-action--danger';
     card.append(cancel, confirm); dialog.append(card); doc.body.append(dialog); cancel.focus();
   }
   async function restoreBackup() {

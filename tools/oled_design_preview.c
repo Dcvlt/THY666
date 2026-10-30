@@ -23,11 +23,30 @@ static const thy_resources metrics = {
 static void init(void) {
     thy_core_init(&music); thy_instrument_init(&instrument,&music);
     thy_engine_init(&engine,&instrument,0,70,undo);
+    for(uint8_t side=0u;side<2u;++side)
+        if(thy_instrument_set_route(&instrument,side,0u,THY_ROUTE_DIN|THY_ROUTE_USB0,0)!=THY_OK)exit(9);
     thy_studio_ui_init(&ui); ui.animations_enabled=0; ui.resources=&metrics;
+}
+static void preview_velocity(uint8_t scope,uint8_t mode) {
+    for(uint8_t side=0u;side<2u;++side)if(!scope||scope==side+1u){
+        thy_instrument_velocity velocity;
+        if(thy_instrument_get_cluster_velocity(&instrument,side,&velocity)!=THY_OK)exit(9);
+        velocity.mode=mode;
+        if(thy_instrument_set_cluster_velocity(&instrument,side,&velocity)!=THY_OK)exit(9);
+    }
 }
 static void setup(unsigned screen) {
     init();
-    if(screen==0 || screen==4 || screen==5) {
+    if(screen>=6u) {
+        instrument.display_view=THY_VIEW_SIMPLE;
+        preview_velocity(0u,THY_VELOCITY_FIXED);
+        if(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_PRESSUREMODE,0u,THY_CHANNEL_PRESSURE_OFF)!=THY_STATE_OK)exit(9);
+        if(screen==7u)preview_velocity(1u,THY_VELOCITY_STRIKE);
+        if(screen==8u && (thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_PRESSUREMODE,1u,THY_CHANNEL_PRESSURE_POLY)!=THY_STATE_OK ||
+            thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_PRESSUREMODE,2u,THY_CHANNEL_PRESSURE_CHANNEL)!=THY_STATE_OK))exit(9);
+        if(screen==9u)engine.expression_config.enabled=1u;
+        if(screen==10u)engine.arps[0].config.enabled=1u;
+    } else if(screen==0 || screen==4 || screen==5) {
         static const int16_t triad[]={60,64,67};
         static const int16_t five[]={60,62,64,67,71};
         static const int16_t seventh[]={54,57,61,64};
@@ -51,14 +70,15 @@ static void setup(unsigned screen) {
 }
 static void draw(uint8_t *out,unsigned screen) {
     memset(out,0,THY_UI_FRAME_BYTES);
-    if(screen==0 || screen==4 || screen==5)studio_play(out,&engine.state,"MAJOR C",1,1,2000,0);
+    if(screen==0 || screen>=4u)studio_play(out,&engine.state,"MAJOR C",1,1,2000,0);
     else if(screen==1)harmony_workspace_page(out,&engine.state,2000,0);
     else menu(out,&engine.state,&ui);
 }
 int main(int argc,char **argv) {
     if(argc!=2)return 2;
-    const char *names[]={"simple","harmony","settings","resources","simple-five","simple-seventh"};
-    for(unsigned screen=0;screen<6;screen++) {
+    const char *names[]={"simple","harmony","settings","resources","simple-five","simple-seventh",
+        "expression-idle","velocity-left","aftertouch-split","expression-mpe","expression-arp"};
+    for(unsigned screen=0;screen<sizeof names/sizeof names[0];screen++) {
         setup(screen);saved_engine=engine;saved_instrument=instrument;saved_music=music;
         struct {uint8_t pre[32],frame[THY_UI_FRAME_BYTES],post[32];} guard;
         memset(&guard,0xa5,sizeof guard);draw(guard.frame,screen);
@@ -71,6 +91,6 @@ int main(int argc,char **argv) {
         if(fwrite(guard.frame,1,THY_UI_FRAME_BYTES,f)!=THY_UI_FRAME_BYTES)return 8;
         fclose(f);
     }
-    puts("6 production C frames; framebuffer guards and musical-state immutability passed.");
+    puts("11 production C frames; framebuffer guards and musical-state immutability passed.");
     return 0;
 }

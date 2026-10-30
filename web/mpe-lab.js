@@ -91,11 +91,11 @@ export function initializeMpeLab({ engine, onEvents, now, document = globalThis.
       <label>Held contact<select data-field="pad" aria-label="Held contact for pressure simulation"></select></label>
       <label>Pressure <output data-readout="pressure">0</output><input data-field="pressure" type="range" min="0" max="127" value="0" aria-label="Selected contact pressure"></label>
       <label>Pitch bend <output data-readout="bend">8192</output><input data-field="bend" type="range" min="0" max="16383" value="8192" aria-label="Selected pad pitch bend"></label>
-      <label data-field="aftertouch-row" style="grid-column:1/-1" hidden>Aftertouch → CC74 <output data-readout="aftertouch">0</output><input data-field="aftertouch" type="range" min="0" max="127" value="0" aria-label="Selected source aftertouch"></label>
+      <label data-field="aftertouch-row" style="grid-column:1/-1" hidden>Upper Aftertouch <output data-readout="aftertouch">0</output><input data-field="aftertouch" type="range" min="0" max="127" value="0" aria-label="Selected source aftertouch"></label>
     </div>
     <p class="mpe-help">Press pads on the controller above. Selecting a contact changes no notes or pressure. Pitch bend springs back to center after release. With a Dual-stage expression profile, primary pressure and aftertouch can be auditioned independently; a glide contact controls pressure only.</p>
     <dl class="mpe-runtime"><div><dt>Member leases</dt><dd data-readout="active">0</dd></div><div><dt>Glide contacts</dt><dd data-readout="consumed">0</dd></div></dl>
-    <div class="mpe-table-wrap"><table class="mpe-ledger"><caption>Member-channel ownership · desired / last queued expression</caption><thead><tr><th>Source</th><th>Note</th><th>Channel</th><th>Output</th><th>Pressure</th><th>AT / CC74</th><th>Bend</th><th>State</th><th>Glide</th></tr></thead><tbody></tbody></table></div>
+    <div class="mpe-table-wrap"><table class="mpe-ledger"><caption>Member-channel ownership · desired / last queued expression</caption><thead><tr><th>Source</th><th>Note</th><th>Channel</th><th>Output</th><th>Primary</th><th>Upper AT</th><th>Bend</th><th>State</th><th>Glide</th></tr></thead><tbody></tbody></table></div>
     <p data-readout="notice" class="mpe-notice" role="status" aria-live="polite"></p>`;
   (document.querySelector('#arp-lab') || document.querySelector('#rhythm-lab') || document.querySelector('.instrument')).insertAdjacentElement('afterend', panel);
   const find = selector => panel.querySelector(selector);

@@ -465,7 +465,8 @@ test('live menu edits use the firmware adapter and preserve press-time ownership
   assert.ok(set(state, 'chords.inversion', 2).ok);
   assert.equal(firmware.state().inversion, 2);
   assert.ok(set(state, 'performance.velocity', 88).ok);
-  assert.equal(firmware.state().velocity, 88);
+  assert.equal(get(state, 'performance.velocity'), 88);
+  assert.equal(firmware.state().velocity, 96, 'The inherited MIDI fallback stays separate from the physical-half override.');
   assert.ok(set(state, 'lights.idle', 4).ok);
   assert.equal(firmware.state().lightIdle, 4);
   assert.deepEqual(engine.owner(0), owner);

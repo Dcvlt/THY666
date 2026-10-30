@@ -1,5 +1,5 @@
 {
-  "last_allocated": 7,
+  "last_allocated": 10,
   "allocations": {
     "01": "feature/01-branch-governance",
     "02": "feature/02-readme-front-door",
@@ -7,6 +7,9 @@
     "04": "fix/04-release-documentation",
     "05": "fix/05-backup-settings-v15",
     "06": "feature/06-harmony-workspace",
-    "07": "feature/07-client-refinement"
+    "07": "feature/07-client-refinement",
+    "08": "fix/08-readme-title",
+    "09": "feature/09-expression-performance",
+    "10": "fix/10-client-sidebar-polish"
   }
 }

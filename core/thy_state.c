@@ -172,7 +172,13 @@ int thy_state_row_visible(const thy_state *state, uint16_t row) {
     case THY_ROW_CHORDS_GUIDANCE: /* Retired location; Harmony owns exploration. */
         return 0;
     case THY_ROW_PERFORMANCE_AFTERTOUCH:
+    case THY_ROW_PERFORMANCE_ROUTETARGET:
     case THY_ROW_PERFORMANCE_VELOCITYSOURCE:
+    case THY_ROW_MIDI_VELOCITY:
+    case THY_ROW_MIDI_PRESSURE:
+    case THY_ROW_MIDI_PRESSUREBEND:
+    case THY_ROW_MIDI_BENDRANGE:
+    case THY_ROW_MIDI_BENDSETUP:
     case THY_ROW_SENSITIVITY_VELOCITYPRESET:
     case THY_ROW_SEQUENCER_STEPS: case THY_ROW_SEQUENCER_TRACK:
     case THY_ROW_SEQUENCER_ACTIVE: case THY_ROW_SEQUENCER_INTERACTION:
@@ -547,6 +553,8 @@ int thy_state_begin_edit(thy_state *state, uint16_t row) {
         int32_t value;
         if (thy_state_get(state, row, &value) != THY_STATE_OK) return fail(state, THY_STATE_ADAPTER_ERROR, THY_NOTICE_ADAPTER);
         state->edit_value = value;
+        if(value<0&&definition->instance_kind==THY_MENU_SIDE)
+            state->edit_value=definition->default_value;
     }
     state->editing = 1;
     state->edit_row = row;
@@ -867,7 +875,8 @@ int thy_state_format(const thy_state *state, uint16_t row, int use_edit, char *o
         integer_text(value,out,capacity);size_t n=0;while(n<capacity && out[n])++n;
         if(n+1u<capacity){out[n++]='%';out[n]=0;}return THY_STATE_OK;
     }
-    if (definition->type == THY_MENU_TOGGLE) copy_text(out, capacity, value ? "ON" : "OFF");
+    if(value<0&&definition->instance_kind==THY_MENU_SIDE)copy_text(out,capacity,"Mixed");
+    else if (definition->type == THY_MENU_TOGGLE) copy_text(out, capacity, value ? "ON" : "OFF");
     else if (definition->type == THY_MENU_SELECT && definition->dynamic) {
         const char *label = state->callbacks.label ? state->callbacks.label(state->context, row, value) : NULL;
         if (label) copy_text(out, capacity, label);

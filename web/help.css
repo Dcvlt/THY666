@@ -21,15 +21,11 @@
 /* Vertical index, framed by broken rules rather than a grey surface. */
 .thy-help-rail {
   position:sticky; top:20px; align-self:start; max-height:calc(100dvh - 48px);
-  overflow:auto; padding:26px 20px 12px; border:1px solid var(--help-edge);
-  border-top:2px solid var(--help-accent); border-radius:0; background:var(--help-paper);
+  overflow:auto; padding:26px 20px 12px;
+    background:var(--help-paper);
   scrollbar-color:var(--help-edge) var(--help-paper); scrollbar-width:thin;
 }
-.thy-help-rail::before,.thy-help-reference::before,.thy-help-dialog::before {
-  content:''; position:absolute; top:-2px; right:18px; width:42px; height:4px;
-  border-inline:1px solid var(--help-accent); background:var(--help-paper); transform:skewX(-35deg);
-  pointer-events:none;
-}
+
 .thy-help-eyebrow {
   margin:0 0 10px; color:var(--help-accent);
   font-family:var(--help-control),var(--font-symbol,system-ui),sans-serif;
@@ -63,8 +59,8 @@
 }
 .thy-help-nav-group h3::before { content:''; position:absolute; left:-1px; top:4px; width:4px; height:11px; background:var(--help-accent); }
 .thy-help-topic-link {
-  position:relative; display:block; width:100%; min-height:42px; padding:10px 12px;
-  border:1px solid transparent; border-left:2px solid transparent; border-radius:0;
+  position:relative; display:block; width:100%; min-height:44px; padding:10px 12px;
+  border:1px solid transparent; border-left:var(--hud-leading,3px) solid transparent; border-radius:0;
   background:var(--help-paper); color:var(--help-muted);
   font-family:var(--help-base),var(--font-symbol,system-ui),sans-serif;
   font-size:14px; line-height:1.6; letter-spacing:.015em; text-align:left;
@@ -72,10 +68,7 @@
 }
 .thy-help-topic-link:hover { color:var(--help-ink); border-block-color:var(--help-rule); }
 .thy-help-topic-link[aria-current='page'] { color:var(--help-ink); border-color:var(--help-edge); border-left-color:var(--help-accent); }
-.thy-help-topic-link[aria-current='page']::after {
-  content:''; position:absolute; right:3px; bottom:3px; width:7px; height:7px;
-  border-right:1px solid var(--help-accent); border-bottom:1px solid var(--help-accent); pointer-events:none;
-}
+
 
 /* Only the main article headline uses the display face. Small titles use base. */
 .thy-help-article {
@@ -134,9 +127,9 @@
 .thy-help td:first-child { color:var(--help-ink); font-weight:600; }
 .thy-help td:first-child,.thy-help th:first-child { min-width:110px; width:22%; overflow-wrap:normal; }
 .thy-help-figures { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr)); gap:18px; margin:20px 0 25px; }
-.thy-help-figure { position:relative; min-width:0; margin:0; padding:15px 0 13px; border-block:1px solid var(--help-edge); background:var(--help-paper); }
-.thy-help-figure::before,.thy-help-figure::after { content:''; position:absolute; width:22px; height:5px; background:var(--help-accent); clip-path:polygon(0 0,100% 0,calc(100% - 5px) 100%,0 100%); }
-.thy-help-figure::before { top:-1px; left:0; }.thy-help-figure::after { bottom:-1px; right:0; transform:rotate(180deg); }
+.thy-help-figure { position:relative; min-width:0; margin:0; padding:16px;  background:var(--help-paper); }
+
+
 .thy-help .thy-help-figure-label { margin:0 0 13px; color:var(--help-ink); font-family:var(--help-base),sans-serif; font-weight:600; font-size:14px; line-height:1.6; }
 /* Example assets retain their original OLED and musical pad colors. */
 .thy-help-figure-viewport { overflow:auto; background:#000; scrollbar-color:var(--help-edge) #000; }
@@ -145,7 +138,7 @@
 .thy-help-figure-surface { grid-column:1/-1; }
 .thy-help-figure-surface img { min-width:0; max-width:100%; }
 .thy-help .thy-help-figure figcaption { margin:12px 0 0; color:var(--help-muted); font-size:11px; line-height:1.8; font-family:var(--help-base),sans-serif; }
-.thy-help-reference { position:relative; margin:32px 0; padding:20px 22px; border:1px solid var(--help-edge); border-top:2px solid var(--help-accent); border-radius:0; background:var(--help-paper); }
+.thy-help-reference { position:relative; margin:32px 0; padding:20px 22px;    background:var(--help-paper); }
 .thy-help-reference summary { padding-block:3px; color:var(--help-accent); font-family:var(--help-control),var(--font-symbol,system-ui),sans-serif; font-size:11px; font-weight:500; line-height:1.9; overflow-wrap:anywhere; cursor:pointer; }
 .thy-help-reference dl { margin:22px 0 0; }
 .thy-help-reference dt { margin:23px 0 7px; color:var(--help-ink); font-size:16px; font-weight:650; line-height:1.6; overflow-wrap:anywhere; }
@@ -155,24 +148,23 @@
 .thy-help-related { position:relative; margin-top:37px; padding-top:27px; border-top:0; }
 .thy-help-related-links { display:flex; flex-wrap:wrap; gap:10px; }
 .thy-help-related-link,.thy-help-close,.thy-help-read {
-  min-height:44px; padding:12px 15px; border:1px solid var(--help-edge); border-radius:0;
-  background:var(--help-paper); color:var(--help-ink); font-family:var(--help-control),var(--font-symbol,system-ui),sans-serif;
+  min-height:44px; padding:12px 15px; font-family:var(--help-control),var(--font-symbol,system-ui),sans-serif;
   font-size:11px; font-weight:500; line-height:1.8; letter-spacing:.025em;
   white-space:normal; overflow-wrap:anywhere; cursor:pointer;
 }
 .thy-help-related-link { max-width:100%; text-align:left; }
-.thy-help-related-link:hover,.thy-help-close:hover,.thy-help-read:hover { border-color:var(--help-accent); color:var(--help-ink); }
+
 
 /* Contextual help keeps its existing dialog roles and keyboard behavior. */
 .thy-help-overlay { position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; padding:24px; background:color-mix(in srgb,var(--help-paper) 92%,transparent); backdrop-filter:none; }
-.thy-help-dialog { position:relative; width:min(620px,100%); min-width:0; max-height:calc(100dvh - 48px); overflow:auto; padding:28px; border:1px solid var(--help-edge); border-top:2px solid var(--help-accent); border-radius:0; background:var(--help-paper); scrollbar-color:var(--help-edge) var(--help-paper); }
+.thy-help-dialog { position:relative; width:min(620px,100%); min-width:0; max-height:calc(100dvh - 48px); overflow:auto; padding:28px;    background:var(--help-paper); scrollbar-color:var(--help-edge) var(--help-paper); }
 .thy-help-dialog-top { display:flex; align-items:start; justify-content:space-between; gap:18px; }
 .thy-help-dialog-top .thy-help-eyebrow { padding-top:8px; }
 .thy-help-dialog .thy-help-close { flex-shrink:0; color:var(--help-muted); }
 .thy-help-dialog h2 { margin:22px 0 18px; color:var(--help-ink); font-family:var(--help-base),var(--font-symbol,system-ui),sans-serif; font-size:28px; font-weight:650; line-height:1.55; letter-spacing:.01em; overflow-wrap:anywhere; }
 .thy-help-context-summary { margin:0 0 19px; color:var(--help-muted); font-size:16px; line-height:1.8; overflow-wrap:anywhere; }
 .thy-help-context-related { position:relative; margin:23px 0 20px; padding-top:22px; border-top:0; color:var(--help-muted); font-size:14px; overflow-wrap:anywhere; }
-.thy-help-read { border-color:var(--help-accent); color:var(--help-ink); }
+
 .thy-help-escape { margin:19px 0 0; color:var(--help-muted); font-size:12px; line-height:1.75; overflow-wrap:anywhere; }
 .thy-help-boundary { position:relative; margin-block:18px; padding:9px 0 9px 14px; border-left:0; color:var(--help-muted); font-size:14px; line-height:1.75; }
 .thy-help-boundary::before { top:4px; bottom:4px; width:7px; background:var(--help-edge); }
@@ -219,8 +211,8 @@
 .thy-help-section > p { max-width:70ch; }
 @media(max-width:760px) {
   .thy-help { gap:20px; }
-  .thy-help-rail { padding:0;max-height:none;border:0;overflow:visible; }
-  .thy-help-rail > :is(.thy-help-title,.thy-help-eyebrow),.thy-help-rail::before { display:none; }
+  .thy-help-rail { padding:0;max-height:none;overflow:visible; }
+  .thy-help-rail > :is(.thy-help-title,.thy-help-eyebrow),.thy-help-rail::before,.thy-help-rail::after { display:none; }
   .thy-help-index-toggle { display:flex;align-items:center;justify-content:space-between;width:100%;min-height:48px;padding:12px 16px;border:1px solid var(--help-edge);background:var(--help-paper);color:var(--help-ink);font:12px var(--help-control);text-align:left; }
   .thy-help-index-toggle::after { content:'+';font-size:22px;color:var(--help-accent); }
   .thy-help-index-toggle[aria-expanded="true"]::after { content:'−'; }

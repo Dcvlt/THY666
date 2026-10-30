@@ -5,7 +5,7 @@
   --companion-screen-inset: 3px;
   --companion-screen-border: 1px;
   --companion-screen-trim: calc(2 * (var(--companion-screen-inset) + var(--companion-screen-border)));
-  background: #000;
+  background: var(--ui-paper, #000);
 }
 .companion-app .companion-cockpit.screen-expanded .physical-screen {
   --companion-screen-width: 424px;
@@ -24,6 +24,9 @@
   overflow: hidden;
   background: #000;
 }
+.companion-app .companion-cockpit .physical-center .physical-screen > .companion-web-screen {
+  background: var(--ui-paper, #000);
+}
 .companion-app .companion-cockpit .physical-center .physical-screen > .hardware-display > canvas {
   display: block;
   width: 100%;
@@ -35,8 +38,8 @@
 /* The Web screen enhances the received C framebuffer. Its 128x64 layout and
    every unmatched graphical pixel are retained; there is no parallel UI. */
 .companion-display {
-  --display-ink: #fff;
-  --display-paper: #000;
+  --display-ink: var(--ui-ink, #fff);
+  --display-paper: var(--ui-paper, #000);
   width: 100%;
   height: 100%;
   min-width: 0;
@@ -69,5 +72,8 @@
 }
 .companion-display-text.is-inverse { fill: var(--display-paper); font-weight: 600; }
 .companion-display-text.is-dim { opacity: .45; }
+/* Dark ink needs a little more weight than light emitted text. This changes
+   only Web contrast; the received frame and hardware OLED stay untouched. */
+.companion-app[data-appearance="light"] .companion-display-text.is-dim { opacity: .68; }
 .companion-display[data-panel="off"] .companion-display-svg,
 .companion-display[data-panel="unavailable"] .companion-display-svg { visibility: hidden; }

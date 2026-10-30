@@ -213,20 +213,7 @@ static int sensitivity_percent(const thy_engine *e,uint8_t instance,uint16_t att
  * actual effective modes, including retained per-pad overrides. */
 static int read_velocity_mode(const thy_engine *e,uint8_t scope,int32_t *value)
 {
-    if(scope>2u)return THY_STATE_INVALID;
-    const thy_instrument *i=e->instrument;
-    unsigned mask=scope?1u<<(scope-1u):3u;
-    *value=-1;
-    for(unsigned p=0;p<THY_PAD_COUNT;++p){
-        if(i->mapping[p]>=THY_PAD_COUNT)return THY_STATE_INVALID;
-        if(mask&(1u<<(i->mapping[p]/48u))){
-            thy_instrument_velocity velocity;uint8_t overridden;
-            if(thy_instrument_get_velocity(i,(int)p,&velocity,&overridden)!=THY_OK)return THY_STATE_INVALID;
-            if(*value<0)*value=velocity.mode;
-            else if(velocity.mode!=*value)*value=2;
-        }
-    }
-    return THY_STATE_OK;
+    return thy_engine_performance_get(e,THY_ROW_SENSITIVITY_VELOCITYMODE,scope,value);
 }
 
 static int write_velocity_mode(thy_engine *e,uint8_t scope,int32_t value)
@@ -455,9 +442,6 @@ static uint16_t canonical_route_row(uint16_t row)
 {
     switch(row) {
     case THY_ROW_PERFORMANCE_ROUTETARGET:return THY_ROW_MIDI_ROUTETARGET;
-    case THY_ROW_PERFORMANCE_PRESSUREMODE:return THY_ROW_MIDI_PRESSURE;
-    case THY_ROW_PERFORMANCE_PRESSUREBEND:return THY_ROW_MIDI_PRESSUREBEND;
-    case THY_ROW_PERFORMANCE_BENDRANGE:return THY_ROW_MIDI_BENDRANGE;
     default:return row;
     }
 }
@@ -469,6 +453,8 @@ static int read_setting(void *context, uint16_t row, uint8_t instance, int32_t *
     const thy_instrument *i = engine->instrument;
     if (i == NULL || value == NULL) return THY_STATE_UNAVAILABLE;
     if(row==THY_ROW_SENSITIVITY_VELOCITYMODE)return read_velocity_mode(engine,instance,value);
+    if(thy_menu_rows[row].instance_kind==THY_MENU_SIDE)
+        return thy_engine_performance_get(engine,row,instance,value);
     if(thy_menu_rows[row].instance_kind==THY_MENU_PAD)return read_pad_setting(engine,row,instance,value);
     if (thy_menu_rows[row].group == thy_menu_rows[THY_ROW_SEQUENCER_OPEN].group)
         return thy_engine_sequencer_read(engine, row, instance, value);
@@ -611,6 +597,8 @@ static int write_setting(void *context, uint16_t row, uint8_t instance, int32_t 
     thy_instrument *i = engine->instrument;
     if (i == NULL) return THY_STATE_UNAVAILABLE;
     if(row==THY_ROW_SENSITIVITY_VELOCITYMODE)return write_velocity_mode(engine,instance,value);
+    if(thy_menu_rows[row].instance_kind==THY_MENU_SIDE)
+        return thy_engine_performance_set(engine,row,instance,value);
     if(row==THY_ROW_PERFORMANCE_MPE || thy_menu_rows[row].group==thy_menu_rows[THY_ROW_EXPRESSION_ENABLED].group) {
         if(row==THY_ROW_EXPRESSION_SETUP) {
             int result=thy_engine_expression_send_setup(engine);
@@ -898,14 +886,17 @@ int thy_engine_reset_options(thy_engine *e,uint8_t group,const uint8_t targets[9
         return THY_STATE_OK;
     }
     if(group==thy_menu_rows[THY_ROW_PERFORMANCE_VELOCITY].group){
-        uint8_t side=targets[THY_MENU_SIDE],route=targets[THY_MENU_ROUTE];
-        if(side>2u||route>=THY_INSTRUMENT_ROUTE_TARGETS)return THY_STATE_INVALID;
+        uint8_t side=targets[THY_MENU_SIDE];
+        if(side>2u)return THY_STATE_INVALID;
         thy_mpe_config mpe=e->expression_config;mpe.enabled=0u;
+        for(unsigned n=0;n<2u;++n)if(!side||side==n+1u)mpe.pressure_output[n]=THY_MPE_PRESSURE;
         if(thy_engine_expression_can_configure(e,&mpe)!=THY_OK)return THY_STATE_BLOCKED;
         if(write_velocity_mode(e,side,THY_VELOCITY_FIXED)!=THY_STATE_OK)return THY_STATE_BLOCKED;
         (void)thy_engine_expression_configure(e,&mpe);
-        i->fixed_velocity=96u;i->context_controls=0u;i->context_location=0u;i->context_mask=63u;
-        e->channel_routes[route]=(thy_engine_channel_config){1u,0u,2u};i->route_pressure[route]=1u;
+        (void)thy_engine_performance_set(e,THY_ROW_PERFORMANCE_PROFILEENABLED,side,0);
+        for(unsigned n=0;n<2u;++n)if(!side||side==n+1u)
+            e->performance[n]=(thy_engine_performance_config){96u,1u,1u,2u};
+        i->context_controls=0u;i->context_location=0u;i->context_mask=63u;
     }else if(group==thy_menu_rows[THY_ROW_CHORDS_LAYOUT].group){
         thy_instrument_key_changed(i);e->scale=e->state.scale_count>21u?21u:0u;i->performance.root=0u;
         i->user_scale=i->chord_layout=i->chord_quality=i->six_bank=i->voicing_mode=i->drop_mask=0u;
@@ -930,9 +921,9 @@ int thy_engine_reset_options(thy_engine *e,uint8_t group,const uint8_t targets[9
         i->routing_profile=THY_ROUTING_SPLIT;e->route_target=1u;
         uint8_t channel=(uint8_t)(route==2u||route>=6u?1u:0u);
         i->route_channels[route]=channel;i->route_destinations[route]=THY_ROUTE_USB0|THY_ROUTE_DIN;
-        i->route_velocity[route]=96u;i->route_pressure[route]=1u;
         if(route==1u||route==2u){i->channels[route-1u]=channel;i->destinations[route-1u]=THY_ROUTE_USB0|THY_ROUTE_DIN;}
-        e->channel_routes[route]=(thy_engine_channel_config){1u,0u,2u};
+        /* Retained route expression is an inheritance baseline for older
+         * settings. Only Performance resets the visible playing policies. */
         thy_engine_sequencer_usb_clear(e);e->remote_record=e->remote_position=e->remote_channel=0u;
     }else if(group==thy_menu_rows[THY_ROW_SENSITIVITY_TARGET].group){
         uint8_t pad=targets[THY_MENU_PAD];if(pad>97u)return THY_STATE_INVALID;
@@ -976,6 +967,7 @@ int thy_engine_reset_options(thy_engine *e,uint8_t group,const uint8_t targets[9
 static const char *setting_label(void *context, uint16_t row, int32_t value)
 {
     const thy_engine *e=context;
+    if(value==-1&&row<THY_MENU_ROW_COUNT&&thy_menu_rows[row].instance_kind==THY_MENU_SIDE)return "Mixed";
     if(e&&e->instrument){
         if(row==THY_ROW_CHORDS_USERSCALE&&value>0&&value<=8)
             return e->instrument->library.scales[value-1].used?(const char *)e->instrument->library.scales[value-1].name:"Empty scale";

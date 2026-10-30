@@ -102,8 +102,8 @@ const definitions = [
     focus(engine, 'midi.routeTarget');
   }],
   ['aftertouch', 'Performance · RIGHT Poly AT response', async engine => {
-    set(engine, 'performance.routeTarget', 'right'); set(engine, 'performance.pressureMode', 'poly');
-    focus(engine, 'performance.routeTarget');
+    set(engine, 'performance.velocityTarget', 2); set(engine, 'performance.pressureMode', 'poly');
+    focus(engine, 'performance.pressureMode');
   }],
   ['mpe', 'Expression · Lower-zone MPE enabled', async engine => {
     set(engine, 'expression.enabled', true); focus(engine, 'expression.enabled');

@@ -6,7 +6,7 @@ import { STUDIO_MENU, MENU_ROWS } from './studio-menu.js';
 import { createDeviceClient, inspectDeviceBackup } from './device-client.js';
 import { createCore } from './core.js';
 import { createBackupPayloadMigrator } from './backup-migration.js';
-import { decodeCompanionSnapshot, decodeHarmonySnapshot, paintDeviceOLED } from './companion-protocol.js';
+import { decodeCompanionSnapshot, decodeHarmonySnapshot, decodePadMapSnapshot, paintDeviceOLED } from './companion-protocol.js';
 import { renderCompanionScreen } from './companion-display.js';
 export { renderCompanionScreen };
 import { initializeHelp } from './help.js';
@@ -16,42 +16,88 @@ import { createBrowserUpdaterClient } from './browser-updater-client.js';
 import { initializeAppSettings } from './app-settings.js';
 import { initializeHarmonyGuide } from './harmony-guide.js';
 import { initializeCockpit, initializeDiagnostics } from './cockpit.js';
+import { createUIIcon, createUIIconCorners } from './ui-system.js';
 
-const icons={board:'▦',harmony:'◇',parameters:'◈',library:'♫',backups:'⇅',diagnostics:'⌁'};
 const devicePages=new Set(['parameters','harmony','library','backups','diagnostics']);
 const el=(tag,className='',text)=>{
   const node=document.createElement(tag);node.className=className;if(text!==undefined)node.textContent=String(text);return node;
 };
-const button=(text,className='',action)=>{const node=el('button',className,text);node.type='button';if(action)node.addEventListener('click',action);return node;};
+const button=(text,className='',action)=>{const node=el('button',`${className.includes('hud-choice')?'':'hud-action '}${className}`.trim(),text);node.type='button';if(action)node.addEventListener('click',action);return node;};
 const clear=node=>{if(node)node.replaceChildren();return node;};
 const sameValues=(a,b)=>a===b||Boolean(a&&b&&a.length===b.length&&a.every((value,index)=>value===b[index]));
 const cockpitFields=['heldPads','noteCount','tempo','scale','harmony','root','clockSource','clockStatus','mpe','arp1','arp2','running','recording','engine','sequenceOpen','selectedTrack','capture','generated'];
 function sameCockpit(a,b){
   return Boolean(a&&b&&cockpitFields.every(key=>a[key]===b[key])&&a.inspect?.logical===b.inspect?.logical&&
-    ['held','pressure','aftertouchStage','sounding','pool'].every(key=>sameValues(a[key],b[key])));
-}
-function expandIcon(){
-  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
-  const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d','M14 4h6v6M20 4l-6 6M10 20H4v-6M4 20l6-6');
-  path.setAttribute('fill','none');path.setAttribute('stroke','currentColor');path.setAttribute('stroke-width','1.6');svg.append(path);return svg;
+    a.context?.revision===b.context?.revision&&
+    ['held','pressure','aftertouchStage','heldVelocity','velocityMode','fixedVelocity','sounding','pool'].every(key=>sameValues(a[key],b[key])));
 }
 
+/** Read-only settings projection. Work is bounded by the existing snapshot poll. */
+export function createCockpitContextCache({read,rows=MENU_ROWS}={}){
+  const indices=new Map(rows.map((row,index)=>[row.id,index]));
+  const fields=[['mpeOutput','mpeOutput',0,2],['profileEnabled','aftertouchStage',0,1],
+    ['pressureMode','atMode',0,2],['pressureBend','bend',0,2],['bendRange','bendRange',1,24]];
+  const probes=fields.flatMap(([id,field,min,max])=>[1,2].map(instance=>({
+    row:indices.get(`performance.${id}`),field,min,max,instance,
+  })));
+  let current=null,key=null,cursor=0,epoch=0,revision=0,busy=false,deferred=false;
+  const publish=(expression,pending)=>{current={revision:++revision,expression,pending};};
+  return {
+    get current(){return current;},
+    get deferred(){return deferred;},
+    reset(){epoch++;key=null;cursor=0;current=null;deferred=false;},
+    async refresh(live,{eligible=true,isCurrent=()=>true}={}){
+      deferred=false;
+      if(!eligible||!live||busy||!isCurrent())return current;
+      const next=[live.uid,live.build,live.schema,live.stateRevision,live.savedGeneration].join(':');
+      if(next!==key){
+        epoch++;key=next;cursor=0;
+        publish(Object.fromEntries(fields.map(([,field])=>[field,[null,null]])),true);
+      }
+      if(cursor>=probes.length)return current;
+      const token=epoch;busy=true;
+      try{
+        // Never add another timer or a large settings sweep to live feedback.
+        for(let count=0;count<2&&cursor<probes.length;count++){
+          const probe=probes[cursor];
+          if(!Number.isInteger(probe.row)){cursor++;publish(current.expression,cursor<probes.length);continue;}
+          let result;
+          try{result=await read(probe.row,probe.instance);}
+          catch(error){
+            if(token!==epoch||!isCurrent())return current;
+            if(/^(?:COMPANION\/1 )?ERR (?:busy|rate|snapshot-active)/.test(error.message)){deferred=true;return current;}
+            // Unsupported values remain unknown until the next settings revision.
+            cursor++;publish(current.expression,cursor<probes.length);throw error;
+          }
+          if(token!==epoch||!isCurrent())return current;
+          const value=result?.value;
+          if(result?.row!==probe.row||result?.instance!==probe.instance||!Number.isInteger(value)||
+            value!==-1&&(value<probe.min||value>probe.max)){
+            cursor++;publish(current.expression,cursor<probes.length);
+            throw new Error('The device returned invalid expression settings.');
+          }
+          const expression={...current.expression,[probe.field]:[...current.expression[probe.field]]};
+          expression[probe.field][probe.instance-1]=probe.field==='aftertouchStage'&&value!==-1?Boolean(value):value;
+          cursor++;publish(expression,cursor<probes.length);
+        }
+        return current;
+      }finally{busy=false;}
+    },
+  };
+}
 /** Move existing navigation into a compact drawer; never duplicate device actions. */
 export function initializeCompactNavigation({top,mainNav,clientNav,headerActions,rail}) {
   const doc=top.ownerDocument, media=globalThis.matchMedia?.('(max-width: 900px)');
-  const toggle=button('', 'button compact-nav-toggle',()=>open());
+  const toggle=button('', 'button hud-icon-button compact-nav-toggle',()=>open());
   toggle.setAttribute('aria-label','Open navigation');toggle.setAttribute('aria-expanded','false');
   toggle.setAttribute('aria-controls','compact-navigation');
-  const icon=doc.createElementNS('http://www.w3.org/2000/svg','svg');
-  icon.setAttribute('viewBox','0 0 28 24');icon.setAttribute('aria-hidden','true');
-  const path=doc.createElementNS('http://www.w3.org/2000/svg','path');
-  path.setAttribute('d','M2 5h15l3-3h6M2 12h8l3 3h13M2 21h18l3-3h3');
-  path.setAttribute('fill','none');path.setAttribute('stroke','currentColor');path.setAttribute('stroke-width','1.5');
-  icon.append(path);toggle.append(icon);top.prepend(toggle);
+  const icon=createUIIcon('menu',{document:doc});
+  toggle.append(icon,createUIIconCorners({document:doc}));top.prepend(toggle);
   const overlay=el('div','compact-nav-overlay');overlay.hidden=true;
-  const panel=el('section','compact-nav-panel');panel.id='compact-navigation';
+  const panel=el('section','compact-nav-panel hud-frame hud-frame--task');panel.id='compact-navigation';
   panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label','Navigation');
-  const heading=el('div','compact-nav-heading'),closeButton=button('×','button',()=>close());
+  const heading=el('div','compact-nav-heading'),closeButton=button('','button hud-icon-button',()=>close());
+  closeButton.append(createUIIcon('close',{document:doc}),createUIIconCorners({document:doc}));
   closeButton.setAttribute('aria-label','Close navigation');heading.append(el('strong','','Navigate'),closeButton);
   const applications=el('div','compact-nav-group'),pages=el('div','compact-nav-group');
   applications.append(el('p','eyebrow','Application'));pages.append(el('p','eyebrow','Client'));
@@ -123,8 +169,13 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   let harmonySnapshot=null,harmonyNeedsRefresh=true;
   let resetDialogOpen=false,resetBusy=false,resetDisplayedEpoch=0,resetFocus=null,resetRenderedFrame=null;
   let pollTimer=null,pollEpoch=0,pollConnectionActive=false,hostActive=true,lastConnectionKey='';
+  let connectionEpoch=0,connectionIdentity='';
   let updater=null;
   let renderedSnapshot=null,renderedWeb=null,renderedOLED=null,renderedCockpit=null,lastCockpitAt=0;
+  let cockpitActivity=null;
+  let labelsEnabled=false,labelMap=null,labelMapPending=false,labelMapEpoch=0,labelMapReading=false;
+  let labelStableKey='',labelInstrumentRevision=null,labelCheckAt=0;
+  let labelJobStarted=0,labelJobPolls=0,labelRetryAt=0;
   const records=new Map(),panes=new Map(),subButtons=new Map(),rowIndex=new Map(MENU_ROWS.map((row,n)=>[row.id,n]));
   const oldActions=oldHeader.querySelector('.header-actions');
   const top=el('header','companion-topbar');const brand=oldHeader.querySelector('.wordmark');
@@ -134,12 +185,13 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   top.append(brand);
   const projectSite=document.documentElement.dataset.projectSite==='true';
   const mainNav=el('nav','companion-main-nav');mainNav.setAttribute('aria-label','Application areas');
-  const updateAreaButton=button(projectSite?'Install':'Update','',()=>showArea('update'));
-  const clientAreaButton=button('Client','is-selected',()=>showArea('client'));
-  const docsAreaButton=button(projectSite?'User guide':'Documentation','',()=>{showArea('documentation');help.open('getting-started');});
+  const updateAreaButton=button(projectSite?'Install':'Update','hud-choice hud-choice--nav',()=>showArea('update'));
+  const clientAreaButton=button('Client','hud-choice hud-choice--nav is-selected',()=>showArea('client'));
+  const docsAreaButton=button(projectSite?'User guide':'Documentation','hud-choice hud-choice--nav',()=>{showArea('documentation');help.open('getting-started');});
+  for(const control of [updateAreaButton,clientAreaButton,docsAreaButton])control.dataset.traceOrigin='bottom';
   mainNav.append(updateAreaButton,clientAreaButton,docsAreaButton);
   if(projectSite){
-    const home=el('a','button','Project');home.href='../index.html';
+    const home=el('a','button hud-action companion-project-link','Project');home.href='../index.html';
     home.addEventListener('click',event=>{if(updater?.usbBusy||client.busy)event.preventDefault();});
     mainNav.append(home);
   }
@@ -147,14 +199,15 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   const connection=el('div','companion-connection'),status=el('span','connection-status','');status.setAttribute('role','status');status.hidden=true;
   const connect=button('Connect board','button companion-connect',()=>void toggleConnection());
   connection.append(status,connect);headerActions.append(connection);if(oldActions){oldActions.classList.add('legacy-status');top.append(oldActions);}oldHeader.replaceWith(top);
-  const workspace=el('div','companion-workspace'),rail=el('aside','companion-rail'),content=el('main','companion-content');
+  const workspace=el('div','companion-workspace'),rail=el('aside','companion-rail hud-sidebar'),content=el('main','companion-content hud-type-body');
   const clientNav=el('nav','companion-client-nav');clientNav.setAttribute('aria-label','Client pages');
-  const railToggle=button('','button rail-toggle',()=>setRailCollapsed(!workspace.classList.contains('rail-collapsed')));
-  railToggle.append(el('span','rail-icon','«'),el('span','rail-toggle-text','Collapse'));railToggle.setAttribute('aria-controls','companion-client-navigation');
-  clientNav.id='companion-client-navigation';rail.append(railToggle,clientNav);
+  const railToggle=button('','hud-rail-toggle rail-toggle',()=>setRailCollapsed(!workspace.classList.contains('rail-collapsed')));
+  railToggle.append(el('span','rail-icon'),el('span','rail-toggle-text','Collapse'));railToggle.firstChild.append(createUIIcon('arrowRight',{document}));railToggle.setAttribute('aria-controls','companion-client-navigation');
+  const railDivider=el('span','hud-sidebar-rail');railDivider.setAttribute('aria-hidden','true');
+  clientNav.id='companion-client-navigation';rail.append(railToggle,clientNav,railDivider);
   for(const [id,label] of [['board','Board'],['parameters','Parameters'],['harmony','Harmony'],['library','Songs & library'],['backups','Backups'],['diagnostics','Diagnostics']]){
-    const nav=button('',id==='board'?'is-selected':'',()=>showPage(id));nav.dataset.page=id;
-    nav.setAttribute('aria-label',label);nav.dataset.label=label;nav.title=label;nav.append(el('span','rail-icon',icons[id]),el('span','rail-text',label));clientNav.append(nav);subButtons.set(id,nav);
+    const nav=button('',id==='board'?'hud-choice hud-choice--nav is-selected':'hud-choice hud-choice--nav',()=>showPage(id));nav.dataset.page=id;nav.dataset.traceOrigin='left';
+    nav.setAttribute('aria-label',label);nav.dataset.label=label;nav.title=label;nav.append(el('span','rail-icon'),el('span','rail-text',label));nav.firstChild.append(createUIIcon(id,{document}));clientNav.append(nav);subButtons.set(id,nav);
     const pane=el('section','companion-page');pane.id=`companion-${id}`;pane.hidden=id!=='board';panes.set(id,pane);content.append(pane);
   }
   const harmony=initializeHarmonyGuide(panes.get('harmony'),{families:engine.guidance.families,
@@ -170,18 +223,18 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   const updatePane=el('section','companion-page companion-update-area');updatePane.id='companion-update';updatePane.hidden=true;
   panes.set('update',updatePane);
   const docsMount=el('section','companion-docs');docsMount.hidden=true;docsMount.id='documentation';
-  const notice=el('div','companion-notice');notice.setAttribute('role','status');notice.hidden=true;
-  const noticeIcon=el('span','companion-notice-icon','ⓘ');noticeIcon.setAttribute('aria-hidden','true');
-  const noticeText=el('span','companion-notice-text');
-  const noticeClose=button('×','button companion-notice-close',()=>tell(''));noticeClose.setAttribute('aria-label','Dismiss message');
+  const notice=el('div','companion-notice hud-notice hud-notice--banner');notice.setAttribute('role','status');notice.hidden=true;
+  const noticeIcon=el('span','companion-notice-icon');noticeIcon.append(createUIIcon('info',{document}));noticeIcon.setAttribute('aria-hidden','true');
+  const noticeText=el('span','companion-notice-text');noticeText.setAttribute('data-notice-copy','');
+  const noticeClose=button('','button hud-icon-button companion-notice-close',()=>tell(''));noticeClose.append(createUIIcon('close',{document}),createUIIconCorners({document}));noticeClose.setAttribute('aria-label','Dismiss message');
   notice.append(noticeIcon,noticeText,noticeClose);
   oldMain.before(notice,workspace,updatePane,docsMount);
   const compactNavigation=initializeCompactNavigation({top,mainNav,clientNav,headerActions,rail});
   const resetOverlay=el('div','companion-reset-overlay');resetOverlay.hidden=true;
-  const resetDialog=el('section','companion-reset-dialog'),resetTitle=el('h2','','Reset options'),resetDescription=el('p','','Review the device’s captured reset scope below. Nothing is reset until you explicitly confirm this request.'),resetScreen=el('div','companion-reset-screen'),resetError=el('p','companion-reset-error');
+  const resetDialog=el('section','companion-reset-dialog hud-frame hud-frame--task'),resetTitle=el('h2','','Reset options'),resetDescription=el('p','','Review the device’s captured reset scope below. Nothing is reset until you explicitly confirm this request.'),resetScreen=el('div','companion-reset-screen'),resetError=el('p','companion-reset-error hud-field-error');
   resetTitle.id='companion-reset-title';resetDescription.id='companion-reset-description';
   resetDialog.setAttribute('role','alertdialog');resetDialog.setAttribute('aria-modal','true');resetDialog.setAttribute('aria-labelledby',resetTitle.id);resetDialog.setAttribute('aria-describedby',resetDescription.id);resetError.setAttribute('role','alert');
-  const resetButtons=el('div','harmony-tabs'),resetCancel=button('Cancel','button',()=>void resolveReset(false)),resetConfirm=button('Reset options','button',()=>void resolveReset(true));
+  const resetButtons=el('div','harmony-tabs'),resetCancel=button('Cancel','button hud-action--quiet',()=>void resolveReset(false)),resetConfirm=button('Reset options','button hud-action--danger',()=>void resolveReset(true));
   resetButtons.append(resetCancel,resetConfirm);resetDialog.append(resetTitle,resetDescription,resetScreen,resetError,resetButtons);resetOverlay.append(resetDialog);document.body.append(resetOverlay);
   const pageTitle=el('h1','','Board'),firmwareLabel=el('p','eyebrow','THY666');
   const boardHead=el('div','companion-page-head');const titleWrap=el('div','');
@@ -189,14 +242,17 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   const toolbar=el('div','board-toolbar');
   const webButton=button('Web','is-selected',()=>setDisplay('web')),oledButton=button('OLED','',()=>setDisplay('oled'));
   const displaySwitch=el('div','segmented');displaySwitch.setAttribute('role','group');displaySwitch.setAttribute('aria-label','Board display');displaySwitch.append(webButton,oledButton);
-  const expand=button('','button button-quiet screen-expand',()=>toggleDisplaySize());expand.append(expandIcon());expand.setAttribute('aria-label','Expand screen');expand.setAttribute('aria-expanded','false');expand.setAttribute('aria-controls','companion-instrument-screen');expand.title='Expand screen';
-  const fitButton=button('Fit','button button-small is-selected',()=>{fit=true;resizeBoard();});
-  const actualButton=button('1:1','button button-small',()=>{fit=false;resizeBoard();});let fit=true;
-  const labelsButton=button('Labels','button button-small',()=>{instrument.classList.toggle('show-pad-labels');labelsButton.classList.toggle('is-selected',instrument.classList.contains('show-pad-labels'));});
-  toolbar.append(fitButton,actualButton,labelsButton);
+  const expand=button('','button button-quiet hud-icon-button screen-expand',()=>toggleDisplaySize());expand.append(createUIIcon('expand',{document}),createUIIconCorners({document}));expand.setAttribute('aria-label','Expand screen');expand.setAttribute('aria-expanded','false');expand.setAttribute('aria-controls','companion-instrument-screen');expand.title='Expand screen';
+  const labelsButton=button('Labels','button hud-action--compact',()=>toggleLabels());labelsButton.setAttribute('aria-pressed','false');
+  toolbar.append(labelsButton);
   boardHead.append(titleWrap,toolbar);panes.get('board').append(boardHead);
   const instrument=document.querySelector('.instrument'),face=instrument.querySelector('.controller-face'),scroll=instrument.querySelector('.controller-scroll');
   const padNodes=[...instrument.querySelectorAll('.pad')];
+  const padLabels=padNodes.map(node=>{
+    let name=node.querySelector('.pad-name');if(!name){name=el('span','pad-name');node.append(name);}
+    name.textContent='';const note=node.querySelector('.pad-note');if(note)note.textContent='';
+    return {node,name,baseLabel:node.getAttribute('aria-label')||`${Number(node.dataset.pad)<48?'Left':'Right'} pad ${Number(node.dataset.pad)%48+1}`};
+  });
   const centerNodes=[...instrument.querySelectorAll('[data-control="nav"]'),...instrument.querySelectorAll('[data-control="function"]')];
   const upperNodes=[...instrument.querySelectorAll('[data-control="root"]')].map((node,index)=>[node,19+index])
     .concat([...instrument.querySelectorAll('[data-control="mode"]')].map((node,index)=>[node,31+index]));
@@ -218,28 +274,29 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   onboarding.append(installLink);panes.get('board').append(onboarding);
   const parameterHead=el('div','companion-page-head');parameterHead.append(el('div','',''));
   parameterHead.firstChild.append(el('p','eyebrow','PLAYABILITY & CONFIGURATION'),el('h1','','Parameters'));
-  const parameterHelp=button('Read the settings guide','button button-quiet');parameterHelp.dataset.help='settings';parameterHead.append(parameterHelp);
-  const parameterSource=el('p','client-parameter-source','Connect your board to edit parameters.');
+  const parameterHelp=button('Read the settings guide','button hud-action--quiet');parameterHelp.dataset.help='settings';parameterHead.append(parameterHelp);
+  const parameterSource=el('p','client-parameter-source hud-notice','Connect your board to edit parameters.');
+  document.querySelector('#engine-studio').classList.add('hud-frame','hud-frame--task');
   panes.get('parameters').append(parameterHead,parameterSource,document.querySelector('#engine-studio'));
   const backupHead=el('div','companion-page-head');backupHead.append(el('div','',''));backupHead.firstChild.append(el('p','eyebrow','YOUR SAVED INSTRUMENT'),el('h1','','Backups'));
-  const backupHelp=button('What is included?','button button-quiet');backupHelp.dataset.help='backup';backupHead.append(backupHelp);panes.get('backups').append(backupHead);
+  const backupHelp=button('What is included?','button hud-action--quiet');backupHelp.dataset.help='backup';backupHead.append(backupHelp);panes.get('backups').append(backupHead);
   const backupMount=el('div','backup-mount');panes.get('backups').append(backupMount);
   const updateMount=el('div','updater-mount');panes.get('update').append(updateMount);
   const libraryHead=el('div','companion-page-head');libraryHead.append(el('div','',''));libraryHead.firstChild.append(el('p','eyebrow','COMPOSE & ORGANIZE'),el('h1','','Songs & library'));
-  const libraryHelp=button('Workflow guide','button button-quiet');libraryHelp.dataset.help='sequencer-editor';libraryHead.append(libraryHelp);
-  const libraryNote=el('p','client-parameter-source','Use the shared engine to try sequences and custom musical material.');
+  const libraryHelp=button('Workflow guide','button hud-action--quiet');libraryHelp.dataset.help='sequencer-editor';libraryHead.append(libraryHelp);
+  const libraryNote=el('p','client-parameter-source hud-notice','Use the shared engine to try sequences and custom musical material.');
   const libraryTabs=el('div','client-local-tabs'),songMount=el('div','client-local-panel'),libraryMount=el('div','client-local-panel');libraryMount.hidden=true;
   for(const [id,label,mount] of [['songs','Sequencer',songMount],['library','Custom library',libraryMount]]){
-    const tab=button(label,id==='songs'?'is-selected':'',()=>{songMount.hidden=id!=='songs';libraryMount.hidden=id!=='library';for(const b of libraryTabs.children)b.classList.toggle('is-selected',b===tab);});libraryTabs.append(tab);
+    const tab=button(label,id==='songs'?'hud-choice hud-choice--nav is-selected':'hud-choice hud-choice--nav',()=>{songMount.hidden=id!=='songs';libraryMount.hidden=id!=='library';for(const b of libraryTabs.children)b.classList.toggle('is-selected',b===tab);});tab.dataset.traceOrigin='bottom';libraryTabs.append(tab);
   }
   songMount.append(document.querySelector('#sequencer-lab'));libraryMount.append(document.querySelector('#library-lab'));
   const legacyTransfer=songMount.querySelector('[data-device="connect"]')?.closest('details');if(legacyTransfer)legacyTransfer.hidden=true;
   panes.get('library').append(libraryHead,libraryNote,libraryTabs,songMount,libraryMount);
   const debugHead=el('div','companion-page-head');debugHead.append(el('div','',''));debugHead.firstChild.append(el('p','eyebrow','OBSERVE & UNDERSTAND'),el('h1','','Diagnostics'));
-  const debugHelp=button('Telemetry guide','button button-quiet');debugHelp.dataset.help='companion';debugHead.append(debugHelp);panes.get('diagnostics').append(debugHead);
+  const debugHelp=button('Telemetry guide','button hud-action--quiet');debugHelp.dataset.help='companion';debugHead.append(debugHelp);panes.get('diagnostics').append(debugHead);
   const diagnostics=initializeDiagnostics(panes.get('diagnostics'));
-  const telemetry=el('div','client-telemetry'),telemetryText=el('pre','telemetry-output','Connect to read device telemetry.');
-  const telemetryControls=el('div','telemetry-controls'),telemetryPick=el('select','');telemetryPick.setAttribute('aria-label','Telemetry report');
+  const telemetry=el('div','client-telemetry hud-frame hud-frame--task'),telemetryText=el('pre','telemetry-output hud-scroll-region hud-type-mono','Connect to read device telemetry.');
+  const telemetryControls=el('div','telemetry-controls'),telemetryPick=el('select','hud-field');telemetryPick.setAttribute('aria-label','Telemetry report');
   for(const [name,label] of [['status','Activity'],['io','MIDI & scanning'],['settings','Saved settings'],['display','Display timing']]){const option=el('option','',label);option.value=name;telemetryPick.append(option);}
   let telemetryReading=false,telemetryLive=false,telemetrySamples=0,telemetryLastRead=0,telemetryEpoch=0;
   const telemetrySession=el('p','telemetry-session','');telemetrySession.setAttribute('role','status');
@@ -262,9 +319,9 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
       finally{telemetryReading=false;readTelemetry.disabled=!client.connected||Boolean(updater?.usbBusy);telemetryPick.disabled=readTelemetry.disabled;}
     });
   });
-  const rawTelemetry=el('details','diagnostics-raw');rawTelemetry.append(el('summary','','Raw report'),telemetryText);
+  const rawTelemetry=el('details','diagnostics-raw hud-disclosure');rawTelemetry.append(el('summary','','Raw report'),telemetryText);
   telemetryControls.append(telemetryPick,readTelemetry,liveTelemetry);telemetry.append(el('h2','','Monitor'),telemetryControls,telemetrySession,rawTelemetry);panes.get('diagnostics').insertBefore(telemetry,panes.get('diagnostics').querySelector('.diagnostics-dashboard'));
-  const debugTabs=el('div','client-local-tabs'),debugPanels=el('div','debug-panels');const advancedDiagnostics=el('details','diagnostics-advanced');advancedDiagnostics.append(el('summary','','Advanced inspection'),debugTabs,debugPanels);panes.get('diagnostics').append(advancedDiagnostics);
+  const debugTabs=el('div','client-local-tabs'),debugPanels=el('div','debug-panels');const advancedDiagnostics=el('details','diagnostics-advanced hud-disclosure');advancedDiagnostics.append(el('summary','','Advanced inspection'),debugTabs,debugPanels);panes.get('diagnostics').append(advancedDiagnostics);
   const debugEntries=[['ownership','Ownership & events',[]],['sensors','Sensors',[document.querySelector('#firmware-studio')]],['arps','Arps',[document.querySelector('#arp-lab')]],['expression','MPE',[document.querySelector('#mpe-lab')]],['clock','Clock',[document.querySelector('#rhythm-lab')]],['reference','Reference tools',[]]];
   for(const [id,label,nodes] of debugEntries){
     const pane=el('div','debug-panel');pane.dataset.debug=id;pane.hidden=id!=='ownership';
@@ -272,7 +329,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     if(id==='ownership'){for(const selector of ['.diagnostic-grid','.timeline-panel']){const node=document.querySelector(selector);if(node)pane.append(node);}}
     if(id==='sensors'&&!pane.childNodes.length){const node=document.querySelector('.firmware-studio');if(node)pane.append(node);}
     if(id==='reference'){for(const node of [legacyTools,routes,expression,document.querySelector('.control-surface')])if(node)pane.append(node);}
-    const tab=button(label,id==='ownership'?'is-selected':'',()=>{for(const node of debugPanels.children)node.hidden=node!==pane;for(const b of debugTabs.children)b.classList.toggle('is-selected',b===tab);});debugTabs.append(tab);debugPanels.append(pane);
+    const tab=button(label,id==='ownership'?'hud-choice hud-choice--nav is-selected':'hud-choice hud-choice--nav',()=>{for(const node of debugPanels.children)node.hidden=node!==pane;for(const b of debugTabs.children)b.classList.toggle('is-selected',b===tab);});tab.dataset.traceOrigin='bottom';debugTabs.append(tab);debugPanels.append(pane);
   }
   // Initializers previously inserted these independently. They are now mounted
   // once in named workspaces, never repeated below the board.
@@ -283,10 +340,21 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     else if(node.children.length)debugPanels.querySelector('[data-debug="reference"]').append(node);
   }
   oldMain.remove();
+  for(const head of document.querySelectorAll('.companion-page-head')){
+    const rule=el('span','hud-rule companion-heading-rule');rule.setAttribute('aria-hidden','true');head.append(rule);
+  }
   const help=initializeHelp({mount:docsMount,onNavigate:()=>showArea('documentation')});
+  docsMount.addEventListener('click',event=>{
+    if(!event.target.closest?.('a.thy-help-inline-link'))return;
+    if(updater?.usbBusy||client.busy||client.connected){
+      event.preventDefault();
+      tell(updater?.usbBusy?'Wait for the firmware update to finish before opening the component library.':'Disconnect your board before opening the component library.');
+    }
+  });
   const appSettings=initializeAppSettings({onPollIntervalChange:ms=>{if(pollConnectionActive&&!disposed)schedulePolling(ms);}});
   const client=createClient({expectedSchema:engine.state.schemaHash(),onState:updateConnection,
     migrateBackupPayload:createBackupPayloadMigrator({createEngine:()=>createCore()})});
+  const cockpitContext=createCockpitContextCache({read:(row,instance)=>client.read(row,instance)});
   const backup=initializeBackupPanel({mount:backupMount,client,getEngine:()=>engine,onApplied:async()=>{await readConfiguration();await poll();},runtime});
   // Preserve explicit native/helper integrations. Supported browser sessions
   // use WebHID; the Rust helper launch fragment retains its existing route.
@@ -315,20 +383,28 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     error:error=>tell(error.message),
   };
   studio.setDeviceBridge?.(bridge);
-  function tell(message){noticeText.textContent=String(message);notice.hidden=!message;externalNotice(message);}
+  function tell(message){noticeText.textContent=String(message);notice.hidden=!message;top.classList.toggle('has-notice',Boolean(message));externalNotice(message);}
   async function run(operation){try{return await operation();}catch(error){tell(error.message);return null;}}
   function updateConnection(state){
     if(!state.connected&&!state.connecting&&previewPayload)void restorePreview();
     const updateBusy=Boolean(updater?.usbBusy);
     // Busy/progress notifications occur for every serial transaction/chunk.
     // Structural board state changes only at connection or ownership edges.
-    const connectionKey=[state.connected,state.connecting,state.compatible,state.identity?.build,client.available,updateBusy].join(':');
+    const nextIdentity=state.connected?[state.identity?.uid,state.identity?.build,state.identity?.schema,state.compatible].join(':'):'';
+    const connectionKey=[state.connected,state.connecting,state.compatible,nextIdentity,client.available,updateBusy].join(':');
     if(connectionKey===lastConnectionKey){
       if(area==='client'&&page==='backups')backup?.refresh();
       if(area==='update'||updater?.modalOpen||updateBusy)updater?.refresh();
       return;
     }
     lastConnectionKey=connectionKey;
+    if(nextIdentity!==connectionIdentity){
+      connectionIdentity=nextIdentity;connectionEpoch++;cockpitContext.reset();snapshot=null;
+      renderedSnapshot=renderedWeb=renderedOLED=renderedCockpit=null;lastCockpitAt=0;
+      labelMapEpoch++;labelsEnabled=false;labelMap=null;labelMapPending=false;labelStableKey='';labelInstrumentRevision=null;
+      labelJobStarted=labelJobPolls=labelRetryAt=0;
+      renderPadLabels();
+    }
     status.textContent=updateBusy?'Updater owns USB':state.connecting?'Connecting':state.connected&&!state.compatible?'Read-only':'';status.hidden=!status.textContent;
     status.dataset.mode=state.connected?'connected':'preview';connect.textContent=state.connected?'Disconnect':'Connect board';connect.disabled=state.connecting||client.available===false||updateBusy;
     connect.title=updateBusy?'The updater owns USB. Wait for its terminal status before reconnecting the application.':client.available===false?
@@ -343,7 +419,8 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     face.inert=!state.connected||updateBusy;workspace.inert=updateBusy;clientAreaButton.disabled=updateBusy;instrument.hidden=!state.connected;standby.hidden=state.connected;onboarding.hidden=state.connected;
     toolbar.hidden=!state.connected;displayTools.hidden=!state.connected;
     for(const node of face.querySelectorAll('button'))node.disabled=!state.connected||updateBusy;
-    cockpit.update(state.connected?snapshot:null,{connected:state.connected});
+    if(!state.connected||!snapshot)cockpit.update(null,{connected:false});
+    syncCockpitActivity();
     if(!state.connected)diagnostics.snapshot(null,false);
     if(!state.connected){expanded=false;cockpitMount.classList.remove('screen-expanded');expand.setAttribute('aria-expanded','false');}
     resizeBoard();
@@ -388,6 +465,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     if(next!=='client')stopTelemetry();
     compactNavigation.close();
     area=next;workspace.hidden=next!=='client';docsMount.hidden=next!=='documentation';updatePane.hidden=next!=='update';
+    syncCockpitActivity();
     for(const [id,nav] of [['update',updateAreaButton],['client',clientAreaButton],['documentation',docsAreaButton]]){
       nav.classList.toggle('is-selected',next===id);nav.setAttribute('aria-pressed',String(next===id));
     }
@@ -403,20 +481,20 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     if(!panes.has(next))next='board';if(page==='board'&&next!=='board'&&!client.connected)onPreviewStart?.();page=next;selectArea('client');
     for(const [id,pane] of panes)pane.hidden=id!==next;
     for(const [id,nav] of subButtons){nav.classList.toggle('is-selected',id===next);nav.setAttribute('aria-current',id===next?'page':'false');}
+    syncCockpitActivity();
     location.hash=`client/${next}`;if(next==='diagnostics')diagnostics.snapshot(snapshot,client.connected);if(next==='board'){resizeBoard();render();}if(next==='harmony'){harmonyNeedsRefresh=true;void poll();}if(next==='parameters')void refreshRecords(currentRows()).catch(error=>tell(error.message));backup.refresh();updater.refresh();
   }
   function setRailCollapsed(collapsed,persist=true){
     workspace.classList.toggle('rail-collapsed',collapsed);railToggle.setAttribute('aria-expanded',String(!collapsed));
     const label=collapsed?'Expand sidebar':'Collapse sidebar';railToggle.setAttribute('aria-label',label);railToggle.title=label;
-    railToggle.querySelector('.rail-icon').textContent=collapsed?'»':'«';railToggle.querySelector('.rail-toggle-text').textContent=collapsed?'Expand':'Collapse';
+    railToggle.querySelector('.rail-icon').replaceChildren(createUIIcon('arrowRight',{document}));railToggle.querySelector('.rail-toggle-text').textContent=collapsed?'Expand':'Collapse';
     if(persist)try{globalThis.localStorage?.setItem('thy666.companion.sidebar.v1',collapsed?'collapsed':'expanded');}catch{/* Browser storage may be unavailable. */}
     resizeBoard();
   }
   function resizeBoard(){
-    const width=expanded?1536:1280,scale=fit?Math.min(1.2,Math.max(.2,(scroll.clientWidth-4)/width)):1;
+    const width=expanded?1536:1280,scale=Math.min(1.2,Math.max(0,scroll.clientWidth-4)/width);
     face.style.width=width+'px';face.style.minWidth=width+'px';face.style.transform=`scale(${scale})`;
     scaleWrap.style.width=width*scale+'px';scaleWrap.style.height=face.offsetHeight*scale+'px';
-    fitButton.classList.toggle('is-selected',fit);actualButton.classList.toggle('is-selected',!fit);
   }
   const resizeObserver=globalThis.ResizeObserver?new ResizeObserver(resizeBoard):null;resizeObserver?.observe(scroll);
   function setDisplay(next){
@@ -512,10 +590,20 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   }
   async function poll(){
     if(polling||!client.connected||client.busy||updater?.usbBusy||disposed||!hostActive||document.hidden||area==='update')return;polling=true;
+    const epoch=connectionEpoch,identity={...client.identity};
+    const current=()=>!disposed&&client.connected&&epoch===connectionEpoch&&
+      ['uid','build','schema'].every(key=>identity[key]===client.identity?.[key]);
     try{
-      const packet=await client.snapshot();if(disposed)return;snapshot=decodeCompanionSnapshot(packet.bytes,client.identity);
+      // A pending label job owns staging; complete/cancel that lease before a
+      // base snapshot rather than letting the two readers block one another.
+      if(labelMapPending){
+        if(!labelsWanted())await cancelPadLabels();else await refreshPadLabels(snapshot);
+        if(!current()||labelMapPending)return;
+      }
+      const packet=await client.snapshot();if(!current())return;snapshot=decodeCompanionSnapshot(packet.bytes,identity);
       if(area==='client'&&page==='diagnostics')diagnostics.snapshot(snapshot,true);
       syncResetConfirmation();
+      render(); // Validated musical feedback does not wait for optional settings reads.
       if(!hostActive||document.hidden||area==='update'||updater?.usbBusy)return;
       if(telemetryLive&&area==='client'&&page==='diagnostics'&&!telemetryReading&&Date.now()-telemetryLastRead>=1000){
         telemetryReading=true;telemetryLastRead=Date.now();
@@ -536,19 +624,93 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
         const slice=ids.slice(readIndex,readIndex+5);readIndex=ids.length?(readIndex+5)%ids.length:0;
         await refreshRecords([selected,...slice]);lastValues=Date.now();
       }
+      if(!current())return;
+      await cockpitContext.refresh(snapshot,{eligible:client.compatible&&cockpitVisible(),isCurrent:()=>current()&&cockpitVisible()});
+      if(!current())return;
+      if(cockpitContext.deferred){render();return;}
       // The base lease is already released before this optional cached read.
       // Hidden pages and unchanged revisions add no Harmony transfer traffic.
-      if(area==='client'&&page==='harmony'&&client.harmonySupported&&
+      if(wantsHarmonySnapshot()&&client.harmonySupported&&
         (harmonyNeedsRefresh||harmonySnapshot?.revision!==snapshot.harmonyRevision)){
-        const identity=client.identity;
         const packet=await client.harmonySnapshot();
-        if(disposed||!client.connected||['uid','build','schema'].some(key=>identity[key]!==client.identity?.[key]))return;
+        if(!current()||!wantsHarmonySnapshot())return;
         harmonySnapshot=decodeHarmonySnapshot(packet.bytes,identity);harmonyNeedsRefresh=false;
       }
       if(area==='client'&&page==='harmony')harmony.update(harmonySnapshot,{connected:client.connected,supported:client.harmonySupported,writable:client.compatible,controlsReady:harmonyControlsReady()});
+      if(labelsWanted())await refreshPadLabels(snapshot);
+      if(!current())return;
       lastRevision=signature;render();
-    }catch(error){if(!/^(?:COMPANION\/1 )?ERR (?:busy|rate|snapshot-active)/.test(error.message))tell(error.message);}
+    }catch(error){if(current()&&!/^(?:COMPANION\/1 )?ERR (?:busy|rate|snapshot-active)/.test(error.message))tell(error.message);}
     finally{polling=false;}
+  }
+  function cockpitVisible(){return Boolean(client.connected&&snapshot&&hostActive&&!document.hidden&&area==='client'&&page==='board'&&!updater?.usbBusy);}
+  function wantsHarmonySnapshot(){return Boolean(hostActive&&!document.hidden&&area==='client'&&(page==='harmony'||page==='board'&&snapshot?.engine===6)&&!updater?.usbBusy);}
+  function syncCockpitActivity(){
+    if(labelMapPending&&!labelsWanted())void cancelPadLabels().catch(error=>{if(client.connected)tell(error.message);});
+    const active=cockpitVisible();if(active===cockpitActivity)return;cockpitActivity=active;
+    cockpitMount.classList.toggle('cockpit-motion-paused',!active);cockpit.setActive?.(active);
+  }
+  function labelsWanted(){return labelsEnabled&&Boolean(client.connected&&client.padMapSupported&&hostActive&&!document.hidden&&area==='client'&&page==='board'&&!updater?.usbBusy);}
+  function renderPadLabels(){
+    instrument.classList.toggle('show-pad-labels',labelsEnabled);labelsButton.classList.toggle('is-selected',labelsEnabled);
+    labelsButton.setAttribute('aria-pressed',String(labelsEnabled));labelsButton.setAttribute('aria-busy',String(labelMapReading||labelMapPending));
+    for(const {node,name,baseLabel} of padLabels){
+      const record=labelsEnabled?labelMap?.pads[Number(node.dataset.pad)]:null,label=record?.label||'';
+      if(name.textContent!==label)name.textContent=label;
+      const description=label?`${baseLabel}: ${label}`:baseLabel;
+      if(node.getAttribute('aria-label')!==description)node.setAttribute('aria-label',description);
+    }
+  }
+  function toggleLabels(){
+    if(!client.connected)return;
+    if(!client.padMapSupported){tell('Labels require newer firmware.');return;}
+    labelsEnabled=!labelsEnabled;
+    if(labelsEnabled)labelRetryAt=0;
+    if(!labelsEnabled)void cancelPadLabels().catch(error=>{if(client.connected)tell(error.message);});
+    renderPadLabels();if(labelsEnabled)void poll();
+  }
+  async function cancelPadLabels(){
+    labelMapEpoch++;const pending=labelMapPending;labelMapPending=false;
+    labelJobStarted=labelJobPolls=0;
+    if(pending&&client.connected)await client.cancelPadMap?.();
+    renderPadLabels();
+  }
+  async function refreshPadLabels(live){
+    if(!live||!labelsWanted()||labelMapReading)return;
+    if(!labelMapPending&&Date.now()<labelRetryAt)return;
+    const stable=[live.layoutRevision,live.stateRevision,live.harmonyRevision,live.engine,live.selectedTrack,live.sequenceOpen].join(':');
+    const changed=stable!==labelStableKey;
+    if(!labelMapPending&&labelMap&&!changed&&(live.instrumentRevision===labelInstrumentRevision||Date.now()<labelCheckAt))return;
+    const epoch=connectionEpoch,token=labelMapEpoch,identity={...client.identity};
+    labelMapReading=true;renderPadLabels();
+    try{
+      const packet=await client.padMapSnapshot(labelMap?.revision??null);
+      if(disposed||!client.connected||epoch!==connectionEpoch)return;
+      if(token!==labelMapEpoch||!labelsWanted()){
+        if(packet.pending)await client.cancelPadMap?.();return;
+      }
+      if(packet.pending){
+        if(labelMapPending)labelJobPolls++;else{labelJobStarted=Date.now();labelJobPolls=0;}
+        labelMapPending=true;labelMap=null;
+        if(labelJobPolls>=2||Date.now()-labelJobStarted>=300){
+          await cancelPadLabels();labelRetryAt=Date.now()+1000;
+        }
+        renderPadLabels();return;
+      }
+      labelMapPending=false;labelJobStarted=labelJobPolls=labelRetryAt=0;
+      if(!packet.unchanged)labelMap=decodePadMapSnapshot(packet.bytes,identity);
+      if(!labelMap)throw new Error('The device did not return pad labels.');
+      labelStableKey=stable;labelInstrumentRevision=live.instrumentRevision;labelCheckAt=Date.now()+1000;
+    }catch(error){labelMapPending=false;throw error;}
+    finally{labelMapReading=false;renderPadLabels();}
+  }
+  function contextualSnapshot(live){
+    const cached=cockpitContext.current;
+    const harmony=live.engine===6&&harmonySnapshot?.revision===live.harmonyRevision?harmonySnapshot:null;
+    const revision=`${cached?.revision??0}:${harmony?.revision??'-'}:${live.harmonyRevision}`;
+    if(live.context?.revision===revision)return live;
+    return {...live,context:{revision,
+      expression:cached?.expression??null,pending:cached?.pending??true,harmony}};
   }
   function harmonyControlsReady(){
     return Boolean(snapshot&&snapshot.level===0&&!snapshot.resetOpen&&!snapshot.editing&&!snapshot.info&&!snapshot.about&&!snapshot.design&&
@@ -574,8 +736,10 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     finally{resetBusy=false;syncResetConfirmation();}
   }
   function render(){
+    syncCockpitActivity();
     if(!client.connected){cockpit.update(null,{connected:false});return;}
-    const live=snapshot;if(!live||!hostActive||document.hidden||area!=='client'||page!=='board')return;
+    if(!cockpitVisible())return;
+    const live=contextualSnapshot(snapshot);snapshot=live;
     // Musical feedback remains immediate. Only an otherwise unchanged HUD's
     // diagnostic OLED-age counter is coalesced to one update per second.
     if(!sameCockpit(renderedCockpit,live)||Date.now()-lastCockpitAt>=1000){
@@ -675,10 +839,11 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   function setHostActive(active){
     const next=Boolean(active);if(next===hostActive||disposed)return;
     hostActive=next;
+    syncCockpitActivity();
     updater?.setHostActive?.(hostActive);
     if(!hostActive)cancelPolling();else{render();if(pollConnectionActive)schedulePolling(0);}
   }
-  const visibility=()=>{if(document.hidden)cancelPolling();else if(hostActive&&pollConnectionActive){render();schedulePolling(0);}};
+  const visibility=()=>{syncCockpitActivity();if(document.hidden)cancelPolling();else if(hostActive&&pollConnectionActive){render();schedulePolling(0);}};
   document.addEventListener('visibilitychange',visibility);
   const unloadUpdate=event=>{
     if(!(browserDirect||runtime?.kind==='browser-direct')||!updater?.usbBusy&&!(area==='update'&&client.busy))return;

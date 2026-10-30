@@ -3,6 +3,9 @@
 import { STUDIO_MENU } from './studio-menu.js';
 import { MENU_SCHEMA_SHA256 } from './generated/menu-schema.js';
 
+const PERFORMANCE_SIDE_ROWS = new Set(['sensitivity.velocityMode',
+  ...['velocity','pressureMode','profileEnabled','mpeOutput','pressureBend','bendRange','bendSetup'].map(id=>`performance.${id}`)]);
+
 export class StudioModel {
   constructor({ engine, groups = [] } = {}) {
     if (!engine?.state) throw new Error('The shared C state engine is required.');
@@ -30,6 +33,7 @@ export class StudioModel {
       value: this.decode(this.rows[event.row], this.rows[event.row]?.type === 'text' ? event.text : event.value) }));
   }
   decode(row, value) {
+    if (value === -1 && PERFORMANCE_SIDE_ROWS.has(row?.id)) return -1;
     if (row?.type === 'toggle') return Boolean(value);
     if (row?.type === 'select' && !row.dynamic) return row.options[value]?.value;
     return value;
@@ -89,6 +93,7 @@ export class StudioModel {
     return group.rows.filter(row => (includeFuture || row.status === 'live' || group.id === 'engines' && row.type === 'info') && this.shared.visible(this.indices.get(row.id)));
   }
   format(row, value = this.get(row.id)) {
+    if (value === -1 && PERFORMANCE_SIDE_ROWS.has(row.id)) return 'Mixed';
     if (row.type === 'info') return String(typeof value === 'string' ? value : row.default ?? '');
     if (row.type === 'toggle') return value ? 'ON' : 'OFF';
     if (row.id === 'sensitivity.target') return this.shared.format(this.indices.get(row.id),Boolean(this.edit?.id===row.id));
@@ -127,14 +132,17 @@ export class StudioModel {
   }
   exportDraft() {
     const padScopes = Array.from({length:98},()=>({})); // 0..95 logical pads, 96 Left, 97 Right.
-    const instances = { velocitySides:{both:{},left:{},right:{}}, pads: padScopes.slice(0,96), padClusters:{left:padScopes[96],right:padScopes[97]}, shortcuts: Array.from({length:12},()=>({})), views: Array.from({ length: 9 }, () => ({})), arps: Array.from({ length: 2 }, () => ({})), strummers: Array.from({ length: 2 }, () => ({})), tracks: Array.from({ length: 21 }, () => ({})),
+    const instances = { performanceSides:{both:{},left:{},right:{}}, velocitySides:{both:{},left:{},right:{}}, pads: padScopes.slice(0,96), padClusters:{left:padScopes[96],right:padScopes[97]}, shortcuts: Array.from({length:12},()=>({})), views: Array.from({ length: 9 }, () => ({})), arps: Array.from({ length: 2 }, () => ({})), strummers: Array.from({ length: 2 }, () => ({})), tracks: Array.from({ length: 21 }, () => ({})),
       routes: Object.fromEntries(['whole-board', 'left', 'right', 'left-1', 'left-2', 'left-3', 'right-1', 'right-2', 'right-3'].map(id => [id, {}])) };
     const routeIds = Object.keys(instances.routes);
     for (const [index, row] of this.rows.entries()) {
       const count = this.shared.instanceCount(index);
       if (count <= 1) continue;
-      const family = row.id === 'sensitivity.velocityMode' ? Object.values(instances.velocitySides) : count === 98 ? padScopes : row.id === 'engines.assignment' ? instances.shortcuts : row.id.startsWith('views.') ? instances.views : row.id.startsWith('arps.') ? instances.arps : row.id.startsWith('chords.') ? instances.strummers : row.id.startsWith('sequencer.') ? instances.tracks : null;
+      const family = PERFORMANCE_SIDE_ROWS.has(row.id) ? Object.values(instances.performanceSides) : count === 98 ? padScopes : row.id === 'engines.assignment' ? instances.shortcuts : row.id.startsWith('views.') ? instances.views : row.id.startsWith('arps.') ? instances.arps : row.id.startsWith('chords.') ? instances.strummers : row.id.startsWith('sequencer.') ? instances.tracks : null;
       for (let i = 0; i < count; i++) (family ? family[i] : instances.routes[routeIds[i]])[row.id] = this.decode(row, this.shared.instance(index, i));
+      // Retain the old velocity-only draft projection for existing consumers.
+      if (row.id === 'sensitivity.velocityMode') for (const [scope, values] of Object.entries(instances.performanceSides))
+        instances.velocitySides[scope][row.id] = values[row.id];
     }
     return { format: 'thy666.ui-design-draft', version: 2, menuVersion: STUDIO_MENU.version, schema: this.shared.schemaHash(),
       scope: 'Shared C configuration preview; not a device profile, song, backup or firmware package.',

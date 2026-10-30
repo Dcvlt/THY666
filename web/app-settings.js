@@ -1,3 +1,4 @@
+import { createUIIcon, createUIIconCorners } from './ui-system.js';
 /* Browser preferences only. No instrument or connection is accepted here. */
 export const APP_THEMES=Object.freeze([
   {id:'red',label:'Red'},
@@ -42,24 +43,26 @@ export function initializeAppSettings({mount=document.body,storage,onOpen=()=>{}
     onPollIntervalChange(value);return true;
   }
   apply(theme,false);applyAppearance(appearance,false);
-  const toggle=make('button','app-settings-toggle','⚙');toggle.type='button';toggle.setAttribute('aria-label','App settings');toggle.setAttribute('title','App settings');toggle.setAttribute('aria-haspopup','dialog');
+  const toggle=make('button','app-settings-toggle hud-action hud-icon-button');toggle.type='button';toggle.setAttribute('aria-label','App settings');toggle.setAttribute('title','App settings');toggle.setAttribute('aria-haspopup','dialog');toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls','app-settings-dialog');
+  toggle.append(createUIIcon('settings',{document:doc}),createUIIconCorners({document:doc}));
   mount.append(toggle);
-  function close(){if(!overlay)return;accentPicker?.close(false);accentPicker=null;overlay.remove();overlay=null;returnFocus?.focus?.();returnFocus=null;}
+  function close(){if(!overlay)return;toggle.setAttribute('aria-expanded','false');accentPicker?.close(false);accentPicker=null;overlay.remove();overlay=null;returnFocus?.focus?.();returnFocus=null;}
   function makeAccentPicker(){
-    const root=make('div','app-accent-picker'),trigger=make('button','app-accent-trigger'),list=make('div','app-accent-options');
+    const root=make('div','app-accent-picker'),trigger=make('button','app-accent-trigger hud-field'),list=make('div','app-accent-options');
     trigger.type='button';trigger.dataset.appSetting='accent';trigger.setAttribute('aria-label','Accent color');trigger.setAttribute('aria-haspopup','listbox');
     trigger.setAttribute('aria-expanded','false');trigger.setAttribute('aria-controls','app-accent-options');trigger.setAttribute('aria-describedby','app-accent-current');
     list.id='app-accent-options';list.hidden=true;list.setAttribute('role','listbox');list.setAttribute('aria-label','Accent color');
     const swatch=make('span','theme-swatch'),selected=make('span','app-accent-label');swatch.setAttribute('aria-hidden','true');selected.id='app-accent-current';trigger.append(swatch,selected);
     let active=APP_THEMES.findIndex(item=>item.id===theme);
     const options=APP_THEMES.map(item=>{
-      const option=make('button','app-accent-option');option.type='button';option.tabIndex=-1;option.dataset.accent=item.id;option.setAttribute('role','option');
+      const option=make('button','app-accent-option hud-choice hud-choice--nav');option.type='button';option.tabIndex=-1;option.dataset.accent=item.id;option.setAttribute('role','option');
       const color=make('span','theme-swatch');color.dataset.accent=item.id;color.setAttribute('aria-hidden','true');
-      option.append(color,make('span','app-accent-label',item.label));option.addEventListener('click',()=>choose(item.id));list.append(option);return option;
+      const checked=make('span','app-accent-check');checked.append(createUIIcon('check',{document:doc}));
+      option.append(color,make('span','app-accent-label',item.label),checked);option.addEventListener('click',()=>choose(item.id));list.append(option);return option;
     });
     function update(){
       trigger.value=theme;swatch.dataset.accent=theme;selected.textContent=APP_THEMES.find(item=>item.id===theme).label;
-      for(const option of options)option.setAttribute('aria-selected',String(option.dataset.accent===theme));
+      for(const option of options){const selected=option.dataset.accent===theme;option.setAttribute('aria-selected',String(selected));option.querySelector('.app-accent-check').hidden=!selected;}
     }
     function focus(index){active=Math.max(0,Math.min(options.length-1,index));options[active].focus();options[active].scrollIntoView?.({block:'nearest'});}
     function closeList(restoreFocus=true){list.hidden=true;trigger.setAttribute('aria-expanded','false');if(restoreFocus)trigger.focus();}
@@ -82,20 +85,20 @@ export function initializeAppSettings({mount=document.body,storage,onOpen=()=>{}
   }
   function open(){
     if(disposed||overlay)return;onOpen();returnFocus=doc.activeElement||toggle;
-    overlay=make('div','app-settings-overlay');const card=make('section','app-settings-dialog');
+    overlay=make('div','app-settings-overlay');toggle.setAttribute('aria-expanded','true');const card=make('section','app-settings-dialog hud-frame hud-frame--task hud-enter');card.id='app-settings-dialog';
     card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');card.setAttribute('aria-labelledby','app-settings-title');
     const tag=make('p','eyebrow','LOCAL / APPLICATION'),title=make('h2','','App settings');title.id='app-settings-title';
-    const copy=make('p','','Appearance, accent color and live refresh are saved locally on this computer. They apply throughout the Client and Documentation; musical pad colors and the instrument display stay unchanged.');
-    const appearanceLabel=make('label','app-appearance-field','Appearance'),appearanceSelect=make('select','');appearanceSelect.dataset.appSetting='appearance';appearanceSelect.setAttribute('aria-label','Appearance');
+    const copy=make('p','','Appearance, accent color and live refresh are saved locally on this computer. They apply throughout the Client and Documentation; musical pad colors and the OLED preview stay unchanged.');
+    const appearanceLabel=make('label','app-appearance-field','Appearance'),appearanceSelect=make('select','hud-field');appearanceSelect.dataset.appSetting='appearance';appearanceSelect.setAttribute('aria-label','Appearance');
     for(const item of APP_APPEARANCES){const option=make('option','',item.label);option.value=item.id;appearanceSelect.append(option);}appearanceSelect.value=appearance;
     appearanceSelect.addEventListener('change',()=>{if(!applyAppearance(appearanceSelect.value))appearanceSelect.value=appearance;});appearanceLabel.append(appearanceSelect);
     const label=make('div','app-theme-field');label.append(make('span','app-field-label','Accent color'));accentPicker=makeAccentPicker();label.append(accentPicker.root);
-    const refreshLabel=make('label','app-theme-field app-poll-field','Live refresh'),refresh=make('select','');
+    const refreshLabel=make('label','app-theme-field app-poll-field','Live refresh'),refresh=make('select','hud-field');
     refresh.dataset.appSetting='poll-interval';refresh.setAttribute('aria-label','Live refresh');
     for(const item of APP_POLL_INTERVALS){const option=make('option','',item.label);option.value=String(item.ms);refresh.append(option);}refresh.value=String(pollIntervalMs);
     refresh.addEventListener('change',()=>{if(!applyPollInterval(Number(refresh.value)))refresh.value=String(pollIntervalMs);});refreshLabel.append(refresh);
     const refreshCopy=make('p','app-cockpit-note','Actual refresh follows transfer speed; busy connections and hidden tabs slow down automatically.');
-    const done=make('button','button','Done');done.type='button';done.addEventListener('click',close);
+    const done=make('button','button hud-action hud-action--primary','Done');done.type='button';done.addEventListener('click',close);
     card.append(tag,title,copy,appearanceLabel,label,refreshLabel,refreshCopy,done);overlay.append(card);mount.append(overlay);appearanceSelect.focus();
   }
   const key=event=>{

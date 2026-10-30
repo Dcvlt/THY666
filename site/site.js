@@ -1,4 +1,7 @@
 import { HELP_FIGURES, HELP_TOPICS } from './guide/help-topics.js';
+import { initializeUIComponents } from './ui-system.js';
+
+initializeUIComponents();
 
 // Read-only, synthetic documentation figures. This site has no device adapter.
 export const siteFigures = {

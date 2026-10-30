@@ -51,7 +51,7 @@ static int frozen_snapshot_and_runtime_are_actual(void)
     init();
     CHECK(strstr(command(1,0,"companion caps"),"COMPANION/1 CAPS build=0123456789abcdef uid=00112233445566778899aabb schema="));
     CHECK(strstr(response.text," bytes=1680 chunk=128 rows="));
-    CHECK(strstr(response.text," role=instrument backup=1 song=1 companion=1 harmony=1 harmony_bytes=800 reset=1\r\n"));
+    CHECK(strstr(response.text," role=instrument backup=1 song=1 companion=1 harmony=1 harmony_bytes=800 reset=1 pad_map=1 pad_map_bytes=1672\r\n"));
     const int16_t notes[]={60,64,67};
     CHECK(thy_engine_press_shaped(&engine,0,notes,3,0,0,5,80,NULL)==THY_OK);
     instrument.control_masks[1]=1u<<2u;instrument.sensors[0].pressure=93;
@@ -352,6 +352,138 @@ static int reset_confirmation_uses_c_scope_and_rejects_stale_remote_navigation(v
     CHECK(thy_state_get(&engine.state,THY_ROW_LIGHTS_ENABLED,&enabled)==THY_STATE_OK && enabled==1);
     CHECK(!core.queue_count && !core.sounding_count && guards());return 1;
 }
+static int complete_pad_map(uint32_t now)
+{
+    CHECK(strstr(command(1,now,"companion pad-map"),"PADMAP pending=1 seq="));
+    for(unsigned n=0u;n<96u;++n)CHECK(thy_companion_service(&companion,&engine,now+n+1u)==(n==95u));
+    CHECK(strstr(command(1,now+97u,"companion pad-map"),"PADMAP seq="));
+    CHECK(companion.captured_bytes==THY_COMPANION_PAD_MAP_BYTES);return 1;
+}
+static int pad_map_cooperative_publication_is_readonly_and_leased(void)
+{
+    init();instrument.performance.melody_layout=THY_LAYOUT_CHROMATIC;
+    static thy_engine before_engine;static thy_instrument before_instrument;static thy_core before_core;
+    before_engine=engine;before_instrument=instrument;before_core=core;
+    CHECK(strstr(command(1,0,"companion pad-map"),"PADMAP pending=1 seq=1"));
+    CHECK(companion.active&&companion.map_cursor==0u&&companion.captured_bytes==0u&&!visual_calls);
+    CHECK(!memcmp(memory.stage,"THYMAP1",8)&&get16(8)==1u&&get16(10)==1672u);
+    CHECK(strstr(command(1,1,"companion snapshot"),"ERR snapshot-active"));
+    CHECK(strstr(command(1,2,"companion get 1 136 16"),"ERR offset"));
+    for(unsigned n=0;n<95u;++n){
+        CHECK(!thy_companion_service(&companion,&engine,3u+n));
+        CHECK(companion.map_cursor==n+1u&&companion.captured_bytes==0u);
+        CHECK(memory.stage[136u+16u*n]==(n<48u?THY_COMPANION_PAD_CHORD:THY_COMPANION_PAD_NOTE));
+        CHECK(memory.stage[136u+16u*(n+1u)]==0u);
+    }
+    CHECK(thy_companion_service(&companion,&engine,100u));
+    CHECK(strstr(command(1,101,"companion pad-map"),"PADMAP seq=1 bytes=1672 crc32="));
+    CHECK(companion.crc==thy_settings_crc32(memory.stage,1672u));
+    CHECK(!strcmp((char *)memory.stage+137u,"C MAJ"));
+    CHECK(!strcmp((char *)memory.stage+136u+48u*16u+1u,"C4"));
+    for(unsigned n=0;n<96u;++n){
+        unsigned ended=0u;
+        for(unsigned k=1u;k<16u;++k){unsigned c=memory.stage[136u+16u*n+k];if(!c)ended=1u;else CHECK(!ended&&c>=32u&&c<127u);}
+        CHECK(ended);
+    }
+    for(unsigned n=1672u;n<1680u;++n)CHECK(memory.stage[n]==0xa5);
+    CHECK(!memcmp(&engine,&before_engine,sizeof engine));CHECK(!memcmp(&instrument,&before_instrument,sizeof instrument));CHECK(!memcmp(&core,&before_core,sizeof core));
+    CHECK(strstr(command(1,102,"companion get 1 136 16"),"DATA seq=1 offset=136 hex="));
+    CHECK(strstr(command(1,103,"companion release 1"),"RELEASED"));
+    uint32_t key=get32(20);char request[80];(void)snprintf(request,sizeof request,"companion pad-map %lu",(unsigned long)key);
+    CHECK(strstr(command(1,104,request),"PADMAP unchanged=1 revision="));CHECK(!companion.active&&companion.sequence==1u);
+    CHECK(guards());return 1;
+}
+static int pad_map_cancellation_changes_and_physical_roles(void)
+{
+    init();instrument.performance.melody_layout=THY_LAYOUT_PIANO;
+    CHECK(complete_pad_map(0u));
+    CHECK(memory.stage[136u+48u*16u]==THY_COMPANION_PAD_HOLE);
+    CHECK(memory.stage[136u+52u*16u]==THY_COMPANION_PAD_NOTE&&!strcmp((char *)memory.stage+136u+52u*16u+1u,"C#4"));
+    CHECK(strstr(command(1,100u,"companion release 1"),"RELEASED"));
+    CHECK(thy_instrument_set_cluster_swap(&instrument,1u)==THY_OK);CHECK(complete_pad_map(101u));
+    CHECK(memory.stage[136u]==THY_COMPANION_PAD_HOLE);
+    CHECK(memory.stage[136u+48u*16u]==THY_COMPANION_PAD_CHORD);
+    CHECK(strstr(command(1,200u,"companion release 2"),"RELEASED"));
+    CHECK(strstr(command(1,201u,"companion pad-map"),"pending=1 seq=3"));
+    CHECK(!thy_companion_service(&companion,&engine,202u));
+    ++instrument.layout_revision;CHECK(!thy_companion_service(&companion,&engine,203u));CHECK(!companion.active&&!companion.map_state);
+    CHECK(strstr(command(1,204u,"companion pad-map"),"pending=1 seq=4"));
+    CHECK(strstr(command(0,205u,"companion release 4"),"RELEASED"));CHECK(!thy_companion_service(&companion,&engine,206u));
+    CHECK(strstr(command(1,207u,"companion pad-map"),"pending=1 seq=5"));CHECK(thy_companion_expire(&companion,2207u));
+    CHECK(!companion.active&&!companion.map_state);
+    companion.capacity=1671u;CHECK(strstr(command(1,2208u,"companion pad-map"),"ERR snapshot-unavailable"));
+    CHECK(guards());return 1;
+}
+static int pad_map_sequencer_controls_are_contextual(void)
+{
+    init();instrument.performance.melody_layout=THY_LAYOUT_CHROMATIC;
+    CHECK(thy_engine_sequencer_open(&engine,THY_SEQ_VIEW_TRACKS)==THY_STATE_OK);
+    CHECK(complete_pad_map(0u));for(unsigned p=0;p<96u;++p)CHECK(memory.stage[136u+16u*p]==THY_COMPANION_PAD_HOLE);
+    CHECK(strstr(command(1,100u,"companion release 1"),"RELEASED"));
+    CHECK(thy_engine_sequencer_action(&engine,THY_SEQ_UI_CREATE_TRACK,0)==THY_OK);
+    CHECK(thy_engine_sequencer_open(&engine,THY_SEQ_VIEW_STEPS)==THY_STATE_OK);
+    CHECK(complete_pad_map(101u));
+    CHECK(memory.stage[136u]==THY_COMPANION_PAD_STEP&&!strcmp((char *)memory.stage+137u,"Step 1"));
+    CHECK(!strcmp((char *)memory.stage+136u+1u*16u+1u,"Step 13"));
+    CHECK(memory.stage[136u+48u*16u]==THY_COMPANION_PAD_NOTE);
+    CHECK(strstr(command(1,201u,"companion release 2"),"RELEASED"));
+    CHECK(thy_sequencer_ui_configure(&engine.sequencer_ui,THY_SEQ_UI_INPUT,THY_SEQ_INPUT_CHORDS)==THY_OK);
+    CHECK(complete_pad_map(202u));CHECK(memory.stage[136u+48u*16u]==THY_COMPANION_PAD_CHORD);
+    CHECK(strstr(command(1,302u,"companion release 3"),"RELEASED"));
+    engine.sequencer_ui.pads[48].held=1u;engine.sequencer_ui.pads[48].role=THY_SEQ_PAD_INPUT_CHORDS;
+    CHECK(thy_sequencer_ui_configure(&engine.sequencer_ui,THY_SEQ_UI_INPUT,THY_SEQ_INPUT_NOTES)==THY_OK);
+    CHECK(complete_pad_map(303u));CHECK(memory.stage[136u+48u*16u]==THY_COMPANION_PAD_NOTE);
+    CHECK(engine.sequencer_ui.pads[48].held&&engine.sequencer_ui.pads[48].role==THY_SEQ_PAD_INPUT_CHORDS);
+    uint32_t key=get32(20);CHECK(strstr(command(1,403u,"companion release 4"),"RELEASED"));
+    engine.sequencer_ui.pads[48].held=0u;char query[80];(void)snprintf(query,sizeof query,"companion pad-map %lu",(unsigned long)key);
+    CHECK(strstr(command(1,404u,query),"PADMAP unchanged=1"));
+    thy_sequencer_ui_close(&engine.sequencer_ui);instrument.context_controls=1u;instrument.context_location=0u;instrument.context_mask=63u;++instrument.revision;
+    CHECK(complete_pad_map(405u));CHECK(memory.stage[136u+32u*16u]==THY_COMPANION_PAD_CONTROL);
+    CHECK(!strcmp((char *)memory.stage+136u+32u*16u+1u,"Chord oct -"));CHECK(guards());return 1;
+}
+static int pad_map_key_ignores_acquisition_pressure_and_gate_activity(void)
+{
+    init();instrument.performance.melody_layout=THY_LAYOUT_CHROMATIC;
+    static thy_mpe mpe;thy_engine_bind_expression(&engine,&mpe);
+    thy_mpe_config config=engine.expression_config;config.enabled=1u;
+    CHECK(thy_engine_expression_configure(&engine,&config)==THY_OK);
+    unsigned electrical=0u;while(electrical<96u&&instrument.mapping[electrical]!=48u)++electrical;CHECK(electrical<96u);
+    for(unsigned n=0;n<THY_INSTRUMENT_WARMUP_SAMPLES+2u;++n)CHECK(thy_instrument_sample(&instrument,(uint8_t)electrical,0u,n)==THY_OK);
+    CHECK(complete_pad_map(50u));uint32_t key=get32(20);
+    CHECK(strstr(command(1,150u,"companion release 1"),"RELEASED"));
+    char query[80];(void)snprintf(query,sizeof query,"companion pad-map %lu",(unsigned long)key);
+    thy_midi_event event;while(thy_core_poll(&core,&event)){}
+    for(unsigned n=0;n<8u;++n){CHECK(thy_instrument_sample(&instrument,(uint8_t)electrical,4095u,200u+n*5u)==THY_OK);while(thy_core_poll(&core,&event)){} }
+    CHECK(instrument.presses==1u&&instrument.sensors[electrical].held);
+    CHECK(strstr(command(1,250u,query),"PADMAP unchanged=1"));
+    for(unsigned n=0;n<20u;++n){
+        CHECK(thy_instrument_sample(&instrument,(uint8_t)electrical,(uint16_t)(2500u+n*70u),300u+n*8u)==THY_OK);
+        thy_engine_expression_tick(&engine,300u+n*8u);while(thy_core_poll(&core,&event)){}
+        CHECK(strstr(command(1,301u+n*8u,query),"PADMAP unchanged=1"));
+    }
+    for(unsigned n=0;n<8u;++n){CHECK(thy_instrument_sample(&instrument,(uint8_t)electrical,0u,500u+n*5u)==THY_OK);while(thy_core_poll(&core,&event)){} }
+    CHECK(instrument.releases==1u&&!instrument.sensors[electrical].held);
+    CHECK(strstr(command(1,550u,query),"PADMAP unchanged=1"));
+    instrument.input_enabled=0u;
+    for(unsigned n=0;n<8u;++n)CHECK(thy_instrument_sample(&instrument,(uint8_t)electrical,4095u,600u+n*5u)==THY_OK);
+    CHECK(instrument.presses==2u&&instrument.sensors[electrical].blocked);
+    for(unsigned n=0;n<8u;++n)CHECK(thy_instrument_sample(&instrument,(uint8_t)electrical,0u,700u+n*5u)==THY_OK);
+    CHECK(instrument.releases==2u);CHECK(strstr(command(1,750u,query),"PADMAP unchanged=1"));
+    CHECK(!companion.active&&companion.sequence==1u);
+    ++instrument.layout_revision;CHECK(strstr(command(1,800u,query),"PADMAP pending=1 seq=2"));
+    companion.active=0u;CHECK(!thy_companion_service(&companion,&engine,801u)&&!companion.map_state);
+    init();instrument.performance.melody_layout=THY_LAYOUT_CHROMATIC;
+    CHECK(complete_pad_map(0u));key=get32(20);CHECK(strstr(command(1,100u,"companion release 1"),"RELEASED"));
+    (void)snprintf(query,sizeof query,"companion pad-map %lu",(unsigned long)key);
+    for(unsigned n=0u;n<16u;++n){
+        thy_generated_handle handle;
+        CHECK(thy_core_generated_acquire(&core,1u,1u,(uint8_t)(60u+n%7u),0u,THY_ROUTE_DIN,96u,&handle)==THY_OK);
+        CHECK(strstr(command(1,200u+n*2u,query),"PADMAP unchanged=1"));
+        CHECK(thy_core_generated_release(&core,handle)==THY_OK);while(thy_core_poll(&core,&event)){}
+        CHECK(strstr(command(1,201u+n*2u,query),"PADMAP unchanged=1"));
+    }
+    CHECK(guards());return 1;
+}
 int main(void)
 {
     if(!frozen_snapshot_and_runtime_are_actual()||!exclusive_staging_expiry_and_readonly_pad_selection()||
@@ -360,6 +492,9 @@ int main(void)
        !optional_harmony_snapshot_reuses_staging_and_preserves_visual_cadence()||
        !harmony_scale_rows_keys_and_actions_are_bounded_and_schema_scoped()||
        !harmony_controls_are_scoped_and_do_not_release_physical_holds()||
-       !reset_confirmation_uses_c_scope_and_rejects_stale_remote_navigation())return 1;
-    printf("Companion:9 scenarios passed (%u assertions); service%zu bytes, caller-owned staging%u bytes.\n",assertions,sizeof(thy_companion),THY_COMPANION_SNAPSHOT_BYTES);return 0;
+       !reset_confirmation_uses_c_scope_and_rejects_stale_remote_navigation()||
+       !pad_map_cooperative_publication_is_readonly_and_leased()||
+       !pad_map_cancellation_changes_and_physical_roles()||!pad_map_sequencer_controls_are_contextual()||
+       !pad_map_key_ignores_acquisition_pressure_and_gate_activity())return 1;
+    printf("Companion:13 scenarios passed (%u assertions); service%zu bytes, caller-owned staging%u bytes.\n",assertions,sizeof(thy_companion),THY_COMPANION_SNAPSHOT_BYTES);return 0;
 }

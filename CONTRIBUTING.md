@@ -86,6 +86,11 @@ a second manual there. Keep musical examples, expected results and current
 limits beside the relevant diagrams. Publishing and browser installation have
 separate implementation and qualification requirements.
 
+For Client/site interface changes, start with the [design system](docs/design-system.md)
+and `/design-system.html` on the development server. Reuse the shared component,
+state and motion rules; add new variants to the reference instead of creating
+page-specific border or button recipes.
+
 ## Problem reports
 
 Include build identity, board revision if known, relevant settings, the shortest

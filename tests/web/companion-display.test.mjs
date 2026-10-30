@@ -139,3 +139,19 @@ test('render uses only frame bytes, respects panel visibility and replaces stale
   renderCompanionScreen(host,snapshot);assert.match(host.textContent,/C FRAME CONTENT/);
   put(frame,127,63);assert.notEqual(renderCompanionScreen(host,snapshot),model,'A source frame mutated in place is still detected.');
 });
+
+test('appearance changes preserve Web frame content, lifted labels and SVG geometry without rebuilding',()=>{
+  const host=mount(),frame=new Uint8Array(1024);draw(frame,2,12,'FRAME CONTENT');
+  rectangle(frame,8,30,100,7);draw(frame,12,31,'EDIT',{inverse:true});
+  draw(frame,2,45,'C4 D4',{dim:true,scale:2});put(frame,127,63);
+  host.ownerDocument.body={dataset:{appearance:'dark'}};
+  const model=renderCompanionScreen(host,{frame}),root=host.children[0],svg=root.children[0];
+  const geometry=svg.children.map(node=>({...node.attributes,text:node.textContent}));
+  assert.ok(model.texts.some(run=>run.inverse));assert.ok(model.texts.some(run=>run.dim));
+  host.ownerDocument.body.dataset.appearance='light';
+  assert.equal(renderCompanionScreen(host,{frame}),model);
+  assert.equal(host.children[0],root);
+  assert.deepEqual(svg.children.map(node=>({...node.attributes,text:node.textContent})),geometry);
+  assert.ok(svg.children.every(node=>!Object.hasOwn(node.attributes,'fill')&&!Object.hasOwn(node.attributes,'style')),'CSS maps display ink and paper without fixed per-element colors.');
+  assert.deepEqual(reconstructCompanionFrame(model),frame);
+});

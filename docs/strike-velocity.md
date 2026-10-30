@@ -2,16 +2,18 @@
 
 ## Fixed or Strike
 
-Fixed remains available and is the factory velocity mode: a note uses its MIDI
-route's configured velocity. Strike maps the largest recent positive ADC rise
+Fixed remains available and is the factory velocity mode. It uses the MIDI
+route's configured velocity until a Performance edit sets a physical-half
+Default velocity override. Strike maps the largest recent positive ADC rise
 rate to the configured range. Its **32 ms lookback** uses samples already
 acquired before normal attack confirmation; it adds no extra waiting period.
 Millisecond timing quantizes faster publications to one millisecond.
 
 | Option | Meaning |
 | --- | --- |
-| Performance → Velocity for | Both, Left or Right; separate from the calibration target |
+| Performance → Settings for | Both, Left or Right physical halves; separate from MIDI routing and calibration targets |
 | Performance → Velocity mode | Fixed or Strike; Mixed is shown for a scope with differing effective modes |
+| Performance → Default velocity | Fixed attack value, 1–127, for the selected scope |
 | Sensitivity → Edit pads | Independent Left/Right defaults or one pad override for detailed tuning |
 | Strike curve | Linear, Soft or Firm |
 | Soft speed / Hard speed | ADC counts/ms mapped to minimum/maximum velocity; Soft < Hard |
@@ -24,13 +26,17 @@ Continuous Aftertouch and strike velocity are separate mappings.
 
 ## Targeting and editing
 
-For everyday playing, use **Settings → Performance**. Select **Both**, **Left**
-or **Right**, then apply **Fixed** or **Strike**. Mode changes preserve each
-pad's curves, speed bounds, velocity range and calibration. Both is preflighted
+For everyday playing, use **Settings → Performance → Settings for**. Select
+**Both**, **Left** or **Right**, then apply **Fixed** or **Strike**. The same scope
+also targets Default velocity, Aftertouch output/stage, bend and MPE pressure
+output. MPE enable and context-pad controls remain global. Mode changes preserve
+each pad's curves, speed bounds, velocity range and calibration. Both is preflighted
 as one operation: if an affected pad is held, neither half changes. An open
 draft keeps its original target, even if the selector changes through another
 interface. The selector is a temporary editing target; the actual modes are
-saved with the existing cluster/per-pad configuration.
+saved with the cluster/per-pad configuration. Fixed velocity overrides are
+saved separately from the route defaults. Swapping the musical clusters does
+not exchange these physical-half settings.
 
 In **Settings → Sensitivity**, choose Left or Right to edit that cluster's
 defaults, or choose/pick an individual pad for an override. Picking is silent.
@@ -71,10 +77,13 @@ controller. Pointer clicks do not measure a device strike, and browser schedulin
 is separate from hardware timing.
 
 Settings store two cluster response/velocity/release defaults, per-pad
-overrides and 96 learned release guards. V1–V8 imports retain exact raw values; both clusters initially
-inherit the legacy global configuration. V1–V6 start velocity in Fixed, while
-V7/V8 velocity choices remain intact. No strike samples, held notes or running
-playback restore. The complete corrected cluster calibration workflow still needs focused device qualification.
+overrides and 96 learned release guards. V1–V8 imports retain exact raw values;
+both clusters initially inherit the legacy global configuration. V18 and earlier default the new
+Performance policies to their existing routes and MPE output to Pressure.
+V1–V6 start velocity in Fixed, while V7/V8 velocity choices remain intact. No
+strike samples, held notes or running playback restore. The complete corrected
+cluster calibration workflow still needs focused device qualification. The expanded Settings for controls are host-tested and await
+physical-device checks.
 
 **System → Storage** reports current record bytes and song events out of 512.
 The 256 KiB rotating journal is not a named collection or external-NOR library.

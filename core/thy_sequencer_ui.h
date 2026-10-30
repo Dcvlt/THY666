@@ -76,6 +76,10 @@ int thy_sequencer_ui_input(const thy_sequencer_ui *ui, uint8_t pad);
 /* Current mapping for unheld pads; held pads project their captured role. */
 int thy_sequencer_ui_pad_role(const thy_sequencer_ui *ui, uint8_t pad,
     uint8_t *track, uint32_t *tick, uint8_t *pitch);
+/* Pure next-press surface projection, including when that pad currently owns
+ * an older gesture. Does not retarget or release the captured held role. */
+int thy_sequencer_ui_preview_pad_role(const thy_sequencer_ui *ui,uint8_t pad,
+    uint8_t *track,uint32_t *tick,uint8_t *pitch);
 /* Assignment suppresses real-time recording for this input attack. The most
  * recently tapped LEFT step remains selected after release. Overlapping RIGHT
  * input lifetimes form one frozen-target undo transaction; a new gesture

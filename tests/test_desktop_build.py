@@ -25,7 +25,8 @@ class DesktopBuildTests(unittest.TestCase):
         self.web = self.root / "web"
         for folder in ("generated/updater", "assets/fonts/face"):
             (self.web / folder).mkdir(parents=True)
-        files = {"index.html": b"<html>synthetic</html>", "app.js": b"// synthetic", "styles.css": b"body{}",
+        files = {"index.html": b"<html>synthetic</html>", "design-system.html": b"<html><head></head><body>synthetic components</body></html>",
+                 "desktop-reference.js": b"// synthetic native reference adapter", "app.js": b"// synthetic", "styles.css": b"body{}",
                  "generated/core.wasm": b"synthetic wasm", "generated/chords.runtime.json": b"{}",
                  "generated/menu-schema.js": b"// schema", "generated/oled-profile.json": b"{}",
                  "assets/brand.svg": b"<svg/>", "assets/fonts/face/font.ttf": b"synthetic font",
@@ -45,12 +46,41 @@ class DesktopBuildTests(unittest.TestCase):
     def test_staging_is_curated_and_does_not_include_helper_zip_old_previews_or_dotenv(self):
         files = stage.web_assets()
         self.assertIn("generated/core.wasm", files)
+        self.assertIn("design-system.html", files)
         self.assertIn("assets/fonts/face/OFL.txt", files)
         self.assertNotIn("generated/updater/private-download.zip", files)
         self.assertNotIn("generated/old-preview.html", files)
         self.assertNotIn("private.log", files)
         self.assertNotIn("generated/chords.runtime.json", files)
         self.assertNotIn(".env", files)
+
+    def test_shared_interface_assets_are_staged_without_a_second_asset_copy(self):
+        shared = {"ui-system.js": b"export const UI_ICON_NAMES = [];\n",
+                  "ui-system.css": b".ui-icon { color: currentColor; }\n"}
+        for name, data in shared.items():
+            (self.web / name).write_bytes(data)
+        files = stage.web_assets()
+        for name, data in shared.items():
+            self.assertEqual(files[name], data)
+
+    def test_native_reference_bootstrap_is_added_only_to_native_staging(self):
+        original = (self.web / "design-system.html").read_bytes()
+        bootstrap = b'<script type="module" src="./desktop-reference.js"></script>'
+        self.assertEqual(stage.web_assets()["design-system.html"], original)
+        self.assertNotIn(bootstrap, original)
+        result = stage.prepare(with_releases=False)
+        staged = (self.root / "build/desktop-web/design-system.html").read_bytes()
+        self.assertEqual(staged.count(bootstrap), 1)
+        self.assertIn(bootstrap + b"\n</head>", staged)
+        self.assertEqual(stage.web_assets()["design-system.html"], original)
+        self.assertEqual((self.web / "design-system.html").read_bytes(), original)
+        reference_row = next(row for row in result["web"] if row["file"] == "design-system.html")
+        self.assertEqual(reference_row["sha256"], stage.digest(staged))
+
+    def test_native_reference_requires_its_head_and_adapter(self):
+        (self.web / "design-system.html").write_bytes(b"<html>no document head</html>")
+        with self.assertRaisesRegex(ValueError, "native component reference"):
+            stage.prepare(with_releases=False)
 
     def test_macos_development_bundle_contains_exact_executable_and_scoped_resources(self):
         import plistlib

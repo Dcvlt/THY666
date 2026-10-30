@@ -3,7 +3,7 @@
 #define THY_SETTINGS_H
 #include "thy_engine.h"
 
-#define THY_SETTINGS_VERSION 18u
+#define THY_SETTINGS_VERSION 19u
 /* The v1 codec had no embedded version. Its exact length remains an import
  * contract; v2 has an in-band marker after the three catalog bytes, so a torn
  * v2 export cannot be mistaken for a complete legacy export. */
@@ -31,9 +31,11 @@
 #define THY_SETTINGS_V16_PARAMETER_BYTES (THY_SETTINGS_V15_PARAMETER_BYTES + 12u)
 #define THY_SETTINGS_V17_PARAMETER_BYTES (THY_SETTINGS_V16_PARAMETER_BYTES + 3u)
 #define THY_SETTINGS_V18_PARAMETER_BYTES (THY_SETTINGS_V17_PARAMETER_BYTES + 4u)
+/* V19 appends physical-half playing policies and MPE pressure destinations. */
+#define THY_SETTINGS_V19_PARAMETER_BYTES (THY_SETTINGS_V18_PARAMETER_BYTES + 10u)
 /* V6+ embed the independently versioned song codec after their own parameter bytes.
  * Scan remains at legacy 4 KiB boundaries; new records reserve four slots. */
-#define THY_SETTINGS_PAYLOAD_MAX ((THY_SETTINGS_V18_PARAMETER_BYTES + THY_SEQ_SONG_MAX + 3u) & ~3u)
+#define THY_SETTINGS_PAYLOAD_MAX ((THY_SETTINGS_V19_PARAMETER_BYTES + THY_SEQ_SONG_MAX + 3u) & ~3u)
 #define THY_SETTINGS_WRITE_SLOT_SPAN 4u
 #define THY_SETTINGS_HEADER_BYTES 32u
 #define THY_SETTINGS_RECORD_BYTES (THY_SETTINGS_HEADER_BYTES + THY_SETTINGS_PAYLOAD_MAX)

@@ -24,7 +24,7 @@ async function fixture(version) {
   // synthetic historical record without those bytes; let C validate meaning.
   const songStart=canonical.length-song.length;
   assert.deepEqual(canonical.subarray(songStart),song);
-  const removed=version===17?4:version===16?7:19;
+  const removed=version===18?10:version===17?14:version===16?17:29;
   const legacy=new Uint8Array(canonical.length-removed);
   legacy.set(canonical.subarray(0,songStart-removed));legacy.set(song,songStart-removed);
   legacy[6]=version;
@@ -34,11 +34,11 @@ async function fixture(version) {
     velocity:engine.firmware.velocity(52),response:engine.firmware.response(4)};
 }
 
-for(const version of [13,14,15,16,17])test(`isolated shared C upgrades v${version} to18 with song, custom library and per-pad override`,async()=>{
+for(const version of [13,14,15,16,17,18])test(`isolated shared C upgrades v${version} to19 with song, custom library and per-pad override`,async()=>{
   const before=await fixture(version),original=before.legacy.slice();let instances=0;
   const unrelated=await fresh(),untouched=unrelated.settings.encode();
   const migrate=createBackupPayloadMigrator({createEngine:async()=>{instances++;return fresh();}});
-  const migrated=await migrate(before.legacy,{sourceVersion:version,targetVersion:18});
+  const migrated=await migrate(before.legacy,{sourceVersion:version,targetVersion:19});
   assert.deepEqual(migrated,before.canonical);assert.deepEqual(before.legacy,original);
   assert.deepEqual(unrelated.settings.encode(),untouched);assert.deepEqual(unrelated.drain(),[]);
   const restored=await fresh();assert.equal(restored.settings.apply(migrated),true);
@@ -47,7 +47,7 @@ for(const version of [13,14,15,16,17])test(`isolated shared C upgrades v${versio
   assert.deepEqual(restored.firmware.velocity(52),before.velocity);
   assert.deepEqual(restored.firmware.response(4),before.response);
   assert.deepEqual(restored.drain(),[]);
-  await migrate(before.legacy,{sourceVersion:version,targetVersion:18});
+  await migrate(before.legacy,{sourceVersion:version,targetVersion:19});
   assert.equal(instances,2,'each migration uses a new independent engine');
 });
 
@@ -55,21 +55,21 @@ test('migration rejects unsupported directions, wrong source marker, corrupt sem
   const {legacy}=await fixture(13),migrate=createBackupPayloadMigrator({createEngine:fresh});
   for(const [sourceVersion,targetVersion] of [[12,17],[15,13],[13,14],[16,15],[17,17]])
     await assert.rejects(migrate(legacy,{sourceVersion,targetVersion}),/cannot migrate/);
-  await assert.rejects(migrate(legacy,{sourceVersion:14,targetVersion:18}),/codec rejected/);
+  await assert.rejects(migrate(legacy,{sourceVersion:14,targetVersion:19}),/codec rejected/);
   const invalid=legacy.slice();invalid[0]=255;invalid[1]=255;
-  await assert.rejects(migrate(invalid,{sourceVersion:13,targetVersion:18}),/codec rejected/);
+  await assert.rejects(migrate(invalid,{sourceVersion:13,targetVersion:19}),/codec rejected/);
   const wrong=createBackupPayloadMigrator({createEngine:async()=>({settings:{version:14}})});
-  await assert.rejects(wrong(legacy,{sourceVersion:13,targetVersion:18}),/codec rejected/);
+  await assert.rejects(wrong(legacy,{sourceVersion:13,targetVersion:19}),/codec rejected/);
 });
 
-test('the browser bound includes an actual full512-event V18 export and its historical migration',async()=>{
+test('the browser bound includes an actual full512-event V19 export and its historical migration',async()=>{
   const engine=await fresh();
   for(let start=0;start<512;start+=64)okay(engine.sequencer.add(0,Array.from({length:64},(_,n)=>({tick:(start+n)*120,duration:60,pitch:36+(start+n)%48,value:93}))));
   const canonical=engine.settings.encode(),song=engine.sequencer.exportBytes(),songStart=canonical.length-song.length;
   assert.equal(canonical.length+BACKUP_HEADER_BYTES,BACKUP_MAX_BYTES,'Keep the browser file limit aligned with the actual C codec maximum.');
-  const removed=19;
+  const removed=29;
   const legacy=new Uint8Array(canonical.length-removed);legacy.set(canonical.subarray(0,songStart-removed));legacy.set(song,songStart-removed);legacy[6]=15;
   assert.equal(engine.settings.validate(legacy),true);
-  const normalized=await createBackupPayloadMigrator({createEngine:fresh})(legacy,{sourceVersion:15,targetVersion:18});
+  const normalized=await createBackupPayloadMigrator({createEngine:fresh})(legacy,{sourceVersion:15,targetVersion:19});
   assert.deepEqual(normalized,canonical);
 });

@@ -10,11 +10,13 @@
     <meta name="theme-color" content="#000000" />
     <title>THY666 · Install</title>
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="typography.css" />
     <link rel="stylesheet" href="site.css" />
+    <link rel="stylesheet" href="ui-system.css" />
     <link rel="stylesheet" href="installer/updater-wizard.css" />
     <script type="module" src="install.js"></script>
   </head>
-  <body class="companion-app installer-page">
+  <body class="companion-app installer-page project-site">
     <a class="skip" href="#main">Skip to content</a>
     <header class="site-header">
       <a class="brand" href="index.html" aria-label="THY666 home"
@@ -26,10 +28,11 @@
           height="116"
         /><span>THY666</span></a
       >
+      <div class="hud-rule" aria-hidden="true"></div>
       <nav aria-label="Project">
-        <a href="install.html" aria-current="page">Install</a
-        ><a href="client/index.html">Client</a><a href="manual.html">User guide</a
-        ><a href="https://github.com/Dcvlt/THY666">Source ↗</a>
+        <a class="hud-action hud-action--quiet" data-trace-origin="bottom" href="install.html" aria-current="page">Install</a
+        ><a class="hud-action hud-action--quiet" data-trace-origin="bottom" href="client/index.html">Client</a><a class="hud-action hud-action--quiet" data-trace-origin="bottom" href="manual.html">User guide</a
+        ><a class="hud-action hud-action--quiet" data-trace-origin="bottom" href="https://github.com/Dcvlt/THY666">Source ↗</a>
       </nav>
     </header>
     <main id="main" class="install-main" tabindex="-1">
@@ -38,7 +41,7 @@
       </section>
       <p
         id="browser-install-status"
-        class="installer-status"
+        class="installer-status hud-notice"
         role="status"
         aria-live="polite"
         hidden
@@ -51,7 +54,7 @@
           </p></noscript
         >
       </section>
-      <aside class="installer-fallback">
+      <aside class="installer-fallback"><div class="hud-rule hud-rule--quiet" aria-hidden="true"></div>
         <p>
           Use desktop Chrome or Edge over HTTPS or localhost. If browser USB
           access is unavailable, use the
@@ -69,7 +72,7 @@
         </p>
       </aside>
     </main>
-    <footer>
+    <footer><div class="hud-rule" aria-hidden="true"></div>
       <a href="index.html">THY666 home</a
       ><a href="manual.html#backup">Backup guide</a
       ><a href="installer/THIRD_PARTY_LICENSES.txt">Updater licenses</a
