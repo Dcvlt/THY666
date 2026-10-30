@@ -54,13 +54,26 @@ export function createUIIconCorners({document: doc = globalThis.document} = {}) 
  */
 export function uiOutlineGeometry(width, height, {kind = 'action', origin = 'top'} = {}) {
   if (![width,height].every(value => Number.isFinite(value) && value >= 4)) return null;
-  if (!['action','choice','icon','pattern','notice'].includes(kind) || !['top','bottom','corner','left'].includes(origin)) throw new RangeError('Unknown outline variant.');
+  if (!['action','choice','icon','pattern','notice','rail','sidebar'].includes(kind) || !['top','bottom','corner','left'].includes(origin)) throw new RangeError('Unknown outline variant.');
   const w = Math.floor(width * 10) / 10, h = Math.floor(height * 10) / 10;
   const inset = 1.5;
   const cut = Math.min(kind === 'action' ? 6 : 8, (w-2*inset)/3, (h-2*inset)/3);
   const point = ([x,y]) => `${Number(x.toFixed(2))} ${Number(y.toFixed(2))}`;
   const closed = points => `M${point(points[0])}${points.slice(1).map(p=>`L${point(p)}`).join('')}Z`;
   const length = points => points.reduce((sum,p,i)=>sum+Math.hypot(points[(i+1)%points.length][0]-p[0],points[(i+1)%points.length][1]-p[1]),0);
+  if (kind === 'sidebar') {
+    const right=w-inset,left=inset,span=h-3,cut=Math.min(6,right-left,span/16),at=t=>inset+span*t;
+    const points=[[right,inset+Math.min(8,span*.06)],[right,at(.12)],[right-cut,at(.12)+cut],[right-cut,at(.32)],
+      [right,at(.32)+cut],[right,at(.64)],[right-cut,at(.64)+cut],[right-cut,at(.84)],
+      [right,at(.84)+cut],[right,h-inset]];
+    const outline=`M${points.map(point).join('L')}`;
+    return {outline,idle:outline,fraction:1};
+  }
+  if (kind === 'rail') {
+    // Leave the trailing edge open: the adjoining sidebar divider closes it.
+    const outline = `M${point([w-inset,inset+cut])}L${point([w-inset-cut,inset])}L${point([inset,inset])}L${point([inset,h-inset-cut])}L${point([inset+cut,h-inset])}L${point([w-inset,h-inset])}`;
+    return {outline,idle:outline,fraction:.2};
+  }
   if (kind === 'notice') {
     const c = Math.min(8,(w-3)/6,(h-3)/4), depth = Math.min(4,(h-3)/4,(w-3)/16);
     const start = Math.max(w*.3,inset+c), end = w-start, right = w-inset, bottom = h-inset;
@@ -99,7 +112,7 @@ export function uiOutlineGeometry(width, height, {kind = 'action', origin = 'top
 export function initializeUIComponents({root = globalThis.document?.body} = {}) {
   const doc = root?.ownerDocument, view = doc?.defaultView;
   if (!root || !doc || !view?.ResizeObserver || !view?.MutationObserver) return {refresh(){},destroy(){}};
-  const selector = '.hud-action,.button,.hud-choice,.hud-icon-button,.hud-pattern-frame,.hud-notice--banner';
+  const selector = '.hud-action,.button,.hud-choice,.hud-icon-button,.hud-rail-toggle,.hud-sidebar-rail,.hud-pattern-frame,.hud-notice--banner';
   const records = new Map(); let disposed = false;
   const make = (tag, attributes) => {
     const node = doc.createElementNS('http://www.w3.org/2000/svg',tag);
@@ -108,7 +121,7 @@ export function initializeUIComponents({root = globalThis.document?.body} = {}) 
   };
   const draw = (node, rect) => {
     const record = records.get(node); if (!record || !node.isConnected) return;
-    const kind = node.classList.contains('hud-notice--banner') ? 'notice' : node.classList.contains('hud-pattern-frame') ? 'pattern' : node.classList.contains('hud-icon-button') ? 'icon' : node.classList.contains('hud-choice') ? 'choice' : 'action';
+    const kind = node.classList.contains('hud-sidebar-rail') ? 'sidebar' : node.classList.contains('hud-notice--banner') ? 'notice' : node.classList.contains('hud-pattern-frame') ? 'pattern' : node.classList.contains('hud-rail-toggle') ? 'rail' : node.classList.contains('hud-icon-button') ? 'icon' : node.classList.contains('hud-choice') ? 'choice' : 'action';
     const origin = node.dataset.traceOrigin || (kind === 'choice' ? 'corner' : 'top');
     const key = `${rect.width.toFixed(1)}:${rect.height.toFixed(1)}:${kind}:${origin}`;
     if (record.key === key) return;

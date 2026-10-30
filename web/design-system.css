@@ -75,3 +75,10 @@
 @media(max-width:900px) { .reference-intro { grid-template-columns:1fr;gap:20px; }.reference-header { align-items:flex-start; }.reference-brand span { display:none; }.reference-header nav { gap:8px 16px; } }
 @media(max-width:600px) { .reference-header { padding:20px;gap:20px; }.reference-brand img { width:64px;height:auto; }.design-reference main { padding:24px 20px; }.reference-grid,.reference-choice-grid { grid-template-columns:1fr;gap:20px; }.reference-card { padding:24px 20px; }.reference-caption-row { flex-wrap:wrap; }.reference-section { margin-top:40px; }.reference-section-title { gap:10px; }.reference-section-title .hud-rule { min-width:20px; }.reference-footer { align-items:flex-start;flex-direction:column; }.reference-controls { gap:12px; } }
 @media(max-width:600px) { #specialized-inventory { grid-template-columns:1fr; }.reference-icon-catalog { grid-template-columns:repeat(2,minmax(0,1fr)); }.reference-controls { grid-template-columns:1fr; } }
+
+/* A real divider supplies the open tab's trailing edge. */
+.reference-rail { display:flex;flex-direction:column;align-items:flex-end;width:200px;max-width:100%;margin-block:24px;min-height:280px; }
+.reference-rail>.hud-rail-toggle { margin-right:0; }
+.reference-rail>#example-sidebar { display:flex;align-items:center;gap:12px;align-self:stretch;min-height:72px;padding:12px; }
+.reference-rail.is-collapsed { width:60px; }
+.reference-rail.is-collapsed :is([data-rail-label],[data-rail-copy]) { display:none; }

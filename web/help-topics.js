@@ -374,6 +374,9 @@ export const HELP_TOPICS = [
         'Live refresh is saved locally: 100 ms by default, with 50, 250, 500 and 1000 ms choices. These are maximum requested rates. The client waits for an in-flight transfer, and native windows pause live polling while inactive or minimized. Hidden or busy views send no extra polls; this preference does not change the firmware.',
         'Appearance and color apply to Update, Client and Documentation and are saved locally in the desktop app or browser when storage is available. Web follows the appearance; OLED retains its black hardware panel. Themes do not change device settings, musical pad colors, MIDI routing or the current song.',
       ]),
+      { title: 'Interface design', paragraphs: [
+        'The Client and project site share flat surfaces, angular circuit traces and consistent controls. Color and line weight highlight actions and selection; dark and light themes keep the same structure. Motion supports feedback and respects reduced-motion preferences. Explore the component library to try these controls, themes and states with sample values.',
+      ], links: [{ text: 'Explore the component library', href: './design-system.html' }] },
     ], ['controls', 'settings', 'backup', 'sensitivity'], ['desktop', 'native', 'browser', 'Chrome', 'Edge', 'serial', 'connected', 'device', 'inspect', 'readback']),
   topic('controls', 'start', 'Navigation & physical controls',
     'CENTER toggles Settings and the active workspace; RIGHT enters, edits and applies. Most shortcuts depend on the open workspace.', [

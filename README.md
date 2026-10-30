@@ -52,7 +52,9 @@ These Client refinements are software-tested and await a connected board check.
 Harmony groups suggestions and playing controls. The guide
 uses illustrations, expandable reference sections and phone-friendly tables.
 The Client and project site share a [component library and design guide](docs/design-system.md),
-including a read-only reference for themes, controls, states and motion.
+including a read-only reference for themes, controls, states and motion, linked
+from Documentation → Use the Client. Sidebar collapse is a tab on its divider,
+distinct from page navigation.
 
 ## Current status
 

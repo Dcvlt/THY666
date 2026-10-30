@@ -1,0 +1,13 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Only the native frame consumes these aliases. The HUD palette is resolved on
+ * the reference body, so inheriting it here avoids a circular palette alias.
+ */
+html.desktop-window .design-reference > :is(.desktop-window-background,.desktop-window-chrome,.desktop-content-viewport) {
+  --ui-paper:var(--hud-paper);
+  --ui-ink:var(--hud-ink);
+  --ui-muted:var(--hud-muted);
+  --ui-dim:var(--hud-muted);
+  --theme-bright:var(--hud-accent);
+  --theme-edge:var(--hud-edge);
+  --theme-soft:var(--hud-dim);
+}

@@ -842,6 +842,7 @@ test('compact sidebar retains accessible page names, disabled reasons and browse
   const storage = new Map(), key = 'thy666.companion.sidebar.v1';
   let f = fixture(t, { storage }), workspace = f.document.querySelector('.companion-workspace');
   let toggle = f.document.querySelector('.rail-toggle');
+  assert.equal(toggle.classList.contains('hud-rail-toggle'), true, 'Sidebar collapse has a divider tab, separate from a page choice.');
   assert.equal(toggle.attributes['aria-expanded'], 'true');
   assert.equal(toggle.attributes['aria-controls'], f.document.querySelector('.companion-client-nav').id);
   f.fire(toggle, 'click'); assert.equal(toggle.attributes['aria-expanded'], 'false');
@@ -872,6 +873,18 @@ test('sidebar defaults safely when storage is invalid or inaccessible', async t 
   assert.equal(toggle.attributes['aria-expanded'], 'true');
   f.fire(toggle, 'click'); assert.equal(toggle.attributes['aria-expanded'], 'false');
   assert.deepEqual(f.calls, []);
+});
+
+test('component library navigation cannot abandon a connected or busy Client', async t => {
+  const f=fixture(t),docs=f.document.querySelector('#documentation');
+  const link=f.document.createElement('a'),label=f.document.createElement('span');
+  link.className='thy-help-inline-link';link.href='./design-system.html';link.append(label);docs.append(link);
+  assert.equal(Boolean(f.fire(label,'click').defaultPrevented),false,'A disconnected Client can open its bundled reference.');
+  f.client.busy=true;assert.equal(f.fire(label,'click').defaultPrevented,true);f.client.busy=false;
+  f.fire(f.byText('Connect board'),'click');await flush();f.calls.length=0;
+  assert.equal(f.fire(label,'click').defaultPrevented,true);
+  assert.match(f.document.querySelector('.companion-notice').textContent,/Disconnect your board/);
+  assert.deepEqual(f.calls,[],'Opening documentation must not drop or change a live device.');
 });
 
 test('Board heading shows firmware identity without redundant status or pad-help panels', async t => {

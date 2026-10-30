@@ -46,7 +46,7 @@ def web_assets(*, compile_check: bool = False) -> dict[str, bytes]:
     """Use a small explicit generated allowlist, never web/generated wholesale."""
     if compile_check:
         return {"index.html": b'<!doctype html><html lang="en"><meta charset="utf-8"><title>THY666 compile check only</title><body>Compile-check fixture. This is not the Client release.</body></html>\n'}
-    paths = [WEB / "index.html"]
+    paths = [WEB / "index.html", WEB / "design-system.html"]
     paths += sorted(path for path in WEB.iterdir() if path.suffix in (".js", ".css") and path.is_file())
     paths += [WEB / "generated" / name for name in GENERATED]
     paths += sorted(path for path in (WEB / "assets").rglob("*") if path.is_file())
@@ -113,6 +113,15 @@ def replace_stage(destination: Path, files: dict[str, bytes]) -> list[dict]:
 
 def prepare(*, compile_check: bool = False, updater: Path | None = None, with_releases: bool = True) -> dict:
     files = web_assets(compile_check=compile_check)
+    if not compile_check:
+        # Only the native reference needs controls for the frameless window.
+        # Keep web_assets() untouched: the public site reuses its pure browser
+        # reference and must never import the native device/runtime adapters.
+        marker = b"</head>"
+        if files["design-system.html"].count(marker) != 1 or "desktop-reference.js" not in files:
+            raise ValueError("The native component reference needs its document head and window adapter")
+        files["design-system.html"] = files["design-system.html"].replace(
+            marker, b'<script type="module" src="./desktop-reference.js"></script>\n' + marker, 1)
     resources = {"README.txt": b"Optional reviewed firmware packages are staged here. Original redistribution rights remain unchanged.\n"}
     if not compile_check and with_releases:
         updater = updater or ROOT / "build/updater-target/release" / ("thy666-updater.exe" if os.name == "nt" else "thy666-updater")

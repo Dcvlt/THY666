@@ -48,7 +48,14 @@ for (const name of UI_ICON_NAMES) {
   const sample = document.createElement('div');sample.className = 'reference-icon-specimen';
   const label = document.createElement('code');label.textContent = name;sample.append(createUIIcon(name), label);document.querySelector('#icon-catalog').append(sample);
 }
-const collapseExample = document.createElement('button');collapseExample.type = 'button';collapseExample.className = 'hud-icon-button';collapseExample.setAttribute('aria-label', 'Collapse sidebar');collapseExample.append(createUIIcon('arrowRight'), createUIIconCorners());document.querySelector('.reference-icons').append(collapseExample);
+const railToggle = document.querySelector('#reference-rail-toggle');
+railToggle.addEventListener('click', () => {
+  const expanded = railToggle.getAttribute('aria-expanded') !== 'true';
+  railToggle.setAttribute('aria-expanded', String(expanded));
+  railToggle.setAttribute('aria-label', expanded ? 'Collapse example sidebar' : 'Expand example sidebar');
+  railToggle.querySelector('[data-rail-label]').textContent = expanded ? 'Collapse' : 'Expand';
+  railToggle.parentElement.classList.toggle('is-collapsed', !expanded);
+});
 document.querySelector('#reference-appearance').addEventListener('change', event => {
   document.body.dataset.appearance = event.target.value;
   document.documentElement.style.colorScheme = event.target.value;

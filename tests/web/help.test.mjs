@@ -205,6 +205,27 @@ test('documentation navigation and search render real articles using text nodes'
   assert.match(f.byClass('thy-help-article').textContent, /AT output offers Off, Poly or Channel/);
 });
 
+test('Client design guidance opens the local component library without changing a guide topic', () => {
+  const f = fixture();
+  f.help.open('companion');
+  const link = f.all().find(node => node.tagName === 'A' && node.textContent === 'Explore the component library');
+  assert.ok(link);
+  assert.equal(link.href, './design-system.html');
+  assert.equal(link.dataset.helpTopic, undefined);
+  for (const [page, path] of [
+    ['https://example.test/THY666/manual.html', '/THY666/design-system.html'],
+    ['https://example.test/THY666/client/index.html', '/THY666/client/design-system.html'],
+    ['tauri://localhost/index.html', '/design-system.html'],
+  ]) {
+    const destination = new URL(link.href, page);
+    assert.equal(destination.origin, new URL(page).origin);
+    assert.equal(destination.pathname, path);
+  }
+  assert.equal(f.fire(link, 'click').defaultPrevented, false);
+  assert.equal(f.help.selected, 'companion');
+  f.help.destroy();
+});
+
 test('documentation examples reproduce the current C renderer with synthetic musical input', () => {
   assert.deepEqual(Object.keys(HELP_SCREEN_FRAMES), [
     'quickstart-play', 'detailed', 'chladni', 'orbit', 'waves',

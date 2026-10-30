@@ -199,11 +199,12 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   const connection=el('div','companion-connection'),status=el('span','connection-status','');status.setAttribute('role','status');status.hidden=true;
   const connect=button('Connect board','button companion-connect',()=>void toggleConnection());
   connection.append(status,connect);headerActions.append(connection);if(oldActions){oldActions.classList.add('legacy-status');top.append(oldActions);}oldHeader.replaceWith(top);
-  const workspace=el('div','companion-workspace'),rail=el('aside','companion-rail'),content=el('main','companion-content hud-type-body');
+  const workspace=el('div','companion-workspace'),rail=el('aside','companion-rail hud-sidebar'),content=el('main','companion-content hud-type-body');
   const clientNav=el('nav','companion-client-nav');clientNav.setAttribute('aria-label','Client pages');
-  const railToggle=button('','button rail-toggle',()=>setRailCollapsed(!workspace.classList.contains('rail-collapsed')));
+  const railToggle=button('','hud-rail-toggle rail-toggle',()=>setRailCollapsed(!workspace.classList.contains('rail-collapsed')));
   railToggle.append(el('span','rail-icon'),el('span','rail-toggle-text','Collapse'));railToggle.firstChild.append(createUIIcon('arrowRight',{document}));railToggle.setAttribute('aria-controls','companion-client-navigation');
-  clientNav.id='companion-client-navigation';rail.append(railToggle,clientNav);
+  const railDivider=el('span','hud-sidebar-rail');railDivider.setAttribute('aria-hidden','true');
+  clientNav.id='companion-client-navigation';rail.append(railToggle,clientNav,railDivider);
   for(const [id,label] of [['board','Board'],['parameters','Parameters'],['harmony','Harmony'],['library','Songs & library'],['backups','Backups'],['diagnostics','Diagnostics']]){
     const nav=button('',id==='board'?'hud-choice hud-choice--nav is-selected':'hud-choice hud-choice--nav',()=>showPage(id));nav.dataset.page=id;nav.dataset.traceOrigin='left';
     nav.setAttribute('aria-label',label);nav.dataset.label=label;nav.title=label;nav.append(el('span','rail-icon'),el('span','rail-text',label));nav.firstChild.append(createUIIcon(id,{document}));clientNav.append(nav);subButtons.set(id,nav);
@@ -343,6 +344,13 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     const rule=el('span','hud-rule companion-heading-rule');rule.setAttribute('aria-hidden','true');head.append(rule);
   }
   const help=initializeHelp({mount:docsMount,onNavigate:()=>showArea('documentation')});
+  docsMount.addEventListener('click',event=>{
+    if(!event.target.closest?.('a.thy-help-inline-link'))return;
+    if(updater?.usbBusy||client.busy||client.connected){
+      event.preventDefault();
+      tell(updater?.usbBusy?'Wait for the firmware update to finish before opening the component library.':'Disconnect your board before opening the component library.');
+    }
+  });
   const appSettings=initializeAppSettings({onPollIntervalChange:ms=>{if(pollConnectionActive&&!disposed)schedulePolling(ms);}});
   const client=createClient({expectedSchema:engine.state.schemaHash(),onState:updateConnection,
     migrateBackupPayload:createBackupPayloadMigrator({createEngine:()=>createCore()})});

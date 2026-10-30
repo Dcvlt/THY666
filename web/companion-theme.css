@@ -316,11 +316,7 @@ body.companion-app:is(.device-connected,.cockpit-preview) { --signal-live: .9; }
 }
 .companion-app .companion-topbar::after { left: 0; }
 .companion-app .companion-topbar::before { right: 0;transform:scaleX(-1); }
-.companion-app .companion-rail { position: relative; border-right: 0; border-bottom: 0; }
-.companion-app .companion-rail::after {
-  content: ''; position: absolute; z-index: 2; top: 24px; right: -4px; bottom: 24px; width: 9px; background: var(--theme-bright); opacity: var(--signal-live); pointer-events: none;
-  clip-path: polygon(7px 0,8px 0,8px 12%,2px 13%,2px 32%,8px 33%,8px 64%,3px 65%,3px 84%,8px 85%,8px 100%,7px 100%,7px 85.3%,2px 84.3%,2px 65%,7px 64%,7px 33.3%,1px 32.3%,1px 13%,7px 12%);
-}
+.companion-app .companion-rail { --hud-sidebar-top:30px;--hud-sidebar-bottom:24px;position:relative;border-right:0;border-bottom:0; }
 .companion-app .companion-client-nav button { position:relative;min-height:43px;font-size:11px;letter-spacing:.035em;padding-right:9px; }
 
 .companion-app .rail-icon { color: var(--theme-bright); }
@@ -355,7 +351,6 @@ body.companion-app:is(.device-connected,.cockpit-preview) { --signal-live: .9; }
 .companion-app ::-webkit-scrollbar-track { background: var(--ui-paper); }
 .companion-app ::-webkit-scrollbar-thumb { background: var(--theme-edge); }
 @media (max-width: 720px) {
-  .companion-app .companion-rail::after { top: auto; bottom: -3px; left: 14px; right: 14px; width: auto; height: 6px; clip-path: polygon(0 0,30% 0,32% 78%,67% 78%,69% 0,100% 0,100% 20%,70% 20%,68% 98%,31% 98%,29% 20%,0 20%); }
   .companion-app .companion-topbar::before,.companion-app .companion-topbar::after { bottom: -5px; height: 10px; }
   .companion-app .companion-page-head h1 { font-size: 28px; }
   .companion-app .companion-client-nav button, .companion-app .companion-main-nav button {font-size:11px;}
@@ -372,7 +367,6 @@ body.companion-app:is(.device-connected,.cockpit-preview) { --signal-live: .9; }
 .companion-app .companion-display-tools .segmented button { font-family:var(--font-base,var(--font));font-size:8px;letter-spacing:.03em; }
 
 .companion-app .companion-display-tools :is(button:focus-visible) { outline-offset:1px; }
-.companion-app .rail-toggle { font-family:var(--font-base,var(--font)); }
 
 .companion-app .rail-collapsed .companion-client-nav button { padding-right:0; }
 

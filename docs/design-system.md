@@ -102,6 +102,7 @@ or a replacement for existing dialog, routing and device ownership behavior.
 | `.hud-frame` | Section or data group; `--task`, `--inset`, `--dialog` variants | Owns `::before` and `::after`; never clips descendants |
 | `.hud-action` | Normal action; `--primary`, `--quiet`, `--danger`, `--compact` | One generated SVG perimeter; idle, hover and selected strokes share its path. `.button` is a migration alias |
 | `.hud-icon-button` | Menu, expand/collapse, close, settings or another named icon action | Split SVG outline; `createUIIcon` and `createUIIconCorners` supply the glyph and hover triangles |
+| `.hud-sidebar` / `.hud-sidebar-rail` / `.hud-rail-toggle` | Sidebar divider with its collapse/expand tab | One bounded SVG divider; hover or keyboard focus traces its whole length; the arrow follows `aria-expanded` |
 | `.hud-choice` | Backup/restore, firmware or another substantial choice; `--nav` is the quieter navigation/sidebar variant | Same perimeter in every state; the retained 3 px leading segment distinguishes selection from hover |
 | `.hud-field` | Native input/select/textarea; label, help and error companions | No pseudo slots; keep browser keyboard behavior |
 | `.hud-toggle` / `.hud-toggle-label` | Native checkbox acting as an on/off switch, with its clickable label | Keep the actual input, checked state and keyboard activation; never substitute a clickable div |
@@ -143,10 +144,19 @@ frame's corner pseudo-element or place an animated pattern over its text.
 
 `createUIIcon(name)` creates a decorative glyph from `UI_ICON_NAMES`.
 `createUIIconCorners()` supplies an icon container's opposing hover triangles.
-The triangles sit detached just outside the notched outline; they do not cover
+The triangles sit close to the notched outline, within its corner cutouts; they do not cover
 the glyph or fill its cut. Keep accessible names on the
 button/link, not on these decorative children. The settings glyph uses a
 symmetric eight-tooth gear with a circular hub.
+
+The sidebar tab uses the shared `rail` outline: a square top-left corner, fixed
+8 px cuts at top-right and bottom-left, and an open
+trailing edge. The sidebar divider completes that edge. Keep the tab smaller than
+page choices and aligned with the divider in both expanded and compact states.
+Hover or keyboard focus continues the highlight along the entire divider, with
+no movement of the line or its fixed cuts. Reduced motion makes the change immediate.
+Its 44 px target, accessible name and expansion state remain available when its
+visible label is hidden. The component reference includes a working local example.
 
 The banner's `notice` geometry is static: 8 px corner cuts and centered 4 px
 notches supply the shared language without treating the whole message as a

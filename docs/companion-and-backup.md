@@ -22,6 +22,11 @@ Opening the app or reading help
 does not connect to the controller. Without a board, its surface is an inactive
 wireframe; mouse, touch and keyboard gestures cannot play it or change a device.
 
+Documentation → Use the Client → Interface design introduces the shared flat
+surfaces, angular traces, themes and interaction feedback. Its component-library
+link opens read-only examples with sample values; the THY666 mark returns to
+the site or Client. See the [design guide](design-system.md) for contribution rules.
+
 Without a connected board, **Board** provides the red wireframe outline and
 **Documentation** and **Update** remain available. **Parameters**, **Harmony**,
 **Songs & library**, **Backups** and **Diagnostics** are disabled until connection. They do not open

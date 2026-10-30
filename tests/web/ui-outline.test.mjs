@@ -17,7 +17,7 @@ function vertices(path) {
 
 test('action, choice and icon perimeters contain their strongest stroke at narrow and fractional sizes',()=>{
   for(const [width,height] of [[4,4],[24,24],[32,32],[44,44],[123.38,45.47],[640,110]]) {
-    for(const kind of ['action','choice','icon','notice'])for(const origin of ['top','bottom','corner','left']) {
+    for(const kind of ['action','choice','icon','notice','rail','sidebar'])for(const origin of ['top','bottom','corner','left']) {
       const geometry=uiOutlineGeometry(width,height,{kind,origin});
       assert.ok(geometry);
       assert.equal(geometry.outline,geometry.idle,'Idle and interactive outlines share one perimeter.');
@@ -40,6 +40,27 @@ test('trace origins rotate the same closed shape instead of introducing another 
   assert.ok(outlines.every(d=>d.endsWith('Z')));
   const leading=vertices(outlines[3]);
   assert.equal(leading[0][0],leading[1][0],'Left origin begins with the vertical leading edge.');
+});
+
+test('sidebar tab joins the divider with open trailing endpoints and keeps its fixed cuts',()=>{
+  for(const width of [44,140,240]) {
+    const geometry=uiOutlineGeometry(width,44,{kind:'rail'}),points=vertices(geometry.outline);
+    assert.deepEqual(points[0],[width-1.5,9.5]);
+    assert.deepEqual(points.at(-1),[width-1.5,42.5]);
+    assert.deepEqual(points[1],[width-9.5,1.5]);
+    assert.deepEqual(points[2],[1.5,1.5],'The top-left corner is square.');
+    assert.equal(geometry.outline.endsWith('Z'),false,'The sidebar itself supplies the trailing edge.');
+  }
+});
+
+test('sidebar highlight follows one continuous divider with fixed six-pixel diagonal steps',()=>{
+  for(const height of [280,800,1800]) {
+    const geometry=uiOutlineGeometry(9,height,{kind:'sidebar'}),points=vertices(geometry.outline);
+    assert.deepEqual(points[0],[7.5,9.5]);assert.deepEqual(points.at(-1),[7.5,height-1.5]);
+    assert.equal(points[1][0]-points[2][0],6);
+    assert.ok(Math.abs(points[2][1]-points[1][1]-6)<.02);
+    assert.equal(geometry.outline.endsWith('Z'),false,'The trace does not return through a second line.');
+  }
 });
 
 test('compact notice geometry preserves fixed corner cuts and centered inward notches as width grows',()=>{

@@ -121,6 +121,11 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
       section.id = `${prefix}-section-${index}`;section.tabIndex = -1;
       if(expandable){const summary=el('summary');summary.append(el('h2','',part.title));section.append(summary);}else section.append(el('h2', '', part.title));
       for (const paragraph of part.paragraphs || []) section.append(el('p', '', paragraph));
+      for (const resource of part.links || []) {
+        const paragraph = el('p'), link = el('a', 'thy-help-inline-link', resource.text);
+        link.href = resource.href;
+        paragraph.append(link); section.append(paragraph);
+      }
       if (part.figures?.length) {
         const gallery = el('div', 'thy-help-figures');
         for (const illustration of part.figures) {
