@@ -200,6 +200,70 @@ export function initializeCockpit({ mount } = {}) {
   const captureSymbol = svg('circle', { cx: 106, cy: 65, r: 6, class: 'cockpit-capture-dot' });
   const captureText = svg('text', { x: 124, y: 69, class: 'cockpit-capture-label' }); captureText.textContent = '—'; transport.append(transportTrack, captureSymbol, captureText);
   const seqStats = el('div', 'cockpit-context-footer'); seqStats.append(field('seq-track'), field('seq-state'), field('seq-capture')); seqPanel.append(transport, seqStats);
+  const voiceRows=[],trackRows=[];
+  const voiceHeading=el('div','cockpit-detail-heading');voiceHeading.append(el('h3','','Member voices'),field('voice-detail-status'));
+  const voiceList=el('div','cockpit-voice-list hud-scroll-region');voiceList.setAttribute('role','region');voiceList.setAttribute('aria-label','MPE member voice meters');voiceList.tabIndex=0;
+  for(let slot=0;slot<15;slot++){
+    const row=el('div','cockpit-voice-row');row.dataset.cockpitVoice=String(slot);row.hidden=true;
+    const heading=el('div','cockpit-voice-heading');heading.append(field(`voice-name-${slot}`),field(`voice-state-${slot}`));
+    const graph=svg('svg',{viewBox:'0 0 300 49',class:'cockpit-voice-graph','aria-hidden':'true'}),bars=[];
+    for(const [index,label] of ['PRIMARY','UPPER'].entries()){
+      const y=7+index*16,name=svg('text',{x:0,y:y+5,class:'cockpit-axis-label'});name.textContent=label;
+      const bar=svg('rect',{x:72,y,width:0,height:7,class:`cockpit-output-fill${index?' is-upper':''}`});
+      graph.append(name,svg('path',{d:`M72 ${y+3.5}H296`,class:'cockpit-input-track'}),bar);bars.push(bar);
+    }
+    const bendLabel=svg('text',{x:0,y:45,class:'cockpit-axis-label'});bendLabel.textContent='BEND';
+    const bend=svg('path',{d:'M184 35V47',class:'cockpit-output-bend'});graph.append(bendLabel,svg('path',{d:'M72 41H296M184 37V45',class:'cockpit-input-track'}),bend);
+    const footer=el('div','cockpit-voice-footer');footer.append(field(`voice-route-${slot}`),field(`voice-values-${slot}`));row.append(heading,graph,footer);voiceList.append(row);voiceRows.push({row,bars,bend});
+  }
+  const voiceEmpty=el('p','cockpit-detail-empty','No member voices');
+  mpePanel.append(voiceHeading,el('p','cockpit-detail-note','Controller values accepted into the board’s MIDI queue.'),voiceList,voiceEmpty);
+  const trackHeading=el('div','cockpit-detail-heading');trackHeading.append(el('h3','','Track positions'),field('track-detail-status'));
+  const trackList=el('div','cockpit-track-list hud-scroll-region');trackList.setAttribute('role','region');trackList.setAttribute('aria-label','Sequencer track playheads');trackList.tabIndex=0;
+  for(let index=0;index<21;index++){
+    const row=el('div','cockpit-track-row');row.dataset.cockpitTrack=String(index);row.hidden=true;
+    const heading=el('div','cockpit-track-heading');heading.append(field(`track-name-${index}`,`T${index+1}`),field(`track-state-${index}`));
+    const graph=svg('svg',{viewBox:'0 0 300 16',class:'cockpit-track-graph','aria-hidden':'true'});
+    const fill=svg('rect',{x:1,y:6,width:0,height:4,class:'cockpit-playhead-fill'}),needle=svg('path',{d:'M1 1V15',class:'cockpit-playhead-needle'});
+    graph.append(svg('path',{d:'M1 4V12H299V4Z',class:'cockpit-input-track'}),fill,needle);
+    const footer=el('div','cockpit-track-footer');footer.append(field(`track-step-${index}`),field(`track-range-${index}`));row.append(heading,graph,footer);trackList.append(row);trackRows.push({row,fill,needle});
+  }
+  const trackEmpty=el('p','cockpit-detail-empty','No tracks');
+  seqPanel.append(trackHeading,trackList,trackEmpty);
+  const destinations=value=>[['USB 1',1],['USB 2',2],['DIN',4]].filter(([,bit])=>value&bit).map(([name])=>name).join(' / ');
+  function performanceDetail(context){
+    const sample=context?.available===true&&!context.stale?context.snapshot:null;
+    const status=sample?'Sampled on board':context?.stale?'Waiting for fresh data':context?.supported?'Reading device detail':'Update firmware for detail';
+    setText('voice-detail-status',status);setText('track-detail-status',status);
+    let voices=0,tracks=0;
+    for(let slot=0;slot<15;slot++){
+      const v=sample?.voices?.[slot],nodes=voiceRows[slot],present=Boolean(v&&v.state);setHidden(nodes.row,!present);
+      if(!present)continue;voices++;
+      const state=v.pendingAttack?'Reserved':v.state===2?(v.sustained?'Sustained':'Releasing'):v.gliding?'Gliding':'Held';
+      setText(`voice-name-${slot}`,`${noteName(v.note)} · Ch ${v.channel+1}`);setText(`voice-state-${slot}`,`${state}${v.pendingOutput?' · pending':''}`);
+      setText(`voice-route-${slot}`,`${v.logicalPad<48?'L':'R'}${v.logicalPad%48+1} · ${destinations(v.destinations)}`);
+      setText(`voice-values-${slot}`,`${axisName(v.output)} ${v.pressure} · Upper ${v.upper} · Bend ${v.bend}`);
+      setAttribute(nodes.bars[0],'width',(v.pressure*224/127).toFixed(2));setAttribute(nodes.bars[1],'width',(v.upper*224/127).toFixed(2));
+      const bendX=72+v.bend*224/16383;setAttribute(nodes.bend,'d',`M${bendX.toFixed(2)} 35V47`);
+      setClass(nodes.row,'is-reserved',v.pendingAttack);setClass(nodes.row,'is-retiring',v.state===2);
+      setAttribute(nodes.row,'aria-label',`MPE member channel ${v.channel+1}, ${noteName(v.note)}, ${state}. ${destinations(v.destinations)}; active references ${destinations(v.soundingDestinations)||'none'}. Queued ${axisName(v.output)} ${v.pressure}, upper ${v.upper}, bend ${v.bend}; target ${v.desiredPressure}, ${v.desiredUpper}, ${v.desiredBend}. Gesture ${v.gesture}.`);
+    }
+    for(let index=0;index<21;index++){
+      const track=sample?.tracks?.[index],nodes=trackRows[index],present=Boolean(track?.created);setHidden(nodes.row,!present);if(!present)continue;tracks++;
+      const state=track.running?(sample.transport===2?'Paused':sample.suspended||!sample.clockReady?(sample.clockStatus===3?'Clock lost':'Waiting for clock'):sample.transport===1?'Playing':'Stopped'):'Stopped',capture=['','Armed','Queued','Recording','Finishing','Failed'][track.capture];
+      const modifiers=[track.muted?'Muted':'',!track.enabled?'Disabled':'',track.oneShot?'One shot':'',track.pending===1?'Start queued':track.pending===2?'Stop queued':'',capture].filter(Boolean);
+      setText(`track-state-${index}`,[state,...modifiers].join(' · '));setClass(nodes.row,'is-selected',sample.selectedTrack===index);setClass(nodes.row,'is-muted',track.muted);setClass(nodes.row,'is-recording',track.capture===3||track.capture===4);
+      setAttribute(nodes.needle,'display',track.validPosition?'inline':'none');setAttribute(nodes.fill,'display',track.validPosition?'inline':'none');
+      if(track.validPosition){
+        const relative=track.playhead-track.loopStart,fraction=relative/track.loopLength,x=1+fraction*298;
+        setAttribute(nodes.fill,'width',(fraction*298).toFixed(2));setAttribute(nodes.needle,'d',`M${x.toFixed(2)} 1V15`);
+        setText(`track-step-${index}`,`Step ${Math.floor(relative/track.gridTicks)+1} / ${Math.ceil(track.loopLength/track.gridTicks)}`);
+        setText(`track-range-${index}`,`${track.playhead} / ${track.loopStart+track.loopLength} ticks`);
+      }else{setText(`track-step-${index}`,'Position unavailable');setText(`track-range-${index}`,'—');}
+      setAttribute(nodes.row,'aria-label',`Track ${index+1}; ${state}${modifiers.length?', '+modifiers.join(', '):''}; ${track.validPosition?`position ${track.playhead}, loop start ${track.loopStart}, length ${track.loopLength}, grid ${track.gridTicks}`:'position unavailable'}; generation ${track.generation}.`);
+    }
+    setHidden(voiceEmpty,voices>0||!sample);setHidden(trackEmpty,tracks>0||!sample);
+  }
   panels.insertBefore(mpePanel, pressure); mpePanel.hidden = true;
   context.append(arpPanel, seqPanel); hud.append(panels, context); mount.append(hud); syncMotion();
 
@@ -214,10 +278,11 @@ export function initializeCockpit({ mount } = {}) {
     }
     const active = state !== 'offline'; setHidden(hud, !active); setClass(mount, 'cockpit-active', active); syncMotion();
     setText('source', state === 'device' ? 'LIVE DEVICE' : state === 'preview' ? 'DESIGN MODE / BROWSER ENGINE' : 'OFFLINE');
-    if (!active) return { state, session };
+    if (!active) {performanceDetail(null);return { state, session };}
     const data = snapshot, expressionContext = data.context?.expression;
     const expression = expressionContext?.available === false ? null : expressionContext;
     const harmonyData = data.context?.harmony ?? data.harmonyContext;
+    performanceDetail(data.context?.performance);
     const harmonyActive = data.engine === 6;
     // The physical board already shows contacts. Give Harmony that slot so
     // its wider explanation and the clock remain in one balanced overview.
@@ -391,6 +456,11 @@ export function initializeDiagnostics(mount) {
   let history=[],lastKind='',connected=false,previousIO=null;
   const fields={status:[['uptime_ms','Uptime','ms'],['errors','Error flags',''],['voices','Sounding voices',''],['presses','Presses',''],['releases','Releases',''],['loop_us','Mean loop','µs'],['loop_peak_us','Peak loop (last window)','µs']],io:[['din_tx','DIN transmitted','bytes'],['din_rate','DIN output','bytes/s'],['din_accept','DIN accepted','messages'],['usb_accepted','USB accepted','messages'],['din_pending','DIN backlog','events'],['usb_pending','USB backlog','events'],['din_errors','DIN errors',''],['usb_dropped','USB dropped / suppressed',''],['blocked','Blocked pads','']],settings:[['generation','Saved generation',''],['saves','Saves',''],['errors','Save errors','']],display:[['last_render_us','Render time','µs'],['last_duration_ms','Transfer time','ms'],['dirty_bytes','Pending display data','bytes'],['failed_chunks','Failed transfers','']]};
   const trend={status:['voices','Sounding voices',''],io:['din_rate','DIN output','bytes/s'],settings:['saves','Save count',''],display:['last_render_us','Render time','µs']};
+  fields.status.unshift(['ready','Instrument ready','']);
+  fields.settings.unshift(['status','Save state','']);
+  fields.pads=[['frames','Complete scans',''],['scans','Mux samples',''],['errors','Acquisition errors','']];
+  fields['backup status']=[['state','Transfer state',''],['restore_phase','Restore stage',''],['restore_active','Playing locked',''],['restore_verified','Device save verified',''],['restore_completed','Stage completed','bytes'],['restore_total','Stage total','bytes'],['received','Received','bytes'],['bytes','File size','bytes'],['generation','Saved generation',''],['payload_crc32','Payload checksum','']];
+  trend.pads=['frames','Complete scans',''];trend['backup status']=['received','Received','bytes'];
   return {
     snapshot(data,isConnected){
       connected=Boolean(isConnected);freshness.textContent=connected?'Device snapshot · updated '+new Date().toLocaleTimeString():'Disconnected';
@@ -398,8 +468,11 @@ export function initializeDiagnostics(mount) {
       if(!connected){history=[];lastKind='';previousIO=null;targetResources.hidden=true;resourceAge.textContent='Resources · disconnected';metrics.replaceChildren();line.setAttribute('points','');graph.setAttribute('aria-label','No report samples');caption.textContent='Connect to read device health.';}
     },
     report(kind,text){
-      if(!connected||!fields[kind]||typeof text!=='string'||text.length>8192||!text.startsWith(kind.toUpperCase()+' '))return false;
+      const prefix=kind==='backup status'?'BACKUP':typeof kind==='string'?kind.toUpperCase():'';
+      if(!connected||!fields[kind]||typeof text!=='string'||text.length>8192||!text.startsWith(prefix+' '))return false;
       const values=new Map();for(const m of text.matchAll(/(?:^|\s)([a-z_]+)=(\d+)(?=\s|$)/g)){const n=Number(m[2]);if(Number.isSafeInteger(n))values.set(m[1],n);}
+      const textValues=new Map();
+      for(const m of text.matchAll(/(?:^|\s)(state|status|payload_crc32|restore_phase)=([a-z0-9-]+)(?=\s|$)/g))textValues.set(m[1],m[2]);
       if(kind==='status'){
         const supported=values.get('resources')===1;
         targetResources.hidden=!supported;
@@ -422,13 +495,17 @@ export function initializeDiagnostics(mount) {
           values.set('din_rate',Math.round((sent-previousIO.sent)*1000/(now-previousIO.time)));
         previousIO=Number.isInteger(sent)?{time:now,sent}:null;
       }else previousIO=null;
-      reportTitle.textContent={status:'Activity',io:'MIDI & pad scanning',settings:'Saved settings',display:'Display timing'}[kind];metrics.replaceChildren();
-      for(const [key,label,unit] of fields[kind]){metrics.append(el('dt','',label),el('dd','',values.has(key)?`${values.get(key)} ${unit}`.trim():'Unavailable'));}
+      reportTitle.textContent={status:'Activity',io:'MIDI & pad scanning',pads:'Pad scanner',settings:'Saved settings','backup status':'Backup service',display:'Display timing'}[kind];metrics.replaceChildren();
+      for(const [key,label,unit] of fields[kind]){metrics.append(el('dt','',label),el('dd','',textValues.has(key)?textValues.get(key):values.has(key)?`${values.get(key)} ${unit}`.trim():'Unavailable'));}
       if(lastKind!==kind)history=[];lastKind=kind;
       const [key,label,unit]=trend[kind],n=values.get(key);if(n!==undefined){history.push(n);if(history.length>60)history.shift();}else history=[];
       const max=Math.max(1,...history);line.setAttribute('points',history.map((v,i)=>`${10+i*580/59},${90-v/max*80}`).join(' '));
       graph.setAttribute('aria-label',`${label}: ${n??'unavailable'} ${unit}; ${history.length} samples; scale 0 to ${max}`);
       caption.textContent=history.length?`${label} · last ${history.length} samples · scale 0–${max} ${unit} · ${new Date().toLocaleTimeString()}`:kind==='io'?'DIN activity appears after two reports. Backlog counts messages waiting, not messages sent.':'This report has no trend measurement.';
+      if(kind==='backup status')caption.textContent=['applied','queued'].includes(textValues.get('state'))?
+        'Settings were applied. Saving is not verified; inspect Saved settings before continuing.':
+        textValues.get('restore_phase')==='error'&&values.get('restore_verified')===1?'Device save verified. The Client comparison is unfinished; keep your backup.':
+        'Read-only transfer status. Reading it does not upload, restore or cancel a backup.';
       return true;
     },
     reset(){history=[];lastKind='';previousIO=null;line.setAttribute('points','');graph.setAttribute('aria-label','No report samples');caption.textContent='Session started · waiting for reports.';},

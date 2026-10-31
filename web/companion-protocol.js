@@ -98,6 +98,55 @@ export function decodeHarmonySnapshot(bytes,identity=null){
   });
   return result;
 }
+export const PERFORMANCE_SNAPSHOT_BYTES=1024;
+/** Frozen device positions and MIDI-FIFO-accepted member values; never a JS clock. */
+export function decodePerformanceSnapshot(bytes,identity=null){
+  if(!(bytes instanceof Uint8Array)||bytes.length!==PERFORMANCE_SNAPSHOT_BYTES)
+    throw new Error('Unsupported performance snapshot size.');
+  const data=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),u16=offset=>data.getUint16(offset,true),u32=offset=>data.getUint32(offset,true);
+  if(string(bytes,0,8)!=='THYPER1'||u16(8)!==1||u16(10)!==bytes.length)
+    throw new Error('Unsupported performance snapshot format.');
+  const result={sequence:u32(12),now:u32(16),revision:u32(20),transportGeneration:u32(24),ppqn:u16(28),bendRange:bytes[30],managerChannel:bytes[31],
+    build:string(bytes,32,16),uid:string(bytes,48,24),schema:string(bytes,72,64),
+    position:data.getBigUint64(136,true),clockGeneration:u32(144),tempo:u32(148)/1000,
+    available:Boolean(bytes[152]&1),mpe:Boolean(bytes[152]&2),upperZone:Boolean(bytes[152]&4),suspended:Boolean(bytes[152]&8),clockReady:Boolean(bytes[152]&16),
+    transport:bytes[153],clockSource:bytes[154],clockStatus:bytes[155],capture:bytes[156],captureTrack:bytes[157],selectedTrack:bytes[158],members:bytes[159]};
+  if(!/^[0-9a-f]{16}$/i.test(result.build)||!/^[0-9a-f]{24}$/i.test(result.uid)||!/^[0-9a-f]{64}$/i.test(result.schema)||
+    identity&&(result.uid.toLowerCase()!==identity.uid?.toLowerCase()||result.build!==identity.build||result.schema!==identity.schema))
+    throw new Error('Performance snapshot does not match the connected device identity.');
+  if(!result.sequence||result.ppqn!==960||bytes[152]&~31||result.transport>2||result.clockSource>1||result.clockStatus>3||result.capture>5||
+    result.captureTrack>20&&result.captureTrack!==255||result.selectedTrack>20||result.members>15||
+    (result.available?result.bendRange<1||result.bendRange>96||result.members<1||result.managerChannel!==(result.upperZone?15:0):result.bendRange!==0||result.managerChannel!==255||result.members!==0||result.mpe||result.upperZone)||
+    result.capture===0&&result.captureTrack!==255)
+    throw new Error('Invalid performance snapshot fields.');
+  const channels=new Set();
+  result.voices=Array.from({length:15},(_,slot)=>{
+    const offset=160+slot*24,v={slot,state:bytes[offset],channel:bytes[offset+1],note:bytes[offset+2],pad:bytes[offset+3],logicalPad:bytes[offset+4],
+      destinations:bytes[offset+5],soundingDestinations:bytes[offset+6],pendingAttack:Boolean(bytes[offset+7]&1),sustained:Boolean(bytes[offset+7]&2),
+      pendingOutput:Boolean(bytes[offset+7]&4),gliding:Boolean(bytes[offset+7]&8),velocity:bytes[offset+8],output:bytes[offset+9],
+      pressure:bytes[offset+10],upper:bytes[offset+11],bend:u16(offset+12),desiredPressure:bytes[offset+14],desiredUpper:bytes[offset+15],desiredBend:u16(offset+16),
+      referenceNote:bytes[offset+18],modifierPad:bytes[offset+19],gesture:u32(offset+20)};
+    if(v.state===0){
+      for(let n=0;n<24;n++)if(bytes[offset+n]!==([1,2,3,4,18,19].includes(n)?255:0))throw new Error('Invalid free MPE member.');
+    }else if(v.state>2||slot>=result.members||v.channel!==(result.upperZone?14-slot:slot+1)||v.channel>15||v.note>127||v.pad>95||v.logicalPad>95||v.destinations<1||v.destinations>7||v.soundingDestinations&~v.destinations||
+      bytes[offset+7]&~15||v.velocity<1||v.velocity>127||v.output>2||[v.pressure,v.upper,v.desiredPressure,v.desiredUpper].some(value=>value>127)||
+      v.bend>16383||v.desiredBend>16383||v.referenceNote>127||v.modifierPad>95&&v.modifierPad!==255||channels.has(v.channel)||!result.available)
+      throw new Error('Invalid MPE member telemetry.');
+    if(v.state)channels.add(v.channel);return v;
+  });
+  result.tracks=Array.from({length:21},(_,index)=>{
+    const offset=520+index*24,flags=bytes[offset+20],track={index,loopStart:u32(offset),loopLength:u32(offset+4),playhead:u32(offset+8),gridTicks:u32(offset+12),
+      generation:u32(offset+16),created:Boolean(flags&1),enabled:Boolean(flags&2),running:Boolean(flags&4),muted:Boolean(flags&8),oneShot:Boolean(flags&16),
+      validPosition:Boolean(flags&32),pending:bytes[offset+21],processor:bytes[offset+22],capture:bytes[offset+23]};
+    if(!track.created){if(bytes.subarray(offset,offset+24).some(Boolean))throw new Error('Invalid absent sequencer track.');}
+    else if(flags&~63||track.pending>2||track.processor>2||track.capture>5||
+      track.capture!==(result.captureTrack===index?result.capture:0)||
+      track.validPosition&&(!track.loopLength||!track.gridTicks||track.loopStart+track.loopLength>0xffffffff||track.playhead<track.loopStart||track.playhead>=track.loopStart+track.loopLength))
+      throw new Error('Invalid sequencer track telemetry.');
+    return track;
+  });
+  return result;
+}
 export const PAD_MAP_SNAPSHOT_BYTES=1672;
 export function decodePadMapSnapshot(bytes,identity=null){
   if(!(bytes instanceof Uint8Array)||bytes.length!==PAD_MAP_SNAPSHOT_BYTES)

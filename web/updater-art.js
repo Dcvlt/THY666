@@ -153,3 +153,26 @@ export function createUpdateProgressArt(doc) {
     d: `M${10 + index * 23.3} 10h16v14h-16Z` }));
   return svg;
 }
+
+export function createUpdateProgressBox(doc,label) {
+  const box=doc.createElement('div');box.className='update-progress';box.hidden=true;
+  box.setAttribute('role','progressbar');box.setAttribute('aria-label',label);
+  box.setAttribute('aria-valuemin','0');box.setAttribute('aria-valuemax','100');
+  const art=createUpdateProgressArt(doc),copy=doc.createElement('p');copy.className='update-progress-copy';
+  box.append(art,copy);return{box,art,copy};
+}
+
+export function paintUpdateProgress(value,{state='idle',completed=0,total=0,message=''}={}) {
+  const ratio=total>0?Math.min(1,Math.max(0,completed/total)):null;
+  value.box.hidden=state==='idle';value.box.dataset.state=state;value.copy.textContent=message;
+  if(ratio===null)value.box.removeAttribute('aria-valuenow');else value.box.setAttribute('aria-valuenow',String(Math.round(ratio*100)));
+  value.box.setAttribute('aria-valuetext',message);
+  for(const segment of value.art.querySelectorAll('[data-segment]')){
+    const index=Number(segment.getAttribute('data-segment'));
+    segment.setAttribute('data-state',ratio!==null&&index<Math.floor(ratio*30)?'done':state==='running'?'busy':'pending');
+  }
+}
+
+export function restoreProgressCopy(progress) {
+  return ({receiving:'Receiving settings',saving:'Saving settings',checking:'Checking saved settings',success:'Settings restored',error:'Settings need attention'})[progress?.phase]||'Preparing restoration';
+}

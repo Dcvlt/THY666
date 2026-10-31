@@ -232,10 +232,50 @@ test('restoration failure, an unverified result and mismatched saved CRC never b
     f.act('restore');f.act('confirm');await flush();
     assert.equal(f.panel.refresh().preservation.state,'failed');assert.equal(f.panel.usbBusy,false);
     assert.equal(f.find('updaterAction','companion').hidden,true);
+    assert.equal(f.panel.refresh().applicationVerification.healthFresh,false);
+    assert.match(f.mount.querySelector('.update-completion').textContent,/Settings need attention/);
+    assert.doesNotMatch(f.mount.querySelector('.update-completion').textContent,/firmware is healthy/);
+    assert.equal(f.find('updaterAction','restore').disabled,true,'Recheck health before another explicit restore.');
+    assert.equal(f.find('updaterAction','verify').hidden,false);
     assert.notEqual(f.mount.querySelector('.update-logo-art').dataset.state,'restored');
     assert.match(f.find('updaterReadout','restoration-status').textContent,/No restore retry was sent/);
     assert.equal(f.calls.filter(([name])=>name==='restore').length,1);
     assert.equal(f.calls.filter(([name])=>name==='install').length,1);
+  }
+});
+
+test('saved readback alone cannot hide an instrument failure after restoration',async()=>{
+  let restored=false;
+  const f=fixture({connected:true,restore:async()=>{restored=true;return{verified:true,payloadCRC:deviceCRC32(backupBytes().subarray(64)),generation:2};},
+    telemetry:async id=>id==='status'&&restored?healthReports().status.replace('ready=1','ready=0'):healthReports()[id]});
+  await installWithRetainedBackup(f);f.act('restore');f.act('confirm');await flush();
+  assert.equal(f.panel.refresh().preservation.state,'failed');
+  assert.match(f.panel.refresh().preservation.error,/Saved settings match.*post-restore checks/);
+  assert.equal(f.find('updaterAction','companion').hidden,true);
+  assert.equal(f.calls.filter(([name])=>name==='restore').length,1);
+  assert.equal(f.calls.filter(([name])=>name==='install').length,1);
+});
+
+test('post-restore verification waits only for bounded quiet pad warmup and never repeats the restore',async()=>{
+  let restored=false,reads=0;
+  const f=fixture({connected:true,restore:async()=>{restored=true;return{verified:true,payloadCRC:deviceCRC32(backupBytes().subarray(64)),generation:2};},
+    telemetry:async id=>id==='io'&&restored&&++reads<3?healthReports().io.replace('warmed=96','warmed=12'):healthReports()[id]});
+  await installWithRetainedBackup(f);f.act('restore');f.act('confirm');await flush();
+  assert.equal(f.panel.refresh().preservation.state,'running');assert.match(f.mount.textContent,/Pads settling/);
+  f.tick();await flush();assert.equal(f.panel.refresh().preservation.state,'running');
+  f.tick();await flush();assert.equal(f.panel.refresh().preservation.state,'verified');
+  assert.equal(f.calls.filter(([name])=>name==='restore').length,1);assert.equal(reads,3);
+});
+
+test('pad warmup timeout and real driver errors remain failures without another restore',async()=>{
+  for(const fault of [false,true]){
+    let restored=false;
+    const f=fixture({connected:true,restore:async()=>{restored=true;return{verified:true,payloadCRC:deviceCRC32(backupBytes().subarray(64)),generation:2};},
+      telemetry:async id=>id==='io'&&restored?healthReports().io.replace('warmed=96','warmed=0').replace('din_errors=0',`din_errors=${fault?1:0}`):healthReports()[id]});
+    await installWithRetainedBackup(f);f.act('restore');f.act('confirm');await flush();
+    for(let n=0;!fault&&n<21;n++){f.tick();await flush();}
+    assert.equal(f.panel.refresh().preservation.state,'failed');assert.equal(f.calls.filter(([name])=>name==='restore').length,1);
+    assert.equal(f.calls.filter(([name,id])=>name==='telemetry'&&id==='io').length,fault?2:22);
   }
 });
 

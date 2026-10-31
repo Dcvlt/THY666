@@ -3,6 +3,7 @@
  * reset, note injection or allocation. File header is virtually concatenated
  * with shared journal staging so the largest payload needs no extra RAM copy. */
 #include "thy_settings_transfer.h"
+#include "thy_crc32.h"
 
 typedef struct {char *out;size_t used,capacity;} text;
 static void add(text *w,const char *p){while(*p && w->used+1u<w->capacity)w->out[w->used++]=*p++;}
@@ -21,18 +22,55 @@ static int hex_identity(const char *p,unsigned count,uint8_t *out,unsigned retai
     for(unsigned n=0;n<count;++n){if(!p[0]||!p[1])return 0;int a=nibble(*p++),b=nibble(*p++);if(a<0||b<0)return 0;if(n<retained)out[n]=(uint8_t)((unsigned)a*16u+(unsigned)b);}
     return !*p;
 }
-static uint32_t crc_byte(uint32_t c,uint8_t n){c^=n;for(unsigned b=0;b<8u;++b)c=(c>>1)^((0u-(c&1u))&UINT32_C(0xedb88320));return c;}
 static uint8_t file_byte(const thy_settings_transfer *s,uint32_t at){return at<64u?s->header[at]:s->buffer[at-64u];}
-static uint32_t file_crc(const thy_settings_transfer *s){uint32_t c=UINT32_MAX;for(uint32_t n=0;n<s->bytes;++n)c=crc_byte(c,file_byte(s,n));return ~c;}
+static uint32_t file_crc(const thy_settings_transfer *s){
+    size_t header=s->bytes<64u?s->bytes:64u;
+    uint32_t crc=thy_crc32_update(UINT32_MAX,s->header,header);
+    if(s->bytes>64u)crc=thy_crc32_update(crc,s->buffer,s->bytes-64u);
+    return ~crc;
+}
 static const char *state_name(unsigned state){static const char *const names[]={"idle","upload","download","applied","queued","saved-verified","error"};return state<7u?names[state]:"error";}
 int thy_settings_transfer_staging(const thy_settings_transfer *s){return s && (s->state==THY_BACKUP_UPLOAD||s->state==THY_BACKUP_DOWNLOAD);}
 int thy_settings_transfer_busy(const thy_settings_transfer *s){return s && (thy_settings_transfer_staging(s)||s->state==THY_BACKUP_APPLIED||s->state==THY_BACKUP_QUEUED);}
+static const char *phase_name(unsigned phase){static const char *const names[]={"idle","receiving","saving","checking","success","error"};return phase<6u?names[phase]:"error";}
+void thy_settings_transfer_progress(const thy_settings_transfer *s,const thy_settings_journal *j,thy_restore_progress *out)
+{
+    if(!out)return;
+    *out=(thy_restore_progress){0};if(!s||!j)return;
+    out->phase=s->restore_phase;out->active=s->restore_active;
+    out->pads_locked=s->restore_active;
+    out->device_verified=s->restore_verified;
+    if(out->phase==THY_RESTORE_RECEIVING){out->completed=s->received;out->total=s->bytes;}
+    else if(out->phase==THY_RESTORE_SAVING&&j->writing){
+        /* The commit word at offset28 is deliberately written last. Count
+         * verified body bytes, not the address span across that reserved word. */
+        out->completed=j->write_offset>28u?j->write_offset-4u:j->write_offset;out->total=j->write_bytes;
+    }
+    else if(out->phase==THY_RESTORE_CHECKING&&s->state==THY_BACKUP_DOWNLOAD){out->completed=s->received;out->total=s->bytes;}
+    else if(out->phase==THY_RESTORE_SUCCESS)out->completed=out->total=s->restore_bytes;
+    if(out->total&&out->completed>out->total)out->completed=out->total;
+}
 void thy_settings_transfer_init(thy_settings_transfer *s,uint8_t *buffer,size_t capacity,
     const thy_backup_identity *identity,thy_backup_apply_fn apply,void *context)
 {if(s){*s=(thy_settings_transfer){.buffer=buffer,.capacity=capacity,.apply=apply,.context=context};if(identity)s->identity=*identity;}}
-void thy_settings_transfer_disconnect(thy_settings_transfer *s){if(s){if(s->state==THY_BACKUP_APPLIED||s->state==THY_BACKUP_QUEUED)s->state=THY_BACKUP_ERROR;else s->state=THY_BACKUP_IDLE;}}
+void thy_settings_transfer_disconnect(thy_settings_transfer *s)
+{
+    if(!s)return;
+    if(s->restore_applied){
+        s->restore_disconnected=1u;
+        if(s->state==THY_BACKUP_DOWNLOAD)s->state=THY_BACKUP_IDLE;
+        if(s->restore_verified&&!s->restore_host_verified){s->restore_active=0u;s->restore_phase=THY_RESTORE_ERROR;}
+        /* APPLIED/QUEUED saving and unverified ERROR retain their guard. */
+    }else{
+        s->state=THY_BACKUP_IDLE;s->restore_active=0u;
+        if(s->restore_phase!=THY_RESTORE_ERROR)s->restore_phase=THY_RESTORE_IDLE;
+    }
+}
 int thy_settings_transfer_expire(thy_settings_transfer *s,uint32_t now){
-    if(s && thy_settings_transfer_staging(s) && (uint32_t)(now-s->last_ms)>=10000u){s->state=THY_BACKUP_IDLE;return 1;}return 0;
+    if(s && thy_settings_transfer_staging(s) && (uint32_t)(now-s->last_ms)>=10000u){
+        if(s->state==THY_BACKUP_UPLOAD&&!s->restore_applied){s->restore_active=0u;s->restore_phase=THY_RESTORE_ERROR;}
+        s->state=THY_BACKUP_IDLE;return 1;
+    }return 0;
 }
 static int identity_header(thy_settings_transfer *s){
     for(unsigned n=0;n<64u;++n)s->header[n]=0;
@@ -64,18 +102,22 @@ void thy_settings_transfer_poll(thy_settings_transfer *s,const thy_engine *e,
     if(!s||!e||!j)return;
     (void)thy_settings_transfer_expire(s,now);
     if(s->state!=THY_BACKUP_APPLIED&&s->state!=THY_BACKUP_QUEUED)return;
-    if(j->status==THY_SETTINGS_ERROR||j->status==THY_SETTINGS_UNSUPPORTED){s->state=THY_BACKUP_ERROR;return;}
+    if(j->status==THY_SETTINGS_ERROR||j->status==THY_SETTINGS_UNSUPPORTED){s->state=THY_BACKUP_ERROR;s->restore_phase=THY_RESTORE_ERROR;return;}
     s->state=THY_BACKUP_QUEUED;
+    s->restore_phase=THY_RESTORE_SAVING;
     if(!quiet||j->writing||j->status!=THY_SETTINGS_SAVED||!j->loaded)return;
     if(j->saved_crc!=s->payload_crc){
-        if(j->generation!=s->start_generation)s->state=THY_BACKUP_ERROR;
+        if(j->generation!=s->start_generation){s->state=THY_BACKUP_ERROR;s->restore_phase=THY_RESTORE_ERROR;}
         return;
     }
     size_t bytes=0u;
     if(!thy_settings_encode(e,s->buffer,s->capacity,&bytes)||bytes!=s->payload_bytes||
         thy_settings_crc32(s->buffer,bytes)!=s->payload_crc||j->saved_crc!=s->payload_crc||
-        j->payload_bytes!=s->payload_bytes){s->state=THY_BACKUP_ERROR;return;}
+        j->payload_bytes!=s->payload_bytes){s->state=THY_BACKUP_ERROR;s->restore_phase=THY_RESTORE_ERROR;return;}
     s->state=THY_BACKUP_SAVED_VERIFIED;
+    s->restore_verified=1u;s->restore_generation=j->generation;
+    s->restore_phase=THY_RESTORE_CHECKING;
+    if(s->restore_disconnected){s->restore_active=0u;s->restore_phase=THY_RESTORE_ERROR;}
 }
 size_t thy_settings_transfer_command(thy_settings_transfer *s,const thy_engine *e,
     thy_settings_journal *j,int available,int quiet,uint32_t now,
@@ -90,14 +132,29 @@ size_t thy_settings_transfer_command(thy_settings_transfer *s,const thy_engine *
         add(&w," chunk=32 target=");number(&w,s->identity.target);add(&w," compatibility=");number(&w,s->identity.compatibility);
         add(&w," uid=");add(&w,s->identity.uid?s->identity.uid:"");add(&w," build=");add(&w,s->identity.build?s->identity.build:"");
         add(&w," schema=");add(&w,s->identity.schema?s->identity.schema:"");
+        add(&w," restore_guard=1");
     }else if(same(line,"backup status")){
         add(&w,"BACKUP version=1 state=");add(&w,state_name(s->state));
         add(&w," bytes=");number(&w,s->bytes);add(&w," received=");number(&w,s->received);
         add(&w," crc32=");hex(&w,s->crc,8u);add(&w," payload_crc32=");hex(&w,s->payload_crc,8u);
         add(&w," generation=");number(&w,j->generation);
+        thy_restore_progress progress;thy_settings_transfer_progress(s,j,&progress);
+        add(&w," restore_active=");number(&w,s->restore_active);
+        add(&w," restore_phase=");add(&w,phase_name(progress.phase));
+        add(&w," restore_completed=");number(&w,progress.completed);
+        add(&w," restore_total=");number(&w,progress.total);
+        add(&w," restore_verified=");number(&w,s->restore_verified);
     }else if(same(line,"backup abort")){
-        if(s->state==THY_BACKUP_APPLIED||s->state==THY_BACKUP_QUEUED)add(&w,"ERR backup-applied");
-        else{s->state=THY_BACKUP_IDLE;j->observed=0u;add(&w,"BACKUP aborted");}
+        if(s->state==THY_BACKUP_APPLIED||s->state==THY_BACKUP_QUEUED||
+            (s->restore_active&&s->restore_applied&&s->restore_phase!=THY_RESTORE_ERROR&&s->state!=THY_BACKUP_DOWNLOAD))add(&w,"ERR backup-applied");
+        else if(s->state!=THY_BACKUP_DOWNLOAD&&s->restore_phase==THY_RESTORE_ERROR&&s->restore_active&&j->writing)add(&w,"ERR backup-busy");
+        else{
+            int download=s->state==THY_BACKUP_DOWNLOAD;
+            s->state=THY_BACKUP_IDLE;
+            if(!download){s->restore_active=0u;if(!s->restore_applied&&s->restore_phase!=THY_RESTORE_ERROR)s->restore_phase=THY_RESTORE_IDLE;}
+            if(!s->restore_applied)j->observed=0u;
+            add(&w,"BACKUP aborted");
+        }
     }else if(same(line,"backup export")){
         size_t bytes=0u;
         if(!available||thy_settings_transfer_busy(s)||!quiet)add(&w,"ERR backup-busy");
@@ -111,10 +168,12 @@ size_t thy_settings_transfer_command(thy_settings_transfer *s,const thy_engine *
                 add(&w," settings=");number(&w,THY_SETTINGS_VERSION);}
         }
     }else if(prefix(&p,"backup begin ")&&decimal(&p,&first)&&*p++==' '&&decimal(&p,&second)&&!*p){
-        if(!available||thy_settings_transfer_busy(s)||!quiet||j->status==THY_SETTINGS_ERROR||j->status==THY_SETTINGS_UNSUPPORTED)add(&w,"ERR backup-busy");
+        if(!available||s->restore_active||thy_settings_transfer_busy(s)||!quiet||j->status==THY_SETTINGS_ERROR||j->status==THY_SETTINGS_UNSUPPORTED)add(&w,"ERR backup-busy");
         else if(!s->buffer)add(&w,"ERR backup-buffer");
         else if(first<64u+THY_SETTINGS_V13_PARAMETER_BYTES+32u+THY_SEQ_TRACKS*24u||first>THY_BACKUP_FILE_MAX||first-64u>s->capacity)add(&w,"ERR backup-size");
         else{s->bytes=first;s->received=0u;s->crc=second;s->payload_crc=0u;s->payload_bytes=first-64u;s->state=THY_BACKUP_UPLOAD;s->last_ms=now;
+            s->restore_active=1u;s->restore_applied=s->restore_verified=s->restore_host_verified=s->restore_disconnected=0u;
+            s->restore_crc=s->restore_generation=0u;s->restore_bytes=first-64u;s->restore_phase=THY_RESTORE_RECEIVING;
             add(&w,"BACKUP ready bytes=");number(&w,first);}
     }else if((p=line,prefix(&p,"backup put "))&&decimal(&p,&first)&&*p++==' '){
         uint8_t bytes[32];unsigned count=0u;int valid=1;
@@ -127,14 +186,22 @@ size_t thy_settings_transfer_command(thy_settings_transfer *s,const thy_engine *
     }else if(same(line,"backup commit")){
         if(!available||s->state!=THY_BACKUP_UPLOAD||s->received!=s->bytes)add(&w,"ERR backup-incomplete");
         else if(!quiet||j->status==THY_SETTINGS_ERROR||j->status==THY_SETTINGS_UNSUPPORTED)add(&w,"ERR backup-busy");
-        else if(file_crc(s)!=s->crc||!file_valid(s,e))add(&w,"ERR backup-crc-or-format");
-        else if(!s->apply||!s->apply(s->context,s->buffer,s->bytes-64u))add(&w,"ERR backup-apply");
+        else if(file_crc(s)!=s->crc||!file_valid(s,e)){s->restore_phase=THY_RESTORE_ERROR;add(&w,"ERR backup-crc-or-format");}
+        else if(!s->apply||!s->apply(s->context,s->buffer,s->bytes-64u)){s->restore_phase=THY_RESTORE_ERROR;add(&w,"ERR backup-apply");}
         else{s->payload_crc=get32(s->header+12);s->state=THY_BACKUP_APPLIED;s->last_ms=now;s->start_generation=j->generation;j->observed=0u;
+            s->restore_applied=1u;s->restore_crc=s->payload_crc;s->restore_bytes=s->payload_bytes;s->restore_phase=THY_RESTORE_SAVING;
             add(&w,"BACKUP applied bytes=");number(&w,s->bytes);add(&w," payload_crc32=");hex(&w,s->payload_crc,8u);}
+    }else if((p=line,prefix(&p,"backup complete "))&&decimal(&p,&first)&&!*p){
+        if(!available||!quiet||!s->restore_active||!s->restore_verified||!s->restore_applied||s->state==THY_BACKUP_ERROR||
+            thy_settings_transfer_staging(s)||first!=s->restore_crc||j->writing||j->status!=THY_SETTINGS_SAVED||!j->loaded||
+            j->saved_crc!=s->restore_crc||j->generation!=s->restore_generation||j->payload_bytes!=s->restore_bytes)add(&w,"ERR backup-complete");
+        else{s->restore_host_verified=1u;s->restore_active=0u;s->restore_phase=THY_RESTORE_SUCCESS;
+            add(&w,"BACKUP complete payload_crc32=");hex(&w,s->restore_crc,8u);add(&w," generation=");number(&w,s->restore_generation);}
     }else if((p=line,prefix(&p,"backup get "))&&decimal(&p,&first)&&*p++==' '&&decimal(&p,&second)&&!*p){
         if(!available||s->state!=THY_BACKUP_DOWNLOAD)add(&w,"ERR backup-state");
         else if(!second||second>32u||first>s->bytes||second>s->bytes-first)add(&w,"ERR backup-offset");
-        else{s->last_ms=now;add(&w,"BACKUP data offset=");number(&w,first);add(&w," hex=");for(unsigned n=0;n<second;++n)hex(&w,file_byte(s,first+n),2u);}
+        else{s->last_ms=now;if(first<=s->received&&first+second>s->received)s->received=first+second;
+            add(&w,"BACKUP data offset=");number(&w,first);add(&w," hex=");for(unsigned n=0;n<second;++n)hex(&w,file_byte(s,first+n),2u);}
     }else add(&w,"ERR backup-command");
     add(&w,"\r\n");response[w.used]=0;return w.used;
 }

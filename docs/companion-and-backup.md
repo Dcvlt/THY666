@@ -188,14 +188,43 @@ Panels adapt to what you are playing:
 
 | Panel | What to look for |
 | --- | --- |
-| Expression | Left/right pressure, captured strike velocity and the selected pressure destination. Aftertouch-stage marks explain the split. |
+| Expression | Left/right input peaks and routing, plus each MPE member's reported output pressure, upper axis, bend, note, channel and ownership state on telemetry-enabled firmware. |
 | Arps | A dim pitch pool with sounding notes brightened. This is the combined pool, rather than an individual Arp step display. |
 | Harmony | Current chord → selected suggestion, the board's explanation, shared/changed tones and recent chord history. |
-| Sequencer | Selected track, stopped/playing state and distinct armed/recording feedback. |
+| Sequencer | Selected track, stopped/playing state, armed/recording feedback and sampled loop positions for all created tracks on telemetry-enabled firmware. |
 
-Missing values stay unavailable. The Client does not invent MPE member activity,
-Arp phase or track playheads from its own clock. Detailed per-voice and playback
-position telemetry remains future work.
+Missing or stale values stay unavailable. Older firmware retains the aggregate
+panels and explains that detailed output/playhead telemetry needs an update.
+The Client does not invent MPE member activity, Arp phase or track playheads
+from its own clock. These development additions await a connected board check.
+
+### Live performance snapshots
+
+Compatible firmware advertises `performance=1 performance_bytes=1024` in
+`companion caps`. The optional `companion performance snapshot` command freezes
+a `THYPER1` version 1 packet; the ordinary sequence-bound chunk/CRC/release
+transaction reads it. It shares the existing caller-owned staging with display,
+Harmony, pad-map and storage transfers. It does not render a frame, advance time,
+send MIDI or change notes/settings. Field offsets are defined in
+`core/thy_companion.h` and checked by the shared Client decoder.
+
+| Part | Reported state |
+| --- | --- |
+| Header and transport | Device/build/schema identity, capture time, sequencer revision, transport/clock generations, 64-bit position, tempo, clock readiness, pause/suspension, selected track and capture state |
+| 15 MPE member slots | Captured channel, pitch, physical source, destinations, pressure mapping and velocity; last accepted output values, desired values and pending-strum/sustain/retiring state |
+| 21 track slots | Created/enabled/running/muted/one-shot state, actual loop start/length and playhead, grid spacing, run generation, queued launch/stop and recording state |
+
+Output values mean MIDI events accepted by the core's output queue. They do not
+prove delivery through USB/DIN or a receiver's response. Input peak gauges remain
+separate from member output meters. A reserved strum voice is not yet sounding;
+a sustained or retiring channel remains occupied until its existing cleanup ends.
+
+The Client requests this packet only while its Board meters are relevant, after
+base feedback, at most once per 200 ms. It uses the existing serialized poll
+loop, without another timer. Hidden or inactive windows, disconnects, updater
+ownership and other blocking work suppress requests. Received positions are
+sampled directly; there is no local extrapolation between snapshots. Stopped,
+paused, clock-suspended and absent tracks retain their distinct meanings.
 
 The startup presentation draws the logo's diamonds in sequence, then its center
 numbers and broken-line ripples on black. The app appears once initialization
@@ -232,6 +261,12 @@ installation route; no bootloader replacement is included.
 
 ## Restore and verification
 
+Diagnostics includes **Backup service** (the read-only transfer state) and
+**Pad scanner** (scan progress and acquisition errors). An `applied` or `queued`
+backup has changed live settings but has not verified a durable save. Keep the
+backup file and inspect **Saved settings** before another restore; these reports
+never start, cancel or retry a transfer.
+
 Choosing a file only inspects it. **Restore backup** requires a separate explicit
 confirmation. The client validates checksums and connected-board compatibility
 before upload. For a compatible older backup being restored to the current format, a separate shared
@@ -263,6 +298,38 @@ may already have applied: keep the file, reconnect and inspect/read back the
 device instead of assuming rollback. An abandoned pre-commit transfer expires;
 disconnect releases its staging. Once applied, ordinary journal maintenance
 continues even if host verification is interrupted.
+
+The updater rechecks instrument readiness, MIDI, storage and display after a
+successful saved readback. Earlier startup checks become stale when restoration
+begins. A failed restore shows **Settings need attention**, rather than retaining
+an earlier healthy result. Rechecking health is read-only and never retries the
+restore.
+
+### Guarded restoration
+
+On firmware advertising `restore_guard=1`, accepting a restore opens a dedicated
+board screen and locks pad playing and settings edits. The board and Client show
+receiving, saving and checking separately. Byte counts come from acknowledged
+work; an unknown-duration stage has no invented percentage. The normal scanner
+continues, and returning to play requires fresh quiet pad baselines and released
+controls.
+
+Use the current Client with this firmware. Older Clients do not send the guarded
+completion acknowledgement and can leave the board waiting for it even after
+their own readback comparison has finished.
+
+The Client compares the entire saved payload before sending one completion
+acknowledgement. The board checks its saved checksum and generation before
+unlocking. Export/readback uses the shared transfer buffer without discarding
+the restore guard. An error remains visible; neither side retries restoration.
+
+If the Client disconnects before application, the upload is abandoned without
+changing the configuration. Once applied, the board continues saving on its
+own. A disconnected, durably saved restore may return control with a host-check
+pending result; it must not claim the missing Client comparison passed. Failed
+or unverified applied state stays guarded until explicitly inspected. Keep the
+original backup. This guarded workflow is host-tested; hardware qualification
+is still required.
 
 
 ## Refresh and qualification
@@ -343,6 +410,13 @@ supports MIDI activity; resource gauges stay unavailable until updated.
 
 Focused board checks passed the resource display and reported values. Worst-case
 timing overhead and stack use still require dedicated load measurements.
+
+Profiling-enabled firmware adds **Timing capture** with explicit Start,
+Stop and Export controls. A capture lasts up to 60 seconds and continues on the
+board when the Client is disconnected. Reconnect to read its stopped results;
+export before starting another capture or powering off. These measurements are
+separate from live report monitoring. See the [profiling guide](profiling.md)
+for workload comparisons, histogram precision and queue/timing boundaries.
 
 Board adds contextual panels for MPE, Arps, Sequencer and Harmony when active.
 Harmony groups the retained chord and physical map, suggestions, exploration

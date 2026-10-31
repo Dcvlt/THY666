@@ -30,7 +30,7 @@ class InstrumentTests(unittest.TestCase):
         env["ZIG_LOCAL_CACHE_DIR"] = str(output / "zig-cache")
         env["TEMP"] = env["TMP"] = str(ROOT / ".tools/tmp")
         command = [str(compiler), "cc", *native_target_flags(), "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
-                   str(ROOT / "core/thy_core.c"), str(ROOT / "core/thy_midi.c"),
+                   str(ROOT / "core/thy_core.c"), str(ROOT / "core/thy_crc32.c"), str(ROOT / "core/thy_midi.c"),
                    str(ROOT / "core/thy_instrument.c"),
             *[str(ROOT / "core" / name) for name in ("thy_chord_layout.c", "thy_voicing.c", "thy_library.c", "thy_expression_profile.c")],
                    str(ROOT / "tests/core/test_instrument.c"), "-o", str(binary)]

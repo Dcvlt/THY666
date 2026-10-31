@@ -2,6 +2,7 @@
 #include "thy_mpe.h"
 
 _Static_assert(sizeof(thy_mpe) <= 1024u, "MPE workspace must stay compact");
+_Static_assert(sizeof(thy_mpe_voice) == 24u, "MPE telemetry uses existing voice padding");
 
 static int route_valid(uint8_t destinations)
 {
@@ -336,6 +337,7 @@ int thy_mpe_press_ex(thy_mpe *mpe, uint8_t pad, uint8_t logical,
         voice->channel = channels[i];
         voice->destinations = destinations;
         voice->pressure_output = mpe->config.pressure_output[logical / 48u];
+        voice->velocity = velocity;
         voice->state = THY_MPE_HELD;
     }
     if (out_consumed != NULL) *out_consumed = 0;

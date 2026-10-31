@@ -308,6 +308,10 @@ void board_pads_task(uint32_t now)
         if (pad_report.subscan < 3u) {
             int result = adc_start();
             if (result != DIAG_SUCCESS) { fail_and_restore(now, result); return; }
+            /* A completed DMA proves progress even when foreground work
+             * delayed servicing it. Bound the newly started conversion,
+             * not the time since the first subscan; the test lease is fixed. */
+            acquire_ms = now;
         }
     }
     if (pad_report.subscan == 3u) {

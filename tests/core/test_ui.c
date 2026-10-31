@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include <stdio.h>
+#include <limits.h>
 #include <string.h>
 #include "../../core/thy_ui.h"
 
@@ -25,6 +26,66 @@ static void initialize(void)
 static int pixel_at(const uint8_t *bytes, unsigned x, unsigned y)
 {
     return !!(bytes[y / 8u * 128u + x] & (1u << (y % 8u)));
+}
+
+static void reference_pixel(uint8_t *bytes,unsigned x,unsigned y,int enabled)
+{
+    if(x>=128u||y>=64u)return;
+    uint8_t mask=(uint8_t)(1u<<(y%8u));
+    if(enabled)bytes[(y/8u)*128u+x]|=mask;
+    else bytes[(y/8u)*128u+x]&=(uint8_t)~mask;
+}
+
+static int test_page_rectangles_match_pixel_reference(void)
+{
+    static const unsigned sizes[]={0u,1u,3u,7u,8u,9u,63u,128u,129u,UINT_MAX};
+    struct {uint8_t before[16],pixels[1024],after[16];} g;
+    uint8_t seed[1024],expected[1024],guard[16];
+    memset(&g,0xa5,sizeof g);memset(guard,0xa5,sizeof guard);
+    for(unsigned n=0;n<sizeof seed;n++)seed[n]=(uint8_t)(n*37u+53u);
+    for(unsigned y=0;y<=64u;y++)for(unsigned x=0;x<=128u;x++)
+        for(unsigned n=0;n<sizeof sizes/sizeof sizes[0];n++)for(int enabled=0;enabled<2;enabled++){
+            unsigned width=sizes[n],height=sizes[(n+x+y)%10u];
+            memcpy(g.pixels,seed,sizeof seed);memcpy(expected,seed,sizeof seed);
+            for(unsigned dy=0;dy<height&&y+dy<64u;dy++)
+                for(unsigned dx=0;dx<width&&x+dx<128u;dx++)
+                    reference_pixel(expected,x+dx,y+dy,enabled);
+            thy_ui_draw_rectangle(g.pixels,x,y,width,height,enabled);
+            CHECK(memcmp(g.pixels,expected,sizeof expected)==0);
+            CHECK(memcmp(g.before,guard,sizeof guard)==0&&memcmp(g.after,guard,sizeof guard)==0);
+        }
+    memcpy(g.pixels,seed,sizeof seed);
+    thy_ui_draw_rectangle(g.pixels,UINT_MAX,0u,UINT_MAX,UINT_MAX,1);
+    thy_ui_draw_rectangle(g.pixels,0u,UINT_MAX,UINT_MAX,UINT_MAX,0);
+    thy_ui_draw_rectangle(NULL,0u,0u,128u,64u,1);
+    CHECK(memcmp(g.pixels,seed,sizeof seed)==0);
+    return 1;
+}
+
+static int test_glyph_columns_preserve_clipping_and_existing_pixels(void)
+{
+    static const unsigned xs[]={0u,1u,120u,124u,125u,127u,128u,
+        UINT_MAX-3u,UINT_MAX-2u,UINT_MAX-1u,UINT_MAX};
+    uint8_t glyph_pixels[1024],expected[1024],seed[1024];
+    struct {uint8_t before[16],pixels[1024],after[16];} g;
+    uint8_t guard[16];memset(guard,0xa5,sizeof guard);memset(&g,0xa5,sizeof g);
+    for(unsigned n=0;n<sizeof seed;n++)seed[n]=(uint8_t)(n*53u+37u);
+    for(unsigned ch=1u;ch<256u;ch++){
+        char label[2]={(char)ch,0};memset(glyph_pixels,0,sizeof glyph_pixels);
+        thy_ui_draw_text(glyph_pixels,0u,0u,label,1u,0);
+        for(unsigned yi=0;yi<70u;yi++)for(unsigned xi=0;xi<sizeof xs/sizeof xs[0];xi++)
+            for(int inverse=0;inverse<2;inverse++){
+                unsigned x=xs[xi],y=yi<66u?yi:UINT_MAX-(69u-yi);
+                memcpy(g.pixels,seed,sizeof seed);memcpy(expected,seed,sizeof seed);
+                if(x+4u<=128u)
+                    for(unsigned dx=0;dx<4u;dx++)for(unsigned dy=0;dy<5u;dy++)
+                        if(pixel_at(glyph_pixels,dx,dy))reference_pixel(expected,x+dx,y+dy,!inverse);
+                thy_ui_draw_text(g.pixels,x,y,label,1u,inverse);
+                CHECK(memcmp(g.pixels,expected,sizeof expected)==0);
+                CHECK(memcmp(g.before,guard,sizeof guard)==0&&memcmp(g.after,guard,sizeof guard)==0);
+            }
+    }
+    return 1;
 }
 
 static int matches_footer(const uint8_t *actual, const char *label)
@@ -215,10 +276,12 @@ static int test_bounded_animation_wrap_and_reduce_motion(void)
 
 int main(void)
 {
-    if (!test_content_rules() || !test_pitch_names() || !test_font_clipping_and_page_geometry() ||
+    if (!test_page_rectangles_match_pixel_reference() ||
+        !test_glyph_columns_preserve_clipping_and_existing_pixels() ||
+        !test_content_rules() || !test_pitch_names() || !test_font_clipping_and_page_geometry() ||
         !test_shared_live_note_rendering_and_routes() ||
         !test_menu_navigation_values_and_notice() ||
         !test_bounded_animation_wrap_and_reduce_motion()) return 1;
-    printf("6 shared UI scenarios passed (%u assertions)\n", assertions);
+    printf("8 shared UI scenarios passed (%u assertions)\n", assertions);
     return 0;
 }

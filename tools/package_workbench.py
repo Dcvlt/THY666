@@ -73,6 +73,7 @@ def package():
     paths += [web / "cockpit.js", web / "cockpit.css", web / "typography.css",
               web / "companion-display.js", web / "companion-display.css"]
     paths += [web / "ui-system.js", web / "ui-system.css"]
+    paths += [web / "profile-panel.js", web / "profile-panel.css"]
     paths += [web / "startup.js", web / "startup.css", web / "updater-panel.js", web / "updater-client.js", web / "updater-art.js", web / "updater-checks.js", web / "updater-layout.js", web / "updater-wizard.css", web / "desktop-runtime.js", web / "desktop-chrome.js", web / "desktop-chrome.css"]
     paths += [web / "browser-hid.js", web / "browser-updater-client.js"]
     paths += [web / "backup-migration.js"]
@@ -207,7 +208,7 @@ def package():
     help_ui = inline_named_module(assets["help.js"], "help.js", ("./help-topics.js",))
     ui_system = inline_named_module(assets["ui-system.js"], "ui-system.js")
     app_settings = inline_named_module(assets["app-settings.js"], "app-settings.js", ("./ui-system.js",))
-    backup_panel = inline_named_module(assets["backup-panel.js"], "backup-panel.js", ("./device-client.js", "./ui-system.js"))
+    backup_panel = inline_named_module(assets["backup-panel.js"], "backup-panel.js", ("./device-client.js", "./ui-system.js", "./updater-art.js"))
     updater_client = inline_named_module(assets["updater-client.js"], "updater-client.js")
     browser_hid = inline_named_module(assets["browser-hid.js"], "browser-hid.js")
     browser_updater = inline_named_module(assets["browser-updater-client.js"], "browser-updater-client.js",
@@ -223,8 +224,9 @@ def package():
     companion_display = inline_named_module(assets["companion-display.js"], "companion-display.js")
     startup = inline_named_module(assets["startup.js"], "startup.js")
     harmony_guide = inline_named_module(assets["harmony-guide.js"], "harmony-guide.js")
+    profile_panel = inline_named_module(assets["profile-panel.js"], "profile-panel.js")
     companion = inline_named_module(assets["companion-shell.js"], "companion-shell.js",
-        ("./studio-menu.js", "./device-client.js", "./core.js", "./backup-migration.js", "./companion-protocol.js", "./companion-display.js", "./help.js", "./backup-panel.js", "./updater-panel.js", "./browser-updater-client.js", "./app-settings.js", "./cockpit.js", "./harmony-guide.js", "./ui-system.js"))
+        ("./studio-menu.js", "./device-client.js", "./core.js", "./backup-migration.js", "./companion-protocol.js", "./companion-display.js", "./help.js", "./backup-panel.js", "./updater-panel.js", "./browser-updater-client.js", "./app-settings.js", "./cockpit.js", "./harmony-guide.js", "./ui-system.js", "./profile-panel.js"))
     factory = "createBrowserUpdaterClient({"
     browser_guard = "&&globalThis.isSecureContext===true;"
     if companion.count(factory) != 1 or companion.count(browser_guard) != 1:
@@ -237,7 +239,7 @@ def package():
     javascript = "\n".join((core, oled, controller, menu, firmware, schema, model, ui_system, engine_studio, settings,
         rhythm, arp, mpe, library, sequencer_midi, device_song, sequencer, device_client, backup_migration,
         companion_protocol, help_topics, help_ui, app_settings, cockpit, companion_display, backup_panel, updater_client,
-        browser_hid, browser_updater, browser_adapter, desktop_runtime, desktop_chrome, updater_checks, updater_art, updater_layout, updater_panel, harmony_guide, companion, startup, app)).replace("</script", "<\\/script")
+        browser_hid, browser_updater, browser_adapter, desktop_runtime, desktop_chrome, updater_checks, updater_art, updater_layout, updater_panel, harmony_guide, profile_panel, companion, startup, app)).replace("</script", "<\\/script")
     embedded = ('<script id="thy-core-bytes" type="application/octet-stream">' +
                 base64.b64encode(assets["generated/core.wasm"]).decode("ascii") + '</script>\n' +
                 '<script id="thy-runtime-data" type="application/json">' + data.replace('<', '\\u003c') + '</script>\n' +
@@ -246,7 +248,7 @@ def package():
                 '<script id="thy-updater-notices" type="application/json">' + json.dumps(browser_assets["THIRD_PARTY_LICENSES.txt"].decode("utf-8")).replace('<', '\\u003c') + '</script>\n' +
                 '<script type="module">\n' + javascript + '\n</script>')
     html = html.replace(style_tag, '<style>\n' + assets["styles.css"].decode("utf-8") + '\n</style>')
-    for name in ("startup.css", "typography.css", "companion-shell.css", "help.css", "companion-theme.css", "ui-system.css", "updater-wizard.css", "cockpit.css", "companion-display.css", "desktop-chrome.css"):
+    for name in ("startup.css", "typography.css", "companion-shell.css", "help.css", "companion-theme.css", "ui-system.css", "updater-wizard.css", "cockpit.css", "profile-panel.css", "companion-display.css", "desktop-chrome.css"):
         tag = f'<link rel="stylesheet" href="./{name}">'
         if html.count(tag) != 1:
             raise ValueError(f"Missing explicit stylesheet: {name}")

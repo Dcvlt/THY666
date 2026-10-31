@@ -3,6 +3,154 @@
 Feature work must review flash, ordinary SRAM, CCM, stack and foreground service
 cost. A browser bundle's size does not describe MCU memory use.
 
+## Optional profiling build
+
+Build `5a732adb3bda9be2` adds the bounded
+[timing recorder](profiling.md) to the behavior-preserving research baseline
+`726445674e9fbe5d`. The compiled instrument and portable suites pass. Initial
+instrumented board profiles are recorded below; recorder overhead and worst-case
+timing remain unqualified.
+
+| Resource | Occupied | Change from research baseline | Remaining |
+| --- | ---: | ---: | ---: |
+| Raw application /512 KiB | 469,884 B | +5,632 B | 54,404 B |
+| Linked flash | 469,856 B | +5,632 B | 54,432 B |
+| Static SRAM allocation | 108,152 B | +6,288 B | 14,724 B contiguous below the separate stack, including alignment |
+| CCM /64 KiB | 55,672 B | 0 B | 9,864 B |
+| Reserved stack | 8,192 B | 0 B | Actual high-water remains a device check |
+
+The recorder itself uses 6,144 B, including 4,096 B of destination-slot
+timestamps. Adapter marks, callbacks and transport bindings account for the
+rest of the allocation increase. This is fixed storage reserved even while
+recording is off; no heap or musical-pool sharing is introduced. Settings V19,
+song capacity, ownership and display/MIDI service limits remain unchanged.
+
+Inactive hooks skip the hardware cycle counter and journal callbacks. They
+still have branch/call cost. Enabled timings include interrupts and observer
+work; a measured counter-read pair does not quantify all instrumentation.
+Whole-MHz clocks use an exact quotient/remainder conversion instead of a
+software 64-bit division; non-whole-MHz clocks retain the reference conversion.
+Host reference checks cover both paths, without claiming a target speedup.
+
+Final linked callback-aware inspection gives 5,472 B for the selected journal
+encode chain (8 B above the baseline) and 5,240 B for saved validation (40 B
+above). The reviewed DIN cleanup path is 1,052 B, up 12 B. Resolved observer
+callbacks surround rather than overlap the large codec body. These selected
+paths exclude unreviewed callback and interrupt compositions; they are not a
+global stack bound. The 8 KiB reservation and device watermark check remain.
+
+## Initial board profiles
+
+Five 15-second captures on the profiling build completed and exported with all
+19 histograms consistent and no clock, invalid-sample, dropped-sample or
+saturation flags. The Client was connected except for the disconnected-idle
+comparison. All used Play/Simple at 120 BPM; the final capture enabled MPE
+Pressure output. The user confirmed clean DIN releases during playing checks.
+
+| Workload | Loop mean / max (µs) | Render mean (µs) | Render calls | Display bus chunks | Journal checks |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Idle, Client connected | 320 / 5,459 | 989 | 937 | 0 | 44 |
+| Changing RIGHT notes | 323 / 5,387 | 1,421 | 937 | 563 | 14 |
+| Idle, Client disconnected | 321 / 5,461 | 989 | 936 | 0 | 60 |
+| Steady three-note RIGHT hold | 315 / 4,430 | 1,593 | 937 | 42 | 2 |
+| Three-note MPE pressure playing | 321 / 4,884 | 1,183 | 937 | 225 | 15 |
+
+Repeated rendering is the clearest work-elimination candidate. Idle rendering
+continues around 62.5 times per second without display bus work. A steady hold
+raises its mean cost by 61%; the playing snapshot scans the full note ledger
+whenever notes sound. Different journal activity and hold durations prevent
+interpreting the faster steady-hold loop or cheaper MPE render as an improvement.
+No flash programming or erase was observed in these captures.
+
+The MPE workload recorded 743 accepted messages per destination. USB had two
+1 ms waits and DIN had one; all other accepted waits were in the 0 ms bucket.
+Observed peaks were four events in each destination ring and ten DIN bytes.
+These measurements start at destination-ring admission and end at whole-message
+sink acceptance. They do not identify message types, bound unfinished waits or
+measure wire/audio latency. The MPE loop p99 upper bucket was 4,095 µs versus
+2,047 µs in the other captures; this is a coarse bucket crossing, not a measured
+doubling of the exact percentile.
+
+Raw captures and detailed reviews remain in ignored local evidence. This is a
+single-board baseline, not a paired optimization result, maximum-load test or
+recorder-overhead measurement. Guarded restoration remains a separate unfinished
+device qualification.
+
+## Stateless rendering follow-up
+
+Device-tested build `db4aaa0ea0e62fe0` reduces work inside each existing render:
+page-byte rectangle/text drawing, empty eight-key ledger blocks, a shared
+physical-half indicator scan and one footer formatting pass. It introduces no
+retained cache, heap, saved-format change, musical scheduling change or different
+OLED transfer cadence.
+
+| Allocation | Captured profiling baseline | Rendering build | Change |
+| --- | ---: | ---: | ---: |
+| Raw application | 469,884 B | 470,732 B | +848 B |
+| Linked flash | 469,856 B | 470,704 B | +848 B |
+| Static SRAM allocation | 108,152 B | 108,152 B | 0 B |
+| Actual SRAM span, including alignment | 108,156 B | 108,156 B | 0 B |
+| CCM | 55,672 B | 55,672 B | 0 B |
+| Reserved stack | 8,192 B | 8,192 B | 0 B |
+
+This build leaves 53,556 B in the raw application partition, 14,724 B of
+contiguous SRAM below the separate stack and 9,864 B in CCM. The transient
+indicator result occupies 20 bytes; no instance is retained in the engine.
+The linked ledger helper is inlined into the existing snapshot frame and uses
+ordinary word loads for its empty-block probes.
+
+Selected linked stack chains change from 1,504 to 1,548 B for Simple Play,
+1,744 to 1,752 B for the largest inspected render path, and 5,472 to 5,480 B
+for the known journal chain. This leaves 2,712 B above that selected journal
+path before unreviewed callbacks and interrupt/FP stacking. These are inspected
+paths, not a whole-program or hardware stack bound.
+
+Full-frame comparisons against the captured build match across 546,256 drawing
+primitive cases, 1,301 ordinary UI frames, ten restore frames, 56 formatted lines
+and 383 MIDI event records. Prepared OLED payloads, target/shadow buffers, dirty
+maps and commit state also match.
+
+The completed board session verified this build and repeated three 15-second
+Play/Simple workloads at 120 BPM, with matching saved-settings checksums. The
+user accepted the focused test. Observed mean rendering costs were:
+
+| Workload | Baseline mean (µs) | Rendering build mean (µs) | Observed reduction | Render calls before → after |
+| --- | ---: | ---: | ---: | ---: |
+| Idle, Client connected | 989 | 885 | 10.5% | 937 → 937 |
+| Steady three-note RIGHT hold | 1,593 | 1,031 | 35.3% | 937 → 938 |
+| Three-note MPE Pressure, Simple repeat | 1,183 | 693 | 41.4% | 937 → 937 |
+
+The lower costs did not come from reducing the render cadence. All captures
+passed histogram, clock and validity checks, with no invalid, dropped,
+saturated or discarded observations. The accepted MPE repeat recorded 696
+accepted messages per output, all in the 0 ms destination-wait bucket; observed
+peaks stayed at four events per destination and ten DIN bytes.
+
+These are human-repeated workloads, not identical recorded-input replays.
+Exact pitches and pressure/hold timelines were not logged. MPE display chunks
+changed from 225 to 104, so its 41.4% observed mean reduction is not a universal
+or isolated same-frame speedup. Journal activity also varied. An earlier MPE
+capture had a static frame and the Performance menu was visible afterward;
+it is retained as transport activity only and excluded from the rendering
+comparison. The repeated capture began with Simple verified and changing
+display content.
+
+Final telemetry reported 108,156 B SRAM span, 55,672 B CCM and 470,732 B firmware
+flash. The observed stack peak was 5,688 / 8,192 B, leaving 2,504 B not observed
+in use during this session; this is not a worst-case guarantee. Startup was
+ready with zero errors, 24 presses matched 24 releases, and no active voices
+remained. Cleanup returned to Simple READY with MPE and Arps OFF and settings
+saved. No settings backup was restored. Recorder overhead, maximum-load timing,
+wire/audio latency and guarded restoration remain separate qualifications.
+
+Native Windows `-O2` comparisons used seven interleaved baseline/candidate pairs
+per case, with matching output checksums. Idle, held-note and MPE Simple display
+states, rectangles, glyphs and rules all took less time in that host experiment.
+The host experiment alone does not establish Cortex-M4 `-Oz`/LTO timing; the
+board observations above provide the focused target comparison. Native core,
+instrument, browser and fatal-UBSan checks pass, including the separate legacy
+UI boundary suite.
+
 ## Hard limits
 
 | Resource | Capacity / rule |
@@ -62,6 +210,127 @@ interrupts and polling. The firmware does not idle, so this normally approaches
 intervals provide a separate responsiveness measurement over approximately one
 second. Counter arithmetic handles wrap and rejects sampling gaps over five
 seconds. Metrics use fixed state and no heap; hardware timing remains pending.
+
+## Guarded restoration baseline
+
+The fresh recovery build uses 464,432 raw application bytes, 101,864 allocated
+SRAM bytes and 55,672 CCM bytes. The 8,192-byte stack reservation leaves 21,012
+contiguous SRAM bytes below the stack. Relative to the preceding telemetry build,
+guarded restoration and its scanner fix add 3,936 flash bytes and 72 SRAM bytes;
+CCM is unchanged. The restore renderer reuses the existing framebuffer.
+
+Inspection of the linked restore callback path estimates 5,536 stack bytes,
+8 bytes above the preceding build; the selected save path remains 5,448 bytes.
+These figures leave additional interrupt, FPU and unreviewed callback allowance
+to qualify within the 8 KiB reservation. They are not a whole-program stack bound.
+
+The build inspection checks source/artifact identity, startup stack selection and
+the separate settings partition. These are host measurements, not hardware timing
+or worst-case stack qualification. Retain the corresponding local manifest and
+review with the package. Use this corrected recovery build as the next efficiency
+baseline, and compare MIDI output, saved payloads, rendered frames and bounded
+service times before accepting an optimization. Do not use polling-inclusive CPU
+activity as the gain metric.
+
+## Behavior-preserving efficiency pass
+
+The follow-up build removes repeated work while retaining the recovery guard,
+musical capacities, settings/song formats, scheduling and rendered appearance.
+Compared with the guarded-restoration baseline:
+
+| Resource | Recovery baseline | Efficiency build | Change |
+| --- | ---: | ---: | ---: |
+| Raw application image | 464,432 B | 464,264 B | −168 B |
+| Linked flash allocation | 464,404 B | 464,236 B | −168 B |
+| Allocated static SRAM | 101,864 B | 101,864 B | 0 B |
+| CCM | 55,672 B | 55,672 B | 0 B |
+| Contiguous SRAM below reserved stack | 21,012 B | 21,012 B | 0 B |
+
+The application image leaves 60,024 bytes before the separate settings partition.
+No feature, migration, note pool, undo capacity or asset was removed. One
+conservative USB hint fits existing structure padding; the shared CRC table is
+64 immutable flash bytes. No heap or persistent cache was introduced.
+
+The main savings are work rather than storage:
+
+| Path | Removed work |
+| --- | --- |
+| Song encoding | 21 track-occupancy scans become one event pass: 10,752 visits become 512 at capacity. |
+| Song validation | A new maximum event ID needs no duplicate scan. For 512 increasing IDs, 130,816 prior-ID comparisons disappear; arbitrary ordering keeps the exact fallback. |
+| USB polling | Skip canceled-key reconciliation when a conservative hint proves the blocked map empty. |
+| Idle musical feedback | Skip 6,144-key ledger scans when the authoritative sounding count is zero; base Companion snapshots avoid two such scans. |
+| Unchanged display target | Skip 1,024 dirty-map reconciliations, retaining target comparison, timestamps, counters and prepared-chunk behavior. |
+| Checksums | Share a two-nibble-per-byte CRC implementation across settings, songs, library, backup and Companion codecs. |
+
+Frozen-baseline differentials match complete song encodings/rejections, MIDI
+bytes and ownership/counters, Companion snapshots, C frames and display chunk
+state. The full native core/instrument and browser suites pass, as do the actual
+C documentation-frame check and package inspection/simulation. Dense-view test
+fixtures now create real generated owners rather than editing the reference
+ledger without maintaining its sounding count; their pixel expectations remain.
+
+Native-host medians show a 512-event increasing-ID validation at 38.3 µs versus
+101.7 µs, and encoding at 65.0 µs versus 118.3 µs. Two million settled empty USB
+polls take 35.4 ms versus 821 ms. These isolate synthetic host workloads; they
+are not target speedups or bounds on musical latency.
+
+Selected linked stack inspection keeps the restore-apply path at 5,536 bytes.
+The save path becomes 5,464 bytes, 16 bytes above the recovery baseline; the
+8,192-byte reservation is unchanged. These estimates exclude unreviewed indirect
+callbacks and interrupt/FPU composition. Device stack watermark, ADC cadence,
+mixed-load service gaps and actual MIDI/display timing remain unmeasured for this
+build. See [research and next measurements](optimization.md).
+
+### Research follow-up
+
+The accepted research subset further narrows sparse OLED updates and empty-map
+USB expression checks. It retains the first pass's formats, pools, generated
+ownership, output rates, display transfer order and scene fences.
+
+| Resource | First efficiency build | Research follow-up | Change |
+| --- | ---: | ---: | ---: |
+| Raw application | 464,264 B | 464,252 B | −12 B |
+| Linked flash | 464,236 B | 464,224 B | −12 B |
+| Allocated SRAM | 101,864 B | 101,864 B | 0 B |
+| CCM | 55,672 B | 55,672 B | 0 B |
+| Reserved stack | 8,192 B | 8,192 B | 0 B |
+
+There are 60,036 bytes of application flash remaining and 21,012 contiguous SRAM
+bytes below the stack. No new persistent fields or caches are needed. Later
+display targets copy/reconcile only the bytes that differ; initial unknown-panel
+bytes are still all serviced. The existing conservative USB hint bypasses
+expression suppression and both contributor synchronization calls only when the
+blocked map is proven empty. Existing exclusions remain intact.
+
+Complete display-state/panel traces match across 424 synthetic records, including
+unknown pixels, page edges, prepared old payloads and failed writes. Transport
+and actual-main-loop comparisons match MIDI, ownership/exclusions, counters and
+serialized settings. Focused native benchmarks show cheaper sparse submissions
+and empty-map expression handling, but do not establish device latency or a
+whole-application CPU reduction.
+
+Selected linked stack estimates are unchanged for restoration (5,536 B), saving
+(5,464 B) and UI (1,744 B). The reviewed transport path grows from 1,024 B to
+1,040 B through compiler frame allocation. These remain selected software
+estimates without interrupt/FPU or unreviewed callback coverage.
+
+An isolated native UBSan trap build passes the combined core/MIDI suite and all
+40 additional suites, with assertions active. Clean, signed-overflow and failing
+assertion probes first verify that the diagnostic configuration works. Normal
+firmware/WASM receive no sanitizer instrumentation. The pinned Windows compiler
+uses trap mode without the standalone symbolic-report runtime; see
+[development checks](development.md#undefined-behavior-checks).
+
+Offline compiler experiments retained the current source and non-optimization
+flags. `-Os` produced a 464,268-byte raw image, 16 bytes larger than the current
+`-Oz` image, with unchanged static memory and selected stack frames. `-O2` failed
+the existing application/settings partition assertion; it produced no valid
+image and the limit was not relaxed. These experiments were not packaged or
+device-qualified. The shipping build retains `-Oz`/LTO.
+
+Normal core/instrument tests, Client tests, C-rendered help frames, artifact/source
+inspection and offline package checks remain separate from UBSan. Hardware
+recovery, mixed-load timing and runtime stack qualification are still pending.
 
 ## Automatic voice-leading review
 
@@ -554,3 +823,43 @@ and offline Rust package validation pass. Client label requests are optional,
 revision-cached and limited to a visible label overlay; pending work is bounded
 before returning to base feedback. Actual device timing, label refresh during
 playing and the new artifact's stack watermark remain hardware checks.
+
+## Local MPE member and sequencer playhead telemetry
+
+Development build `121c7cff4fb51de6`, under
+`build/instrument-performance-local-01/`, adds a 1,024-byte optional performance
+snapshot. It uses the existing 1,680-byte caller-owned staging rather than
+allocating another frame. Fifteen member records and 21 track records have fixed
+24-byte layouts. Captured MPE velocity fills an existing padding byte: each
+voice remains 24 bytes and the Companion service remains 88 bytes. Settings V19,
+owner pools, track/event capacities and playback scheduling are unchanged.
+
+The frozen-build review and budget comparison against the published v0.2.2
+firmware (`d792e046105e196e`) pass locally:
+
+| Resource | Occupied | Change from v0.2.2 | Remaining |
+| --- | ---: | ---: | ---: |
+| Raw application image / 512 KiB | 460,496 B | +2,032 B | 63,792 B |
+| Linked application flash | 460,468 B | +2,032 B | 63,820 B |
+| Static SRAM allocation | 101,792 B | 0 B | 21,084 B contiguous before the separate stack, after alignment |
+| CCM / 64 KiB | 55,672 B | 0 B | 9,864 B |
+| Reserved stack | 8,192 B | 0 B | Runtime high-water not measured for this build |
+
+Capture scans at most 15 members, their bounded owner keys and three output
+destinations, then copies 21 actual track/transport states. It does not render,
+advance musical time, service MIDI, allocate memory or mutate ownership. The
+Client admits at most one optional performance transaction per 200 ms through
+the existing serialized poll, after base feedback and only for relevant visible
+Board panels. Label and Harmony staging retains exclusive ownership.
+
+Pinned Zig 0.14.1 Cortex-M4 soft-float `-Oz`, non-LTO stack reports give 72 bytes
+for `thy_companion_command`, 80 for the performance snapshot with its voice
+helper inlined, 16 for the common header and 20 for finalization. The new
+command/snapshot/finalization component path totals 172 bytes before callers and
+interrupts. This is not a linked LTO worst-case-stack or timing proof.
+
+The full core and instrument suites, real C-to-WASM-to-Client decoding tests,
+frozen-source audit and capacity checks pass. A local `.333` candidate passed
+Rust package inspection and a synthetic transfer. No hardware was accessed;
+maximum polling/playing load, receiver comparison, input/release latency and
+the actual stack watermark remain on the board checklist.

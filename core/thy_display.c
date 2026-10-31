@@ -108,8 +108,12 @@ int thy_display_panel_visible(const thy_display *display)
 static int submit_target(thy_display *display,
     const uint8_t frame[THY_DISPLAY_FRAME_BYTES], uint32_t now_ms)
 {
-    unsigned changed = !display->started ||
-        bytes_differ(display->target, frame, THY_DISPLAY_FRAME_BYTES);
+    unsigned initial = !display->started;
+    unsigned offset = 0u;
+    if (!initial)
+        for (; offset < THY_DISPLAY_FRAME_BYTES; ++offset)
+            if (display->target[offset] != frame[offset]) break;
+    unsigned changed = initial || offset < THY_DISPLAY_FRAME_BYTES;
     unsigned was_active = display->report.active && display->started;
     display->mode = DISPLAY_DIRTY;
     note_render(display, now_ms);
@@ -118,13 +122,18 @@ static int submit_target(thy_display *display,
         if (was_active) ++display->report.coalesced;
         ++display->report.generation;
         display->target_submitted_ms = now_ms;
-        copy_bytes(display->target, frame, THY_DISPLAY_FRAME_BYTES);
+        /* Initial zero pixels still need delivery to an unknown panel. Later
+         * unchanged target bytes already have exact dirty bits: commits refresh
+         * their shadow/valid bytes, even when an old prepared payload arrives. */
+        for (; offset < THY_DISPLAY_FRAME_BYTES; ++offset)
+            if (initial || display->target[offset] != frame[offset]) {
+                display->target[offset] = frame[offset];
+                refresh_dirty(display, offset);
+            }
     } else ++display->report.unchanged;
     /* The shadow is what successfully reached the panel, not the last target.
      * A newer target may cancel dirty bytes, or make an in-flight old chunk
      * dirty again after it commits. Both cases are resolved against shadow. */
-    for (unsigned offset = 0; offset < THY_DISPLAY_FRAME_BYTES; ++offset)
-        refresh_dirty(display, offset);
     if (display->report.dirty_bytes || display->prepared)
         display->report.active = 1u;
     finish_if_clean(display, now_ms);

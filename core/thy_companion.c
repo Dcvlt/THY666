@@ -4,10 +4,14 @@
 #include "thy_views.h"
 #include "thy_harmony_workspace.h"
 #include "thy_ui.h"
+#include "thy_crc32.h"
 
 _Static_assert(THY_GUIDANCE_LIMIT<=24u,"Harmony scale rows must fit the640-byte wire snapshot");
 _Static_assert(THY_HARMONY_WORKSPACE_CHOICES<=24u,"Harmony chord choices must fit the shared recommendation area");
 _Static_assert(THY_COMPANION_PAD_MAP_BYTES<=THY_COMPANION_SNAPSHOT_BYTES,"Pad labels reuse visual staging");
+_Static_assert(THY_COMPANION_PERFORMANCE_BYTES<=THY_COMPANION_SNAPSHOT_BYTES,"Performance reuses visual staging");
+_Static_assert(THY_COMPANION_PERFORMANCE_VOICES+THY_MPE_MEMBERS*THY_COMPANION_PERFORMANCE_RECORD_BYTES==THY_COMPANION_PERFORMANCE_TRACKS,"Performance voice bounds");
+_Static_assert(THY_COMPANION_PERFORMANCE_TRACKS+THY_SEQ_TRACKS*THY_COMPANION_PERFORMANCE_RECORD_BYTES==THY_COMPANION_PERFORMANCE_BYTES,"Performance track bounds");
 
 typedef struct {char *p;size_t used,cap;} writer;
 static void add(writer *w,const char *p){while(*p && w->used+1u<w->cap)w->p[w->used++]=*p++;}
@@ -23,9 +27,9 @@ static int space(const char **p){if(**p!=' ')return 0;++*p;return 1;}
 static int schema(const char **p){const char *s=THY_MENU_SCHEMA_SHA256;for(unsigned n=0;n<64u;++n)if(!**p||*(*p)++!=s[n])return 0;return space(p);}
 static void u16(uint8_t *p,unsigned at,uint16_t n){p[at]=(uint8_t)n;p[at+1u]=(uint8_t)(n>>8u);}
 static void u32(uint8_t *p,unsigned at,uint32_t n){for(unsigned nbyte=0;nbyte<4u;++nbyte)p[at+nbyte]=(uint8_t)(n>>(8u*nbyte));}
+static void u64(uint8_t *p,unsigned at,uint64_t n){u32(p,at,(uint32_t)n);u32(p,at+4u,(uint32_t)(n>>32u));}
 static void text(uint8_t *p,unsigned at,unsigned limit,const char *s){if(s)for(unsigned n=0;n<limit && s[n];++n)p[at+n]=(uint8_t)s[n];}
 static void bit(uint8_t *p,unsigned at,unsigned n){p[at+n/8u]|=(uint8_t)(1u<<(n&7u));}
-static uint32_t crc32(const uint8_t *p,size_t bytes){uint32_t c=UINT32_MAX;for(size_t n=0;n<bytes;++n){c^=p[n];for(unsigned b=0;b<8u;++b)c=(c>>1u)^((0u-(c&1u))&UINT32_C(0xedb88320));}return ~c;}
 void thy_companion_init(thy_companion *s,uint8_t *buffer,size_t cap,const thy_companion_identity *id,thy_companion_visual_fn visual,void *ctx)
 {if(s)*s=(thy_companion){.buffer=buffer,.capacity=cap,.identity=id?*id:(thy_companion_identity){0},.visual=visual,.context=ctx};}
 int thy_companion_expire(thy_companion *s,uint32_t now)
@@ -113,13 +117,86 @@ int thy_companion_service(thy_companion *s,const thy_engine *e,uint32_t now)
     if(thy_companion_expire(s,now))return 0;
     pad_map_label(e,s->map_cursor,s->buffer+THY_COMPANION_PAD_MAP_RECORDS+16u*s->map_cursor);
     if(++s->map_cursor<96u)return 0;
-    s->captured_bytes=THY_COMPANION_PAD_MAP_BYTES;s->crc=crc32(s->buffer,s->captured_bytes);
+    s->captured_bytes=THY_COMPANION_PAD_MAP_BYTES;s->crc=thy_crc32(s->buffer,s->captured_bytes);
     s->map_state=2u;s->last_ms=now;return 1;
 }
 static void snapshot_finish(thy_companion *s,uint32_t now,uint16_t bytes)
 {
-    s->captured_bytes=bytes;s->crc=crc32(s->buffer,bytes);++s->sequence;
+    s->captured_bytes=bytes;s->crc=thy_crc32(s->buffer,bytes);++s->sequence;
     s->active=1u;s->captured_ms=s->last_ms=now;
+}
+
+static void performance_voice(uint8_t *p,const thy_core *core,const thy_mpe_voice *v)
+{
+    p[1]=p[2]=p[3]=p[4]=p[18]=p[19]=UINT8_MAX;
+    if(!v || v->state==THY_MPE_FREE)return;
+    p[0]=v->state;p[1]=v->channel;p[2]=v->pitch;p[3]=v->pad;p[4]=v->logical;
+    p[5]=v->destinations;p[8]=v->velocity;p[9]=v->pressure_output;
+    p[10]=v->sent_pressure;p[11]=v->sent_timbre;u16(p,12,v->sent_bend);
+    p[14]=v->pressure;p[15]=v->timbre;u16(p,16,v->bend);
+    p[18]=v->reference;p[19]=v->modifier?(uint8_t)(v->modifier-1u):UINT8_MAX;u32(p,20,v->started);
+    if(v->pressure!=v->sent_pressure || v->timbre!=v->sent_timbre || v->bend!=v->sent_bend)
+        p[7]|=THY_COMPANION_VOICE_EXPRESSION_PENDING;
+    if(v->modifier)p[7]|=THY_COMPANION_VOICE_MODIFIER;
+    for(unsigned destination=0;destination<THY_DEST_COUNT;++destination)if(v->destinations&(1u<<destination)){
+        uint16_t key=thy_core_key((uint8_t)destination,v->channel,v->pitch);
+        if(thy_core_refcount(core,key)||thy_core_deferred(core,key))p[6]|=(uint8_t)(1u<<destination);
+        if(thy_core_deferred(core,key))p[7]|=THY_COMPANION_VOICE_SUSTAINED;
+    }
+    if(v->pad<THY_PAD_COUNT){
+        const thy_pad_owner *owner=&core->owners[v->pad];
+        /* Future attacks carry no ledger reference yet. Inspect the reserved
+         * owner keys, never infer an attack from a leased member channel. */
+        for(unsigned at=owner->activated;owner->held && at<owner->count;++at){
+            uint16_t key=thy_pad_owner_key(owner,(uint8_t)at);
+            if(key!=UINT16_MAX && key%2048u==(uint16_t)(v->channel*128u+v->pitch)){
+                p[7]|=THY_COMPANION_VOICE_PENDING;break;
+            }
+        }
+    }
+}
+static int performance_snapshot(thy_companion *s,const thy_engine *e,uint32_t now)
+{
+    if(!s->buffer || s->capacity<THY_COMPANION_PERFORMANCE_BYTES || s->sequence==UINT32_MAX)return 0;
+    snapshot_header(s,now,"THYPER1",THY_COMPANION_PERFORMANCE_BYTES);
+    uint8_t *p=s->buffer;const thy_core *core=e->instrument->core;
+    const thy_sequencer *seq=&e->sequencer;const thy_transport *transport=&e->rhythm_transport;
+    const thy_clock *clock=&e->musical_clock;const thy_mpe *mpe=e->expression;
+    if(mpe && mpe->core!=core)mpe=NULL;
+    u16(p,8,THY_COMPANION_PERFORMANCE_VERSION);u32(p,20,seq->revision);
+    u32(p,24,transport->generation);u16(p,28,THY_CLOCK_PPQN);
+    p[30]=mpe?mpe->config.bend_range:0u;p[31]=mpe?thy_mpe_manager(&mpe->config):UINT8_MAX;
+    u64(p,136,transport->position);u32(p,144,clock->generation);u32(p,148,clock->tempo_milli_bpm);
+    p[152]=(uint8_t)((mpe?THY_COMPANION_PERF_MPE_AVAILABLE:0u)|
+        (mpe && mpe->config.enabled?THY_COMPANION_PERF_MPE_ENABLED:0u)|
+        (mpe && mpe->config.upper_zone?THY_COMPANION_PERF_UPPER_ZONE:0u)|
+        (transport->suspended?THY_COMPANION_PERF_SUSPENDED:0u)|
+        (thy_clock_ready(clock)?THY_COMPANION_PERF_CLOCK_READY:0u));
+    p[153]=transport->state;p[154]=clock->source;p[155]=clock->status;p[156]=seq->capture.state;
+    p[157]=seq->capture.state==THY_SEQ_CAPTURE_OFF?UINT8_MAX:seq->capture.track;
+    p[158]=seq->selected_track;p[159]=mpe?mpe->config.members:0u;
+    for(unsigned n=0;n<THY_MPE_MEMBERS;++n)
+        performance_voice(p+THY_COMPANION_PERFORMANCE_VOICES+n*THY_COMPANION_PERFORMANCE_RECORD_BYTES,
+            core,mpe?thy_mpe_voice_at(mpe,(uint8_t)n):NULL);
+    uint32_t created=0u;
+    for(unsigned n=0;n<THY_SEQ_TRACKS;++n)if(seq->tracks[n].flags&THY_SEQ_FLAG_CREATED)created|=1u<<n;
+    for(unsigned n=0;n<seq->count && n<THY_SEQ_EVENTS;++n)
+        if(seq->events[n].track<THY_SEQ_TRACKS)created|=1u<<seq->events[n].track;
+    for(unsigned n=0;n<THY_SEQ_TRACKS;++n){
+        if(!(created&(1u<<n)))continue;
+        const thy_seq_track *cfg=&seq->tracks[n];const thy_transport_track *run=&transport->tracks[n];
+        unsigned at=THY_COMPANION_PERFORMANCE_TRACKS+n*THY_COMPANION_PERFORMANCE_RECORD_BYTES;
+        u32(p,at,run->loop_start);u32(p,at+4u,run->loop_length);u32(p,at+8u,run->playhead);
+        u32(p,at+12u,cfg->grid_ticks);u32(p,at+16u,run->generation);
+        p[at+20u]=(uint8_t)(THY_COMPANION_TRACK_CREATED|
+            (run->enabled?THY_COMPANION_TRACK_ENABLED:0u)|(run->running?THY_COMPANION_TRACK_RUNNING:0u)|
+            (cfg->muted?THY_COMPANION_TRACK_MUTED:0u)|(cfg->flags&THY_SEQ_FLAG_ONESHOT?THY_COMPANION_TRACK_ONESHOT:0u)|
+            (run->loop_length && cfg->grid_ticks && run->playhead>=run->loop_start &&
+             run->playhead-run->loop_start<run->loop_length?THY_COMPANION_TRACK_POSITION:0u));
+        p[at+21u]=run->pending;p[at+22u]=cfg->processor;
+        p[at+23u]=seq->capture.state!=THY_SEQ_CAPTURE_OFF && seq->capture.track==n?seq->capture.state:THY_SEQ_CAPTURE_OFF;
+    }
+    snapshot_finish(s,now,THY_COMPANION_PERFORMANCE_BYTES);return 1;
 }
 
 static int harmony_snapshot(thy_companion *s,const thy_engine *e,uint32_t now)
@@ -195,7 +272,10 @@ static int snapshot(thy_companion *s,const thy_engine *e,uint32_t now)
     if(!s->visual(s->context,p+THY_COMPANION_OLED,p+THY_COMPANION_RGB,p+THY_COMPANION_CENTER,&frame_ms,&visible))return 0;
     const thy_instrument *i=e->instrument;const thy_state *state=&e->state;const thy_core *core=i->core;
     u32(p,16,now);u32(p,20,frame_ms);u32(p,24,i->revision);u32(p,28,state->revision);
-    for(unsigned n=0;n<THY_KEY_COUNT;++n)if(core->refs[n]||thy_core_deferred(core,(uint16_t)n))bit(p,THY_COMPANION_NOTES,n%128u);
+    /* sounding_count includes owned and sustain-deferred keys. Pending strum
+     * attacks and held Arp pools are not ledger entries; they stay separate. */
+    if(core->sounding_count)
+        for(unsigned n=0;n<THY_KEY_COUNT;++n)if(core->refs[n]||thy_core_deferred(core,(uint16_t)n))bit(p,THY_COMPANION_NOTES,n%128u);
     uint64_t pool[2]={0,0};
     for(unsigned a=0;a<2u;++a)if(e->arps[a].config.enabled)for(unsigned n=0;n<THY_ARP_INPUTS;++n)if(e->arps[a].inputs[n].held){
         pool[0]|=e->arps[a].inputs[n].pitches[0];pool[1]|=e->arps[a].inputs[n].pitches[1];}
@@ -256,6 +336,7 @@ size_t thy_companion_command(thy_companion *s,thy_engine *e,int available,uint32
         add(&w,"CAPS build=");add(&w,s->identity.build?s->identity.build:"unknown");add(&w," uid=");add(&w,s->identity.uid?s->identity.uid:"unknown");
         add(&w," schema=");add(&w,THY_MENU_SCHEMA_SHA256);field(&w," bytes=",THY_COMPANION_SNAPSHOT_BYTES);field(&w," chunk=",THY_COMPANION_CHUNK_BYTES);field(&w," rows=",THY_MENU_ROW_COUNT);field(&w," writable=",!!available);
         add(&w," role=instrument backup=1 song=1 companion=1 harmony=1 harmony_bytes=");dec(&w,THY_COMPANION_HARMONY_BYTES);add(&w," reset=1 pad_map=1 pad_map_bytes=");dec(&w,THY_COMPANION_PAD_MAP_BYTES);
+        add(&w," performance=1 performance_bytes=");dec(&w,THY_COMPANION_PERFORMANCE_BYTES);
     }else if(same(line,"companion status")){field(&w,"STATUS active=",s->active);field(&w," seq=",s->sequence);field(&w," selected=",s->selected_pad);field(&w," available=",!!available);}
     else if(prefix(&p,"companion release ")&&number(&p,&first)&&!*p){
         if(first!=s->sequence)add(&w,"ERR generation");else{s->active=0u;s->map_state=0u;add(&w,"RELEASED");}
@@ -265,6 +346,10 @@ size_t thy_companion_command(thy_companion *s,thy_engine *e,int available,uint32
         else if(s->captured&&(uint32_t)(now-s->last_visual_ms)<THY_COMPANION_MIN_CAPTURE_MS)add(&w,"ERR rate");
         else if(!snapshot(s,e,now))add(&w,"ERR snapshot-unavailable");
         else{field(&w,"SNAPSHOT seq=",s->sequence);field(&w," bytes=",THY_COMPANION_SNAPSHOT_BYTES);add(&w," crc32=");hex(&w,s->crc,8u);}
+    }else if(same(line,"companion performance snapshot")){
+        if(s->active)add(&w,"ERR snapshot-active");
+        else if(!performance_snapshot(s,e,now))add(&w,"ERR snapshot-unavailable");
+        else{field(&w,"PERFORMANCE seq=",s->sequence);field(&w," bytes=",THY_COMPANION_PERFORMANCE_BYTES);add(&w," crc32=");hex(&w,s->crc,8u);}
     }else if(same(line,"companion pad-map")||
         (p=line,prefix(&p,"companion pad-map ")&&number(&p,&first)&&!*p)){
         int conditional=!same(line,"companion pad-map");

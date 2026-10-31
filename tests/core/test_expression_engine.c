@@ -296,6 +296,127 @@ static int scoped_mpe_mapping_follows_physical_half_after_role_swap(void)
     CHECK(thy_engine_advance(&engine,24)==THY_OK);drain(0);
     CHECK(thy_mpe_quiet(&mpe));return 1;
 }
+
+static uint32_t read_hash(const void *data,size_t bytes)
+{
+    const uint8_t *p=data;uint32_t hash=2166136261u;
+    for(size_t n=0u;n<bytes;++n)hash=(hash^p[n])*16777619u;
+    return hash;
+}
+
+static int indicators_match_individual_queries(void)
+{
+    uint32_t before_engine=read_hash(&engine,sizeof engine);
+    uint32_t before_instrument=read_hash(&instrument,sizeof instrument);
+    uint32_t before_core=read_hash(&core,sizeof core);
+    for(unsigned include=0u;include<2u;++include){
+        thy_engine_performance_indicators actual;
+        memset(&actual,0xa5,sizeof actual);
+        thy_engine_performance_indicators_read(&engine,(int)include,&actual);
+        CHECK(!(actual.velocity_valid&~3u)&&!(actual.aftertouch_valid&~3u));
+        for(uint8_t scope=1u;scope<=2u;++scope){
+            unsigned bit=1u<<(scope-1u);int32_t expected=1234;
+            int result=thy_engine_performance_get(&engine,
+                THY_ROW_SENSITIVITY_VELOCITYMODE,scope,&expected);
+            CHECK(!!(actual.velocity_valid&bit)==(result==THY_STATE_OK));
+            if(result==THY_STATE_OK)CHECK(actual.velocity_mode[scope-1u]==expected);
+            expected=1234;
+            result=thy_engine_performance_get(&engine,
+                THY_ROW_PERFORMANCE_PRESSUREMODE,scope,&expected);
+            CHECK(!!(actual.aftertouch_valid&bit)==(include&&result==THY_STATE_OK));
+            if(include&&result==THY_STATE_OK)CHECK(actual.aftertouch[scope-1u]==expected);
+            if(!include)CHECK(actual.aftertouch[scope-1u]==0);
+        }
+    }
+    CHECK(before_engine==read_hash(&engine,sizeof engine));
+    CHECK(before_instrument==read_hash(&instrument,sizeof instrument));
+    CHECK(before_core==read_hash(&core,sizeof core));
+    return 1;
+}
+
+static int indicator_values_follow_overrides_routes_and_invalid_ordering(void)
+{
+    init();CHECK(indicators_match_individual_queries());
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_PRESSUREMODE,1,
+        THY_CHANNEL_PRESSURE_POLY)==THY_STATE_OK);
+    CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_PRESSUREMODE,2,
+        THY_CHANNEL_PRESSURE_CHANNEL)==THY_STATE_OK);
+    thy_instrument_velocity v=instrument.cluster_velocity[0];v.mode=THY_VELOCITY_STRIKE;
+    CHECK(thy_instrument_set_cluster_velocity(&instrument,0,&v)==THY_OK);
+    thy_engine_performance_indicators actual;
+    thy_engine_performance_indicators_read(&engine,1,&actual);
+    CHECK(actual.aftertouch_valid==3u&&actual.velocity_valid==3u);
+    CHECK(actual.aftertouch[0]==THY_CHANNEL_PRESSURE_POLY&&actual.aftertouch[1]==THY_CHANNEL_PRESSURE_CHANNEL);
+    CHECK(actual.velocity_mode[0]==THY_VELOCITY_STRIKE&&actual.velocity_mode[1]==THY_VELOCITY_FIXED);
+    v.mode=THY_VELOCITY_FIXED;
+    CHECK(thy_instrument_set_pad_velocity(&instrument,1,&v)==THY_OK);
+    v.mode=THY_VELOCITY_STRIKE;
+    CHECK(thy_instrument_set_pad_velocity(&instrument,49,&v)==THY_OK);
+    thy_engine_performance_indicators_read(&engine,1,&actual);
+    CHECK(actual.velocity_mode[0]==2&&actual.velocity_mode[1]==2);
+    CHECK(indicators_match_individual_queries());
+    /* Every scoped query checks mappings from both halves until its own
+     * result becomes mixed. A later invalid mapping cannot revoke a result
+     * that had already returned, but invalidates a still-uniform query. */
+    instrument.mapping[95]=255u;
+    thy_engine_performance_indicators_read(&engine,1,&actual);
+    CHECK(actual.velocity_valid==3u&&actual.aftertouch_valid==0u);
+    CHECK(indicators_match_individual_queries());
+    for(unsigned bad=0u;bad<THY_PAD_COUNT;++bad){
+        init();instrument.mapping[bad]=255u;
+        CHECK(indicators_match_individual_queries());
+        init();instrument.velocity_overridden[bad]=1u;
+        instrument.pad_velocity[bad]=instrument.cluster_velocity[bad/48u];
+        instrument.pad_velocity[bad].mode=2u;
+        CHECK(indicators_match_individual_queries());
+    }
+    init();instrument.routing_profile=255u;
+    CHECK(indicators_match_individual_queries());
+    memset(&actual,0xa5,sizeof actual);
+    thy_engine_performance_indicators_read(NULL,1,&actual);
+    CHECK(!actual.aftertouch_valid&&!actual.velocity_valid);
+    CHECK(!actual.aftertouch[0]&&!actual.aftertouch[1]&&!actual.velocity_mode[0]&&!actual.velocity_mode[1]);
+    thy_engine_performance_indicators_read(&engine,1,NULL);
+    engine.instrument=NULL;thy_engine_performance_indicators_read(&engine,1,&actual);
+    CHECK(!actual.aftertouch_valid&&!actual.velocity_valid);
+    engine.instrument=&instrument;instrument.core=NULL;
+    thy_engine_performance_indicators_read(&engine,1,&actual);
+    CHECK(!actual.aftertouch_valid&&!actual.velocity_valid);
+    return 1;
+}
+
+static uint32_t indicator_random(uint32_t *seed)
+{*seed=*seed*1664525u+1013904223u;return *seed;}
+
+static int indicator_projection_matches_scoped_reads_without_caching(void)
+{
+    uint32_t seed=0x4c61a8d3u;
+    for(unsigned trial=0u;trial<256u;++trial){
+        init();instrument.routing_profile=(uint8_t)(trial%4u);
+        instrument.cluster_swap=(uint8_t)(trial&1u);
+        engine.expression_config.enabled=(uint8_t)((trial>>1u)&1u);
+        for(unsigned side=0u;side<2u;++side){
+            instrument.cluster_velocity[side].mode=(uint8_t)(indicator_random(&seed)&1u);
+            engine.performance[side].aftertouch=(uint8_t)(indicator_random(&seed)%4u);
+        }
+        for(unsigned r=0u;r<THY_INSTRUMENT_ROUTE_TARGETS;++r){
+            engine.channel_routes[r].aftertouch=(uint8_t)(indicator_random(&seed)%4u);
+            instrument.route_pressure[r]=(uint8_t)(indicator_random(&seed)%3u);
+        }
+        for(unsigned pad=0u;pad<THY_PAD_COUNT;++pad){
+            /* A permutation distributes the physical halves across the scan,
+             * rather than relying on Left always preceding Right. */
+            instrument.mapping[pad]=(uint8_t)((pad*37u+trial)%THY_PAD_COUNT);
+            instrument.velocity_overridden[pad]=(uint8_t)(indicator_random(&seed)%5u==0u);
+            instrument.pad_velocity[pad]=instrument.cluster_velocity[pad/48u];
+            instrument.pad_velocity[pad].mode=(uint8_t)(indicator_random(&seed)%3u);
+        }
+        if(trial%7u==0u)instrument.mapping[indicator_random(&seed)%THY_PAD_COUNT]=255u;
+        CHECK(indicators_match_individual_queries());
+    }
+    return 1;
+}
+
 static int sequencer_input_route_projection_and_setup_follow_roles(void)
 {
     for(unsigned swapped=0;swapped<2u;++swapped)for(unsigned chords=0;chords<2u;++chords){
@@ -317,6 +438,7 @@ static int sequencer_input_route_projection_and_setup_follow_roles(void)
          * must project the current chord/note editor role before any attack. */
         CHECK(!core.owners[physical_input].held && !engine.sequencer_ui.pads[48].held);
         CHECK(thy_engine_performance_route(&engine,physical_input)==target);
+        CHECK(indicators_match_individual_queries());
         int32_t value=-1;
         CHECK(thy_engine_performance_get(&engine,THY_ROW_PERFORMANCE_VELOCITY,scope,&value)==THY_STATE_OK);
         CHECK(value==(chords?77:99));
@@ -336,6 +458,7 @@ static int sequencer_input_route_projection_and_setup_follow_roles(void)
         CHECK(attacks==(chords?3u:1u));
         CHECK(thy_sequencer_ui_configure(&engine.sequencer_ui,THY_SEQ_UI_INPUT,!chords)==THY_OK);
         CHECK(thy_engine_performance_route(&engine,physical_input)==target); /* Held role stays frozen. */
+        CHECK(indicators_match_individual_queries());
         CHECK(thy_instrument_release_pad(&instrument,physical_input)==THY_OK);drain(0);
         CHECK(!thy_core_sounding(&core));
         CHECK(thy_engine_performance_route(&engine,physical_input)==(chords?2u:1u));
@@ -343,8 +466,10 @@ static int sequencer_input_route_projection_and_setup_follow_roles(void)
          * the editor surface, matching the physical input filter. */
         engine.state.level=THY_STATE_ROWS;engine.sequencer_ui.options_open=0u;
         CHECK(thy_engine_performance_route(&engine,physical_input)==2u);
+        CHECK(indicators_match_individual_queries());
         engine.sequencer_ui.options_open=1u;
         CHECK(thy_engine_performance_route(&engine,physical_input)==(chords?2u:1u));
+        CHECK(indicators_match_individual_queries());
     }
     return 1;
 }
@@ -375,12 +500,14 @@ static int scoped_bend_setup_is_explicit_bounded_and_atomic(void)
 
 int main(void)
 {
-    if(!sequencer_input_route_projection_and_setup_follow_roles() ||
+    if(!indicator_values_follow_overrides_routes_and_invalid_ordering() ||
+        !indicator_projection_matches_scoped_reads_without_caching() ||
+        !sequencer_input_route_projection_and_setup_follow_roles() ||
         !scoped_mpe_mapping_follows_physical_half_after_role_swap() || !scoped_bend_setup_is_explicit_bounded_and_atomic() ||
         !chord_pressure_routes_and_panic() || !modifier_capture_and_live_only() ||
         !alternating_strum_keeps_glide_reference() || !sensor_pressure_callback_and_standard_compatibility() ||
         !ordinary_capture_and_independent_axes() || !raw_dual_stage_feeds_mpe_and_preserves_release() ||
         !menu_alias_uses_one_guarded_mpe_configuration_without_setup() ||
         !performance_policy_edits_preserve_captured_expression_and_release())return 1;
-    printf("Expression engine: 11 scenarios passed (%u assertions)\n",assertions);return 0;
+    printf("Expression engine: 13 scenarios passed (%u assertions)\n",assertions);return 0;
 }

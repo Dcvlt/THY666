@@ -40,7 +40,8 @@ test('native command batches serialize, are bounded and stale completions cannot
     if(command==='companion_exchange')return new Promise(resolve=>finish=()=>resolve({line:'STATUS ready=1'}));return{};
   }});
   const port=await serial.requestPort(filter);await port.open({baudRate:115200});
-  assert.deepEqual(await port.exchangeMany(['status','io']),['STATUS ready=1','IO ready=1']);assert.equal(metrics.batches,1);
+  assert.deepEqual(await port.exchangeMany(['status','io','pads','backup status']),['STATUS ready=1','IO ready=1','PADS ready=1','BACKUP STATUS ready=1']);assert.equal(metrics.batches,1);
+  assert.deepEqual(calls.at(-1),['companion_exchange_many',{session:'session-1',commands:['status','io','pads','backup status']}]);
   const before=calls.length;await assert.rejects(()=>port.exchangeMany(Array(33).fill('status')),/batch/);await assert.rejects(()=>port.exchange('status\nsettings'),/batch/);assert.equal(calls.length,before);
   const pending=port.exchange('status');await new Promise(resolve=>setImmediate(resolve));await port.close();finish();await assert.rejects(()=>pending,/changed/);
   assert.equal(calls.filter(([name])=>name==='companion_exchange').length,1);
@@ -54,6 +55,22 @@ test('a native handle returned with invalid identity metadata is closed before c
   }});
   const port=await serial.requestPort(filter);await assert.rejects(()=>port.open({baudRate:115200}),/identity/);
   assert.deepEqual(calls.at(-1),['companion_close',{session:'opened-handle'}]);
+});
+
+test('native profiling commands retain the same session and reject unbounded or invented operations before IPC',async()=>{
+  const calls=[];
+  const serial=createDesktopSerial({choosePort:async values=>values[0],invoke:async(command,args)=>{
+    calls.push([command,args]);if(command==='companion_list')return{devices:[device]};
+    if(command==='companion_open')return{session:'profile-session',usbVendorId:0xcafe,usbProductId:0x4009};
+    if(command==='companion_exchange_many')return{lines:args.commands.map(command=>command.startsWith('profile metric')?'PROFILE_METRIC id=1':'PROFILE version=1')};return{};
+  }});
+  const port=await serial.requestPort(filter);await port.open({baudRate:115200});
+  const commands=['profile caps','profile status','profile start 30','profile stop 1','profile metric 1 18'];
+  assert.equal((await port.exchangeMany(commands)).length,commands.length);
+  assert.deepEqual(calls.at(-1),['companion_exchange_many',{session:'profile-session',commands}]);
+  const count=calls.length;
+  for(const command of ['profile start 61','profile start 0','profile stop 4294967296','profile metric 1 19','profile status extra','profile erase'])await assert.rejects(port.exchange(command),/Unsupported/);
+  assert.equal(calls.length,count);await port.close();
 });
 
 test('desktop updater uses direct IPC, preserves exact bytes and never retries failed installation',async()=>{

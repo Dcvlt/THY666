@@ -406,6 +406,11 @@ export async function createCore({ bytes, url = new URL('./generated/core.wasm',
       const pointer = c.bridge_companion_snapshot(now);
       return pointer ? new Uint8Array(c.memory.buffer, pointer, 1680).slice() : null;
     },
+    performanceSnapshot(now = 0) {
+      if (!integer(now, 0, 4294967295) || !c.bridge_performance_snapshot) return null;
+      const pointer = c.bridge_performance_snapshot(now);
+      return pointer ? new Uint8Array(c.memory.buffer, pointer, 1024).slice() : null;
+    },
     harmonySnapshot(now = 0) {
       if (!integer(now, 0, 4294967295) || !c.bridge_harmony_snapshot) return null;
       const pointer = c.bridge_harmony_snapshot(now);

@@ -5,6 +5,7 @@
 #include "thy_state.h"
 #include "thy_ui.h"
 #include "thy_resources.h"
+#include "thy_restore_progress.h"
 
 #define THY_STUDIO_UI_TRANSITION_MS 180u
 /* Startup alone advances with a bounded presented-frame step. Hierarchy
@@ -82,6 +83,10 @@ void thy_studio_ui_view_line(const thy_state *state, unsigned kind,
     const char *scale_name, int din_ready, int usb_ready, char out[32]);
 void thy_studio_ui_render(thy_studio_ui *ui, const thy_state *state,
     const char *scale_name, int din_ready, int usb_ready, uint32_t now_ms,
+    uint8_t out[THY_UI_FRAME_BYTES]);
+/* Stateless, bounded restore overlay. The service supplies real stage/counts;
+ * this only draws into the caller's existing frame and never gates inputs. */
+void thy_studio_ui_render_restore(const thy_restore_progress *progress,
     uint8_t out[THY_UI_FRAME_BYTES]);
 
 #endif

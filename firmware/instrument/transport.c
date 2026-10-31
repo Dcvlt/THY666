@@ -1,9 +1,24 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "transport.h"
+#include "thy_profile.h"
 
-static void queue_push(thy_instrument_event_queue *queue, thy_midi_event event)
+_Static_assert(THY_INSTRUMENT_TRANSPORT_QUEUE_CAPACITY == THY_QUEUE_CAPACITY,
+    "Profiler timestamps must match destination ring slots");
+
+static int profile_clock(thy_instrument_transport *transport, uint32_t *now)
+{
+    if (transport->profile_now_ms == NULL || !thy_profile_active(transport->profile)) return 0;
+    *now = transport->profile_now_ms(transport->profile_context);
+    return 1;
+}
+
+static void queue_push(thy_instrument_transport *transport,
+    thy_instrument_event_queue *queue, unsigned which, thy_midi_event event)
 {
     unsigned tail = (queue->head + queue->count) % THY_INSTRUMENT_TRANSPORT_QUEUE_CAPACITY;
+    uint32_t now;
+    if (profile_clock(transport, &now))
+        thy_profile_queue_enqueue(transport->profile, which, tail, now, queue->count + 1u);
     queue->events[tail] = event;
     ++queue->count;
 }
@@ -19,6 +34,14 @@ void thy_instrument_transport_init(thy_instrument_transport *transport,
     *transport = (thy_instrument_transport){0};
     transport->core = core;
     if (io != NULL) transport->io = *io;
+}
+void thy_instrument_transport_profile_bind(thy_instrument_transport *transport,
+    thy_profile *profile, uint32_t (*now_ms)(void *), void *context)
+{
+    if (transport == NULL || thy_profile_active(transport->profile) || thy_profile_active(profile)) return;
+    transport->profile = profile != NULL && now_ms != NULL ? profile : NULL;
+    transport->profile_now_ms = transport->profile != NULL ? now_ms : NULL;
+    transport->profile_context = transport->profile != NULL ? context : NULL;
 }
 bool thy_instrument_transport_usb_ready(const thy_instrument_transport *transport)
 {
@@ -41,8 +64,10 @@ bool thy_instrument_transport_ready(const thy_instrument_transport *transport)
 }
 static void block_key(thy_instrument_transport *transport, uint16_t key)
 {
-    if (key < THY_INSTRUMENT_TRANSPORT_USB_KEYS)
+    if (key < THY_INSTRUMENT_TRANSPORT_USB_KEYS) {
         transport->usb_blocked[key / 8u] |= (uint8_t)(1u << (key & 7u));
+        transport->usb_blocks_pending = 1u;
+    }
 }
 static bool key_blocked(const thy_instrument_transport *transport, uint16_t key)
 {
@@ -62,6 +87,7 @@ static void mark_old_usb_owners(thy_instrument_transport *transport)
 }
 static void invalidate_usb(thy_instrument_transport *transport)
 {
+    uint32_t discarded_before = transport->discarded_events;
     mark_old_usb_owners(transport);
     transport->discarded_events += transport->usb_queue.count;
     transport->usb_queue.head = transport->usb_queue.count = 0u;
@@ -85,6 +111,10 @@ static void invalidate_usb(thy_instrument_transport *transport)
         }
     }
     transport->core->queue_count = keep;
+    uint32_t now;
+    if (profile_clock(transport, &now) && thy_profile_tick(transport->profile, now))
+        thy_profile_queue_discard(transport->profile, THY_PROFILE_QUEUE_USB,
+            transport->discarded_events - discarded_before);
 }
 static void observe_session(thy_instrument_transport *transport, bool mounted,
     uint32_t session_epoch)
@@ -100,6 +130,7 @@ static void observe_session(thy_instrument_transport *transport, bool mounted,
 static void reap_cancelled_usb_keys(thy_instrument_transport *transport)
 {
     uint8_t pending[THY_INSTRUMENT_TRANSPORT_USB_KEYS / 8u] = {0};
+    uint8_t remaining = 0u;
     for (unsigned pad = 0u; pad < THY_PAD_COUNT; ++pad) {
         const thy_pad_owner *owner = &transport->core->owners[pad];
         for (unsigned i = owner->activated; i < owner->count; ++i) {
@@ -133,11 +164,16 @@ static void reap_cancelled_usb_keys(thy_instrument_transport *transport)
                 !thy_core_deferred(transport->core, (uint16_t)key) && !(pending[byte] & mask))
                 transport->usb_blocked[byte] &= (uint8_t)~mask;
         }
+        remaining |= transport->usb_blocked[byte];
     }
+    transport->usb_blocks_pending = remaining != 0u;
 }
 static bool blocked_expression_channel(const thy_instrument_transport *transport,
     thy_midi_event event)
 {
+    /* No blocked key means no old channel can suppress expression. A stale
+     * true hint still takes the complete ownership/queued-lifetime path. */
+    if(!transport->usb_blocks_pending)return false;
     uint8_t kind=event.status&0xf0u;
     if(!((kind==0xd0u&&event.data1!=0u) ||
         (kind==0xe0u&&(event.data1!=0u||event.data2!=64u)) ||
@@ -224,13 +260,13 @@ static void stage_core(thy_instrument_transport *transport, unsigned budget)
                 invalidate_usb(transport);
                 continue;
             }
-            queue_push(&transport->usb_queue, event);
+            queue_push(transport, &transport->usb_queue, THY_PROFILE_QUEUE_USB, event);
         } else {
             if (transport->din_queue.count == THY_INSTRUMENT_TRANSPORT_QUEUE_CAPACITY) {
                 ++transport->backpressure;
                 return;
             }
-            queue_push(&transport->din_queue, event);
+            queue_push(transport, &transport->din_queue, THY_PROFILE_QUEUE_DIN, event);
         }
         transport->pending_valid = 0u;
     }
@@ -298,6 +334,10 @@ static void flush_destination(thy_instrument_transport *transport, bool din,
             if (!transport->io.write_usb(transport->io.context, bytes)) goto busy;
             ++transport->usb_accepted;
         }
+        uint32_t now;
+        if (profile_clock(transport, &now))
+            (void)thy_profile_queue_accept(transport->profile,
+                din ? THY_PROFILE_QUEUE_DIN : THY_PROFILE_QUEUE_USB, queue->head, now);
         queue_pop(queue);
     }
     return;
@@ -308,6 +348,12 @@ void thy_instrument_transport_poll(thy_instrument_transport *transport,
     bool mounted, uint32_t session_epoch, unsigned budget)
 {
     if (transport == NULL || transport->core == NULL) return;
+    uint32_t now;
+    if (profile_clock(transport, &now) && thy_profile_tick(transport->profile, now)) {
+        thy_profile_peak(transport->profile, THY_PROFILE_PEAK_CORE, transport->core->queue_count);
+        thy_profile_peak(transport->profile, THY_PROFILE_PEAK_USB, transport->usb_queue.count);
+        thy_profile_peak(transport->profile, THY_PROFILE_PEAK_DIN, transport->din_queue.count);
+    }
     observe_session(transport, mounted, session_epoch);
     if (budget > THY_INSTRUMENT_TRANSPORT_MAX_BUDGET)
         budget = THY_INSTRUMENT_TRANSPORT_MAX_BUDGET;
@@ -315,5 +361,5 @@ void thy_instrument_transport_poll(thy_instrument_transport *transport,
     stage_core(transport, budget);
     flush_destination(transport, true, budget);
     flush_destination(transport, false, budget);
-    reap_cancelled_usb_keys(transport);
+    if (transport->usb_blocks_pending) reap_cancelled_usb_keys(transport);
 }

@@ -319,6 +319,12 @@ int thy_core_pad_held(const thy_core *core, uint8_t pad);
 uint16_t thy_core_owner_key(const thy_core *core, uint8_t pad, uint8_t index);
 uint16_t thy_core_queued(const thy_core *core);
 uint16_t thy_core_sounding(const thy_core *core);
+/* One boolean per actual sounding MIDI pitch, collapsing destination/channel
+ * duplicates and including sustain-deferred releases. Pending strum attacks
+ * are absent. This reads only the reference/deferred ledgers, without consuming
+ * events or retaining a cache. NULL core or zero sounding count clears output;
+ * NULL output is ignored. Output must not overlap the core. */
+void thy_core_sounding_pitches(const thy_core *core, uint8_t pitches[128]);
 uint16_t thy_core_reserved(const thy_core *core);
 /* Pending destination/channel/pitch keys, distinct from activated voices. */
 uint16_t thy_core_pending(const thy_core *core);

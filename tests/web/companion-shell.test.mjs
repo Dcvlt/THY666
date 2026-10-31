@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {performancePacket} from './performance-fixture.mjs';
 import {readFile} from 'node:fs/promises';
 import {createCore} from '../../web/core.js';
 const guidanceCore=await createCore({bytes:await readFile(new URL('../../web/generated/core.wasm',import.meta.url))});
@@ -105,7 +106,7 @@ class Node {
   getContext() { return { createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData:()=>{this.writes.canvas++;} }; }
 }
 
-function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, hash = '', runtime=null, projectSite=false,harmonySupport=false,resetSupport=false,padMapSupport=false } = {}) {
+function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, hash = '', runtime=null, projectSite=false,harmonySupport=false,resetSupport=false,padMapSupport=false,performanceSupport=false } = {}) {
   const document = { hidden: false, listeners: new Map(), activeElement: null,
     createElement(tag) { return new Node(this, tag); },
     createElementNS(namespace,tag) { return new Node(this,tag); },
@@ -144,6 +145,7 @@ function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, h
   const identity = { uid: UID, build: BUILD, schema: SCHEMA };
   const client = { connected: false, compatible: true, busy: false, identity,
     harmonySupported:harmonySupport,harmonyRevision:0,harmonyActive:false,menuLevel:0,resetSupported:resetSupport,resetOpen:false,resetEpoch:0,resetChoice:0,resetApplications:0,
+    performanceSupported:performanceSupport,performanceSequence:0,
     padMapSupported:padMapSupport,padMapRevision:17,padMapPendingCount:1,padMapByteReads:0,
     backupIdentity: { ...identity, settings: '13', target: '1043', compatibility: '65537' },
     get status() { return { connected: this.connected, compatible: this.compatible, busy: this.busy, connecting: false, identity: this.connected ? identity : null }; },
@@ -153,8 +155,9 @@ function fixture(t, { storage = new Map(), clock = null, updaterHelper = null, h
     async telemetry(command) { calls.push(['telemetry', command]); return updateHealthReports[command]; },
     async restoreBackup() { throw new Error('Unexpected restore'); },
     async snapshot() { calls.push(['snapshot']); const bytes=snapshot();const view=new DataView(bytes.buffer);view.setUint32(24,this.instrumentRevision??0,true);view.setUint32(28,this.settingsRevision??0,true);view.setUint32(1650,this.layoutRevision??0,true);view.setUint32(1654,this.savedGeneration??20,true);view.setUint32(1668,this.harmonyRevision,true);
-      bytes[1582]=this.menuLevel;bytes[1588]=Number(Boolean(this.arpQuick));bytes[1662]=this.harmonyActive?6:0;
+      if(this.performanceSupported)bytes[1604]|=1;bytes[1582]=this.menuLevel;bytes[1588]=Number(Boolean(this.arpQuick));bytes[1662]=this.harmonyActive?6:0;
       bytes[1672]=Number(this.resetOpen);bytes[1673]=this.resetChoice;bytes[1674]=this.resetGroup??0;bytes[1675]=this.resetTrack??255;view.setUint32(1676,this.resetEpoch,true);return { bytes, generation: 7 }; },
+    async performanceSnapshot(){calls.push(['performanceSnapshot']);if(this.performanceFailure)throw new Error(this.performanceFailure);return {bytes:performancePacket({voices:3,tracks:2,sequence:++this.performanceSequence}),receivedAt:Date.now()};},
     async harmonySnapshot(){
       calls.push(['harmonySnapshot']);const bytes=new Uint8Array(800),view=new DataView(bytes.buffer);
       bytes.set(encoder.encode('THYHRM1'));view.setUint16(8,4,true);view.setUint16(10,800,true);
@@ -1348,4 +1351,36 @@ test('context backpressure defers optional Harmony work without dropping the val
   assert.equal(f.calls.filter(call=>call[0]==='harmonySnapshot').length,1);
   assert.equal(f.shell.snapshot.context.harmony.active,true);
   assert.equal(clock.pending(),1,'Context work shares the existing scheduler.');
+});
+
+
+test('performance feedback is paced within the existing poll and clears on pause, busy, disconnect and older firmware',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock,performanceSupport:true});
+  f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);
+  const count=()=>f.calls.filter(call=>call[0]==='performanceSnapshot').length;
+  assert.equal(count(),1);assert.equal(f.document.querySelector('[data-cockpit-voice="0"]').hidden,false);
+  await clock.advance(100);assert.equal(count(),1);await clock.advance(100);assert.equal(count(),2);
+  const initial=count();f.shell.setHostActive(false);await clock.advance(500);assert.equal(count(),initial);
+  f.shell.setHostActive(true);assert.equal(f.document.querySelector('[data-cockpit-voice="0"]').hidden,true,'Old detail clears before resuming.');
+  await clock.advance(0);assert.equal(count(),initial+1);
+  f.client.busy=true;f.shell.render();assert.equal(f.document.querySelector('[data-cockpit-voice="0"]').hidden,true);
+  await clock.advance(500);assert.equal(count(),initial+1);f.client.busy=false;await clock.advance(100);
+  f.client.performanceFailure='COMPANION/1 ERR busy';await clock.advance(200);
+  assert.equal(f.document.querySelector('[data-cockpit-voice="0"]').hidden,true);assert.match(f.document.querySelector('[data-cockpit-value="voice-detail-status"]').textContent,/fresh data/);
+  f.fire(f.byText('Disconnect'),'click');await flush();assert.equal(f.document.querySelector('.cockpit-hud').hidden,true);
+});
+
+test('performance pacing expires old detail across wall-clock jumps and respects slow refresh preferences',async t=>{
+  const clock=manualClock(),f=fixture(t,{clock,performanceSupport:true});let wallOffset=0;
+  Object.defineProperty(Date,'now',{configurable:true,writable:true,value:()=>clock.now()+wallOffset});
+  f.fire(f.byText('Connect board'),'click');await flush();await clock.advance(0);
+  const count=()=>f.calls.filter(call=>call[0]==='performanceSnapshot').length;
+  assert.equal(count(),1);
+  wallOffset=-60000;f.shell.render();assert.equal(f.document.querySelector('[data-cockpit-voice="0"]').hidden,true);
+  await clock.advance(100);assert.equal(count(),2,'Backward adjustment admits a fresh capture instead of suppressing it for a minute.');
+  wallOffset=60000;f.shell.render();assert.equal(f.document.querySelector('[data-cockpit-voice="0"]').hidden,true);
+  await clock.advance(100);assert.equal(count(),3);
+  choosePollInterval(f,1000);await clock.advance(1000);
+  assert.equal(count(),4);assert.equal(f.document.querySelector('[data-cockpit-voice="0"]').hidden,false);
+  assert.equal(clock.pending(),1,'Detail telemetry adds no second scheduler.');
 });

@@ -27,8 +27,10 @@ void thy_instrument_app_usb_reset(uint32_t now_ms);
 void thy_instrument_memory_init(void);
 const thy_instrument_transport *thy_instrument_app_transport(void);
 const thy_settings_journal *thy_instrument_app_settings(void);
+const thy_restore_progress *thy_instrument_app_restore_progress(void);
 size_t thy_instrument_app_song_command(const char *line,char *output,size_t capacity);
 size_t thy_instrument_app_backup_command(const char *line,char *output,size_t capacity);
 size_t thy_instrument_app_companion_command(const char *line,char *output,size_t capacity);
+size_t thy_instrument_app_profile_command(const char *line,char *output,size_t capacity);
 void thy_instrument_app_console_reset(void);
 #endif
