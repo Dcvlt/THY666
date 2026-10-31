@@ -456,6 +456,11 @@ export function initializeDiagnostics(mount) {
   let history=[],lastKind='',connected=false,previousIO=null;
   const fields={status:[['uptime_ms','Uptime','ms'],['errors','Error flags',''],['voices','Sounding voices',''],['presses','Presses',''],['releases','Releases',''],['loop_us','Mean loop','µs'],['loop_peak_us','Peak loop (last window)','µs']],io:[['din_tx','DIN transmitted','bytes'],['din_rate','DIN output','bytes/s'],['din_accept','DIN accepted','messages'],['usb_accepted','USB accepted','messages'],['din_pending','DIN backlog','events'],['usb_pending','USB backlog','events'],['din_errors','DIN errors',''],['usb_dropped','USB dropped / suppressed',''],['blocked','Blocked pads','']],settings:[['generation','Saved generation',''],['saves','Saves',''],['errors','Save errors','']],display:[['last_render_us','Render time','µs'],['last_duration_ms','Transfer time','ms'],['dirty_bytes','Pending display data','bytes'],['failed_chunks','Failed transfers','']]};
   const trend={status:['voices','Sounding voices',''],io:['din_rate','DIN output','bytes/s'],settings:['saves','Save count',''],display:['last_render_us','Render time','µs']};
+  fields.status.unshift(['ready','Instrument ready','']);
+  fields.settings.unshift(['status','Save state','']);
+  fields.pads=[['frames','Complete scans',''],['scans','Mux samples',''],['errors','Acquisition errors','']];
+  fields['backup status']=[['state','Transfer state',''],['restore_phase','Restore stage',''],['restore_active','Playing locked',''],['restore_verified','Device save verified',''],['restore_completed','Stage completed','bytes'],['restore_total','Stage total','bytes'],['received','Received','bytes'],['bytes','File size','bytes'],['generation','Saved generation',''],['payload_crc32','Payload checksum','']];
+  trend.pads=['frames','Complete scans',''];trend['backup status']=['received','Received','bytes'];
   return {
     snapshot(data,isConnected){
       connected=Boolean(isConnected);freshness.textContent=connected?'Device snapshot · updated '+new Date().toLocaleTimeString():'Disconnected';
@@ -463,8 +468,11 @@ export function initializeDiagnostics(mount) {
       if(!connected){history=[];lastKind='';previousIO=null;targetResources.hidden=true;resourceAge.textContent='Resources · disconnected';metrics.replaceChildren();line.setAttribute('points','');graph.setAttribute('aria-label','No report samples');caption.textContent='Connect to read device health.';}
     },
     report(kind,text){
-      if(!connected||!fields[kind]||typeof text!=='string'||text.length>8192||!text.startsWith(kind.toUpperCase()+' '))return false;
+      const prefix=kind==='backup status'?'BACKUP':typeof kind==='string'?kind.toUpperCase():'';
+      if(!connected||!fields[kind]||typeof text!=='string'||text.length>8192||!text.startsWith(prefix+' '))return false;
       const values=new Map();for(const m of text.matchAll(/(?:^|\s)([a-z_]+)=(\d+)(?=\s|$)/g)){const n=Number(m[2]);if(Number.isSafeInteger(n))values.set(m[1],n);}
+      const textValues=new Map();
+      for(const m of text.matchAll(/(?:^|\s)(state|status|payload_crc32|restore_phase)=([a-z0-9-]+)(?=\s|$)/g))textValues.set(m[1],m[2]);
       if(kind==='status'){
         const supported=values.get('resources')===1;
         targetResources.hidden=!supported;
@@ -487,13 +495,17 @@ export function initializeDiagnostics(mount) {
           values.set('din_rate',Math.round((sent-previousIO.sent)*1000/(now-previousIO.time)));
         previousIO=Number.isInteger(sent)?{time:now,sent}:null;
       }else previousIO=null;
-      reportTitle.textContent={status:'Activity',io:'MIDI & pad scanning',settings:'Saved settings',display:'Display timing'}[kind];metrics.replaceChildren();
-      for(const [key,label,unit] of fields[kind]){metrics.append(el('dt','',label),el('dd','',values.has(key)?`${values.get(key)} ${unit}`.trim():'Unavailable'));}
+      reportTitle.textContent={status:'Activity',io:'MIDI & pad scanning',pads:'Pad scanner',settings:'Saved settings','backup status':'Backup service',display:'Display timing'}[kind];metrics.replaceChildren();
+      for(const [key,label,unit] of fields[kind]){metrics.append(el('dt','',label),el('dd','',textValues.has(key)?textValues.get(key):values.has(key)?`${values.get(key)} ${unit}`.trim():'Unavailable'));}
       if(lastKind!==kind)history=[];lastKind=kind;
       const [key,label,unit]=trend[kind],n=values.get(key);if(n!==undefined){history.push(n);if(history.length>60)history.shift();}else history=[];
       const max=Math.max(1,...history);line.setAttribute('points',history.map((v,i)=>`${10+i*580/59},${90-v/max*80}`).join(' '));
       graph.setAttribute('aria-label',`${label}: ${n??'unavailable'} ${unit}; ${history.length} samples; scale 0 to ${max}`);
       caption.textContent=history.length?`${label} · last ${history.length} samples · scale 0–${max} ${unit} · ${new Date().toLocaleTimeString()}`:kind==='io'?'DIN activity appears after two reports. Backlog counts messages waiting, not messages sent.':'This report has no trend measurement.';
+      if(kind==='backup status')caption.textContent=['applied','queued'].includes(textValues.get('state'))?
+        'Settings were applied. Saving is not verified; inspect Saved settings before continuing.':
+        textValues.get('restore_phase')==='error'&&values.get('restore_verified')===1?'Device save verified. The Client comparison is unfinished; keep your backup.':
+        'Read-only transfer status. Reading it does not upload, restore or cancel a backup.';
       return true;
     },
     reset(){history=[];lastKind='';previousIO=null;line.setAttribute('points','');graph.setAttribute('aria-label','No report samples');caption.textContent='Session started · waiting for reports.';},

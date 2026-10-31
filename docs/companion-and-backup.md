@@ -261,6 +261,12 @@ installation route; no bootloader replacement is included.
 
 ## Restore and verification
 
+Diagnostics includes **Backup service** (the read-only transfer state) and
+**Pad scanner** (scan progress and acquisition errors). An `applied` or `queued`
+backup has changed live settings but has not verified a durable save. Keep the
+backup file and inspect **Saved settings** before another restore; these reports
+never start, cancel or retry a transfer.
+
 Choosing a file only inspects it. **Restore backup** requires a separate explicit
 confirmation. The client validates checksums and connected-board compatibility
 before upload. For a compatible older backup being restored to the current format, a separate shared
@@ -292,6 +298,38 @@ may already have applied: keep the file, reconnect and inspect/read back the
 device instead of assuming rollback. An abandoned pre-commit transfer expires;
 disconnect releases its staging. Once applied, ordinary journal maintenance
 continues even if host verification is interrupted.
+
+The updater rechecks instrument readiness, MIDI, storage and display after a
+successful saved readback. Earlier startup checks become stale when restoration
+begins. A failed restore shows **Settings need attention**, rather than retaining
+an earlier healthy result. Rechecking health is read-only and never retries the
+restore.
+
+### Guarded restoration
+
+On firmware advertising `restore_guard=1`, accepting a restore opens a dedicated
+board screen and locks pad playing and settings edits. The board and Client show
+receiving, saving and checking separately. Byte counts come from acknowledged
+work; an unknown-duration stage has no invented percentage. The normal scanner
+continues, and returning to play requires fresh quiet pad baselines and released
+controls.
+
+Use the current Client with this firmware. Older Clients do not send the guarded
+completion acknowledgement and can leave the board waiting for it even after
+their own readback comparison has finished.
+
+The Client compares the entire saved payload before sending one completion
+acknowledgement. The board checks its saved checksum and generation before
+unlocking. Export/readback uses the shared transfer buffer without discarding
+the restore guard. An error remains visible; neither side retries restoration.
+
+If the Client disconnects before application, the upload is abandoned without
+changing the configuration. Once applied, the board continues saving on its
+own. A disconnected, durably saved restore may return control with a host-check
+pending result; it must not claim the missing Client comparison passed. Failed
+or unverified applied state stays guarded until explicitly inspected. Keep the
+original backup. This guarded workflow is host-tested; hardware qualification
+is still required.
 
 
 ## Refresh and qualification
@@ -372,6 +410,13 @@ supports MIDI activity; resource gauges stay unavailable until updated.
 
 Focused board checks passed the resource display and reported values. Worst-case
 timing overhead and stack use still require dedicated load measurements.
+
+Profiling-enabled firmware adds **Timing capture** with explicit Start,
+Stop and Export controls. A capture lasts up to 60 seconds and continues on the
+board when the Client is disconnected. Reconnect to read its stopped results;
+export before starting another capture or powering off. These measurements are
+separate from live report monitoring. See the [profiling guide](profiling.md)
+for workload comparisons, histogram precision and queue/timing boundaries.
 
 Board adds contextual panels for MPE, Arps, Sequencer and Harmony when active.
 Harmony groups the retained chord and physical map, suggestions, exploration

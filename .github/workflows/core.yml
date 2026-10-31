@@ -19,3 +19,13 @@ jobs:
       - run: python3 tools/build_core.py --test --core-only
       - run: python3 -m unittest discover -s tests -p test_harmony_catalog.py -v
       - run: python3 -m unittest discover -s tests -p test_public_privacy.py -v
+  undefined-behavior:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 tools/setup_core_tools.py
+      - run: python3 -m unittest discover -s tests -p test_core_sanitizer.py -v
+      - run: python3 tools/build_core.py --sanitize=undefined

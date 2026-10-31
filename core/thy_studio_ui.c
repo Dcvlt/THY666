@@ -47,6 +47,65 @@ static unsigned number(char *out, unsigned used, unsigned capacity,
     return used;
 }
 
+void thy_studio_ui_render_restore(const thy_restore_progress *progress,
+    uint8_t out[THY_UI_FRAME_BYTES])
+{
+    if(!out)return;
+    for(unsigned n=0u;n<THY_UI_FRAME_BYTES;++n)out[n]=0u;
+    if(!progress || !progress->active || progress->phase==THY_RESTORE_IDLE)return;
+    const char *stage="NEEDS ATTENTION",*detail="SEE CLIENT FOR DETAILS";
+    switch(progress->phase){
+    case THY_RESTORE_RECEIVING:stage="RECEIVING";detail="KEEP USB CONNECTED";break;
+    case THY_RESTORE_SAVING:stage="SAVING";detail="WRITING TO MEMORY";break;
+    case THY_RESTORE_CHECKING:stage="CHECKING";detail="VERIFYING SAVED DATA";break;
+    case THY_RESTORE_SUCCESS:stage="VERIFIED";detail="CONFIGURATION SAVED";break;
+    default:break;
+    }
+    int host_pending=progress->phase==THY_RESTORE_ERROR&&progress->device_verified;
+    if(host_pending){stage="SAVED ON BOARD";detail="HOST CHECK PENDING";}
+    page_header(out,progress->phase==THY_RESTORE_SUCCESS?"SETTINGS RESTORED":
+        host_pending?"RESTORE STATUS":
+        progress->phase==THY_RESTORE_ERROR?"RESTORE STOPPED":"RESTORING SETTINGS",
+        "reset",128u,128u);
+    thy_ui_draw_text(out,3u,17u,stage,24u,0);
+    thy_ui_draw_text(out,3u,26u,detail,24u,0);
+    /* A shared, segmented rail has no timer or animation state. Checking
+     * without a measurable total is visibly indeterminate, never 100%. */
+    unsigned filled=0u;
+    int measured=progress->total!=0u;
+    if(progress->phase==THY_RESTORE_SUCCESS)filled=24u;
+    else if(measured){
+        uint32_t count=progress->completed>progress->total?progress->total:progress->completed;
+        filled=(unsigned)((uint64_t)count*24u/progress->total);
+    }
+    thy_ui_draw_rectangle(out,2u,36u,124u,9u,1);
+    thy_ui_draw_rectangle(out,3u,37u,122u,7u,0);
+    for(unsigned n=0u;n<24u;++n){
+        if(n<filled)thy_ui_draw_rectangle(out,5u+n*5u,39u,3u,3u,1);
+        else thy_ui_draw_pixel(out,6u+n*5u,41u,1);
+    }
+    if(progress->phase==THY_RESTORE_RECEIVING || progress->phase==THY_RESTORE_SAVING){
+        char count[32];unsigned at;
+        if(measured){
+            at=number(count,0u,sizeof count,progress->completed);
+            at=append(count,at,sizeof count,"/");
+            at=number(count,at,sizeof count,progress->total);
+            (void)append(count,at,sizeof count," BYTES");
+            thy_ui_draw_text(out,3u,48u,count,24u,0);
+        }else thy_ui_draw_text(out,3u,48u,"WAITING FOR DEVICE",24u,0);
+    }else if(progress->phase==THY_RESTORE_CHECKING)
+        thy_ui_draw_text(out,3u,48u,"READBACK IN PROGRESS",24u,0);
+    else if(progress->phase!=THY_RESTORE_SUCCESS)
+        thy_ui_draw_text(out,3u,48u,"KEEP YOUR BACKUP",24u,0);
+    page_footer(out,13u,58u,progress->pads_locked?"PAD INPUT LOCKED":"PAD INPUT ENABLED",22u);
+    if(progress->pads_locked){
+        thy_ui_draw_rectangle(out,3u,57u,5u,4u,1);
+        thy_ui_draw_rectangle(out,4u,58u,3u,3u,0);
+        thy_ui_draw_rectangle(out,2u,60u,7u,4u,1);
+        thy_ui_draw_pixel(out,5u,61u,0);
+    }
+}
+
 static unsigned window_start(unsigned cursor, unsigned count)
 {
     unsigned start = cursor > 2u ? cursor - 2u : 0u;
@@ -931,9 +990,7 @@ static play_snapshot play_snapshot_read(const thy_state *state)
     }
     /* Collapse destination/channel duplicates. These are the ledger's actual
      * sounding pitches, including generated notes and sustain, not pad guesses. */
-    for (unsigned key = 0u; key < THY_KEY_COUNT; ++key)
-        if (core->refs[key] || thy_core_deferred(core, (uint16_t)key))
-            result.pitches[key % 128u] = 1u;
+    thy_core_sounding_pitches(core, result.pitches);
     for (unsigned note = 0u; note < 128u; ++note)
         if (result.pitches[note]) {
             ++result.notes;
@@ -1244,19 +1301,21 @@ static void connection_icons(uint8_t *out, const thy_state *state,
         rail_bitmap(out,110u,33u,17u,5u,mpe);
     if (engine->arps[0].config.enabled || engine->arps[1].config.enabled)
         rail_bitmap(out,111u,40u,15u,5u,arp);
+    thy_engine_performance_indicators indicators;
+    thy_engine_performance_indicators_read(engine,
+        !engine->expression_config.enabled,&indicators);
     int show_at = 0, show_vel = 0;
     for (uint8_t side = 1u; side <= 2u; ++side) {
-        int32_t mode = 0;
+        unsigned index=side-1u,bit=1u<<index;
+        int32_t mode = indicators.aftertouch[index];
         unsigned x = side == 1u ? 110u : 124u;
-        if (!engine->expression_config.enabled &&
-            thy_engine_performance_get(engine,THY_ROW_PERFORMANCE_PRESSUREMODE,
-                side,&mode) == THY_STATE_OK && mode != THY_CHANNEL_PRESSURE_OFF) {
+        if ((indicators.aftertouch_valid&bit) && mode != THY_CHANNEL_PRESSURE_OFF) {
             rail_bitmap(out,x,47u,3u,5u,mode == THY_CHANNEL_PRESSURE_POLY ? poly :
                 mode == THY_CHANNEL_PRESSURE_CHANNEL ? channel : mixed);
             show_at = 1;
         }
-        if (thy_engine_performance_get(engine,THY_ROW_SENSITIVITY_VELOCITYMODE,
-                side,&mode) == THY_STATE_OK && mode != THY_VELOCITY_FIXED) {
+        mode=indicators.velocity_mode[index];
+        if ((indicators.velocity_valid&bit) && mode != THY_VELOCITY_FIXED) {
             x = side == 1u ? 110u : 126u;
             if (mode == THY_VELOCITY_STRIKE) thy_ui_draw_pixel(out,x,56u,1);
             else { /* Mixed overrides: split tick, rather than a false ON. */
@@ -1873,7 +1932,7 @@ static void studio_play(uint8_t *out, const thy_state *state,
     char footer[32];
     view_line(state,&snapshot,config->slots[1],scale_name,din_ready,usb_ready,footer);
     if(footer[0])thy_ui_draw_rule(out,55u,108u,2u,footer,21u,1);
-    draw_view_line(out, 58u, state, &snapshot, config->slots[1], scale_name, din_ready, usb_ready);
+    thy_ui_draw_text(out,2u,58u,footer,21u,0);
     if(view==THY_VIEW_SIMPLE){
         /* Keep the existing content-aligned rules. Only their three final
          * columns become elbows; inspect the known three rule rows so long

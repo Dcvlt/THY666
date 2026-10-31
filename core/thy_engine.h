@@ -22,6 +22,14 @@ typedef struct thy_engine_performance_config {
     uint8_t velocity, aftertouch, bend, range;
 } thy_engine_performance_config;
 
+/* Read-only physical-half icon values. Valid masks use bit 0 for Left and
+ * bit 1 for Right; mixed values match performance_get (-1 AT, 2 velocity).
+ * This is a transient result, not cached engine state or a saved format. */
+typedef struct thy_engine_performance_indicators {
+    int32_t aftertouch[2], velocity_mode[2];
+    uint8_t aftertouch_valid, velocity_valid;
+} thy_engine_performance_indicators;
+
 enum thy_engine_rhythm_result {
     THY_ENGINE_STALE_RUN = 5,
     THY_ENGINE_SOURCE_NOT_READY = 6,
@@ -135,6 +143,9 @@ int thy_engine_channel_quiet(const thy_engine *);
 int thy_engine_channel_configure(thy_engine *,uint8_t target,const thy_engine_channel_config *);
 uint8_t thy_engine_channel_aftertouch(const thy_engine *,uint8_t target);
 int thy_engine_performance_get(const thy_engine *,uint16_t row,uint8_t scope,int32_t *);
+/* Set include_aftertouch to zero when MPE hides ordinary AT indicators. */
+void thy_engine_performance_indicators_read(const thy_engine *,int include_aftertouch,
+    thy_engine_performance_indicators *);
 int thy_engine_performance_set(thy_engine *,uint16_t row,uint8_t scope,int32_t);
 uint8_t thy_engine_performance_route(const thy_engine *,uint8_t pad);
 thy_engine_channel_config thy_engine_performance_response(const thy_engine *,uint8_t pad,uint8_t target);

@@ -28,6 +28,23 @@ static void render(unsigned now, uint8_t *out)
     thy_studio_ui_render(&ui, &engine.state, "MAJOR C", 1, 1, now, out);
 }
 
+/* Dense display fixtures must retain the real ownership/count invariant.
+ * Generated notes keep the physical-pad count at zero. */
+static int generated_range(unsigned first, unsigned end)
+{
+    thy_midi_event event;
+    CHECK(thy_core_generated_release_all(&core) == THY_OK);
+    while(thy_core_poll(&core, &event)) {}
+    for(unsigned pitch=first; pitch<end; ++pitch) {
+        thy_generated_handle handle;
+        CHECK(thy_core_generated_acquire(&core, 100u, 1u, (uint8_t)pitch,
+            0u, THY_ROUTE_DIN, 96u, &handle) == THY_OK);
+        while(thy_core_poll(&core, &event)) {}
+    }
+    CHECK(core.sounding_count == end-first);
+    return 1;
+}
+
 static int pixel(const uint8_t *frame, unsigned x, unsigned y)
 {
     return !!(frame[y / 8u * THY_UI_WIDTH + x] & (1u << (y % 8u)));
@@ -224,7 +241,7 @@ static int test_retired_views_fall_back_and_all_renderers_keep_frame_bounds(void
         CHECK(memcmp(frames[0], frames[1], THY_UI_FRAME_BYTES) == 0);
     }
     struct { uint8_t before[32], pixels[THY_UI_FRAME_BYTES], after[32]; } guarded;
-    for (unsigned note = 0u; note < 128u; ++note) core.refs[note] = 1u;
+    CHECK(generated_range(0u, 128u));
     for (unsigned view = 0u; view <= THY_VIEW_COUNT; ++view) {
         instrument.display_view = (uint8_t)(view == THY_VIEW_COUNT ? 255u : view);
         memset(&guarded, 0xa5, sizeof guarded);
@@ -293,7 +310,7 @@ static int test_simple_shows_chords_octaves_and_explicit_dense_overflow(void)
 {
     initialize();
     instrument.display_view = THY_VIEW_SIMPLE;
-    for (unsigned note = 48u; note < 73u; ++note) core.refs[note] = 1u;
+    CHECK(generated_range(48u, 73u));
     render(0u, frames[0]);
     for (unsigned n = 0u; n < 25u; ++n) {
         unsigned row = n / 5u;
@@ -302,10 +319,10 @@ static int test_simple_shows_chords_octaves_and_explicit_dense_overflow(void)
         thy_ui_note_name((int)(48u + n), name);
         CHECK(cell_text(frames[0], 2u + col * 21u, 13u + row * 7u, name));
     }
-    core.refs[73] = 1u;
+    CHECK(generated_range(48u, 74u));
     render(1u, frames[0]);
     CHECK(cell_text(frames[0], 86u, 41u, "+2"));
-    for (unsigned note = 0u; note < 128u; ++note) core.refs[note] = 1u;
+    CHECK(generated_range(0u, 128u));
     render(2u, frames[0]);
     CHECK(cell_text(frames[0], 2u, 13u, "C-1"));
     CHECK(cell_text(frames[0], 23u, 13u, "C#-1"));
@@ -360,15 +377,16 @@ static int test_fifths_order_root_chord_edges_and_motion_are_read_only(void)
     static const uint8_t xs[] = {54,72,85,90,85,72,54,36,23,18,23,36};
     static const uint8_t ys[] = {18,19,23,28,33,36,38,36,33,28,23,19};
     for (unsigned step = 0u; step < 12u; ++step) {
-        memset(core.refs, 0, sizeof core.refs);
-        core.refs[60u + order[step]] = 1u;
+        CHECK(generated_range(60u + order[step], 61u + order[step]));
         render(step, frames[0]);
         CHECK(pixel(frames[0], xs[step] - 1u, ys[step]));
         CHECK(pixel(frames[0], xs[step] + 1u, ys[step]));
         if (step) CHECK((order[step] + 12u - order[step - 1u]) % 12u == 7u);
     }
-    memset(core.refs, 0, sizeof core.refs);
-    core.refs[60u] = 1u; core.refs[67u] = 1u;
+    CHECK(generated_range(60u, 61u));
+    thy_generated_handle handle;
+    CHECK(thy_core_generated_acquire(&core, 100u, 1u, 67u, 0u,
+        THY_ROUTE_DIN, 96u, &handle) == THY_OK);
     core_before = core; instrument_before = instrument; engine_before = engine;
     render(0u, frames[0]); render(2000u, frames[1]);
     CHECK(memcmp(frames[0], frames[1], sizeof frames[0]) == 0);

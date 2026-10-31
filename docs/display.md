@@ -7,11 +7,20 @@ builds. Browser CSS presentation must preserve the same content.
 
 ## Panel updates
 
-`firmware/instrument/display.c` owns the target image, sent-byte shadow and
-transfer state. A prepared transfer freezes its payload; only successful bytes
+`core/thy_display.c` owns the target image, sent-byte shadow and transfer state;
+`firmware/instrument/board.c` adapts it to the panel. A prepared transfer freezes
+its payload; only successful bytes
 update the shadow. Dirty spans use explicit page/column addressing rather than
 rewriting the whole panel for every note change. New renders replace the latest
 target without modifying an in-flight slice.
+
+An identical target skips rebuilding the dirty map. Later replacements copy and
+reconcile only the target bytes that change. The initial image still visits
+every byte, including zero pixels not yet known to the panel. Successful commits
+already keep dirty bits consistent with sent bytes, including an older prepared
+payload that commits after a target replacement. This removes repeated CPU work
+without changing chunk selection, accounting, visibility or render cadence. See
+[optimization guidance](optimization.md) for further candidates and their limits.
 
 One foreground turn sends at most **16 data bytes plus three address bytes**.
 Pad acquisition and MIDI service run between turns. OLED transfer defers while
@@ -36,6 +45,24 @@ Counters distinguish render time, chunk time, deferred work and completed panel
 updates. These software measurements do not measure optical panel scan rate.
 There is no single claimed refresh-rate number covering renderer, SPI transfer,
 OLED electronics and browser polling.
+
+## Rendering work
+
+The renderer retains its frame cadence and reads current state on every call.
+Rectangles use clipped page-byte masks, and text places glyph columns directly
+into one or two pages. Transparent and inverse drawing preserve surrounding
+pixels, including the existing clipping and unsigned-coordinate edge behavior.
+
+Musical snapshots skip eight-key ledger blocks that contain neither references
+nor sustain-deferred notes. They still read actual sounding ownership, collapse
+channel/destination duplicates and exclude pending strum attacks. Physical-half
+AT/velocity indicators share one pad scan; mixed values, overrides and invalid
+inputs retain the same results as separate queries. The footer is formatted once.
+
+These changes add no retained snapshot or frame cache, persistent RAM, saved
+fields or display-transfer policy. Exact-output comparisons against the captured
+baseline cover primitives, musical views, menus, restoration and prepared OLED
+transfers. Target timing improvement still requires paired board captures.
 
 ## Client view
 

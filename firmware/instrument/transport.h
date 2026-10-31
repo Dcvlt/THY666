@@ -10,6 +10,7 @@
 #define THY_INSTRUMENT_TRANSPORT_DIN_RECONCILE_EVENTS 48u
 #define THY_INSTRUMENT_TRANSPORT_QUEUE_CAPACITY THY_QUEUE_CAPACITY
 #define THY_INSTRUMENT_TRANSPORT_USB_KEYS (2u * 16u * 128u)
+struct thy_profile;
 typedef struct thy_instrument_transport_io {
     void *context;
     /* True accepts the whole message into a bounded sink-owned buffer.
@@ -32,9 +33,22 @@ typedef struct thy_instrument_transport {
     uint32_t usb_overruns, usb_suppressed;
     uint16_t reconcile_index, din_reconcile_index;
     uint8_t usb_restore_index, session_seen, mounted, pending_valid, invalid_pending;
+    /* False proves usb_blocked is empty; clears may leave this true until
+     * the next bounded reconciliation. Only block_key sets bitmap bits. */
+    uint8_t usb_blocks_pending;
+    struct thy_profile *profile;
+    uint32_t (*profile_now_ms)(void *);
+    void *profile_context;
 } thy_instrument_transport;
 void thy_instrument_transport_init(thy_instrument_transport *, thy_core *,
     const thy_instrument_transport_io *);
+/* Bind once before capture. Rebinding/detaching while either session is active
+ * is ignored; start/restart owns timestamp reset without touching live queues.
+ * Inactive captures read no clock and leave profiler data untouched. Queue wait
+ * ends at whole-message sink acceptance, not UART/USB wire completion. Direct
+ * cleanup/restore messages and entries predating capture have no wait sample. */
+void thy_instrument_transport_profile_bind(thy_instrument_transport *,
+    struct thy_profile *, uint32_t (*now_ms)(void *), void *context);
 /* Call after tud_task(), before physical input, on the single main thread.
  * USB epoch changes on mount AND unmount. USB epochs discard only USB output,
  * preserving core owners, sustain, pending strums and DIN messages. Old held

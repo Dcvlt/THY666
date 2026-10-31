@@ -22,6 +22,8 @@ class Element {
   get textContent() { return this._text + this.children.map(node => node.textContent).join(''); }
   set innerHTML(_) { throw new Error('Backup strings must be rendered as text.'); }
   setAttribute(key, value) { this.attributes[key] = String(value); }
+  getAttribute(key) { return this.attributes[key] ?? null; }
+  removeAttribute(key) { delete this.attributes[key]; }
   append(...children) { for (const child of children) { child.remove(); child.parentNode = this; this.children.push(child); } }
   replaceChildren(...children) { for (const child of this.children) child.parentNode = null; this._text = ''; this.children = []; this.append(...children); }
   remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(node => node !== this); this.parentNode = null; }
@@ -33,6 +35,7 @@ class Element {
   }
   closest(selector) { for (let node = this; node; node = node.parentNode) if (node.matches(selector)) return node; return null; }
   querySelector(selector) { for (const child of this.children) { if (child.matches(selector)) return child; const nested = child.querySelector(selector); if (nested) return nested; } return null; }
+  querySelectorAll(selector) { return this.children.flatMap(child=>[...(child.matches(selector)?[child]:[]),...child.querySelectorAll(selector)]); }
   addEventListener(type, handler, capture = false) { if (!this.listeners.has(type)) this.listeners.set(type, []); this.listeners.get(type).push({ handler, capture: Boolean(capture) }); }
   removeEventListener(type, handler, capture = false) { this.listeners.set(type, (this.listeners.get(type) || []).filter(value => value.handler !== handler || value.capture !== Boolean(capture))); }
   focus() { this.ownerDocument.activeElement = this; }
@@ -44,6 +47,7 @@ function fixture({ connected = false, read, restore } = {}) {
   const blobs = new Map(), revoked = [], downloads = [], notifications = [], applied = [];
   const document = { activeElement: null, listeners: new Map(), downloads,
     createElement(tag) { return new Element(this, tag); },
+    createElementNS(_namespace,tag) { return new Element(this,tag); },
     addEventListener: Element.prototype.addEventListener, removeEventListener: Element.prototype.removeEventListener,
     defaultView: { Blob, URL: { createObjectURL(blob) { const url = `blob:test-${blobs.size}`; blobs.set(url, blob); return url; }, revokeObjectURL(url) { revoked.push(url); } } } };
   document.body = document.createElement('body'); const mount = document.createElement('section'); document.body.append(mount);
@@ -217,4 +221,17 @@ test('flow choices stay enabled through background polls but lock during a backu
   assert.equal(save.disabled, false);
   assert.equal(restore.disabled, false);
   f.panel.destroy();
+});
+
+test('restore presents actual phase progress and leaves unknown-duration saving indeterminate',async()=>{
+  let finish;const f=fixture({connected:true,restore:()=>new Promise(resolve=>{finish=resolve;})});
+  f.fire(f.find('backupAction','choose-restore'));f.select();await flush();
+  f.fire(f.find('backupAction','restore'));f.fire(f.find('backupAction','confirm'));
+  f.client.status.restoreProgress={phase:'receiving',completed:32,total:128,padsLocked:true};f.panel.refresh();
+  const meter=f.find('backupReadout','progress');assert.equal(meter.hidden,false);
+  assert.equal(meter.getAttribute('aria-valuenow'),'25');assert.match(meter.textContent,/Receiving settings/);
+  assert.equal(f.find('backupReadout','notice').hidden,true);
+  f.client.status.restoreProgress={phase:'saving',completed:0,total:0,padsLocked:true};f.panel.refresh();
+  assert.equal(meter.getAttribute('aria-valuenow'),null);assert.match(meter.textContent,/Saving settings/);
+  finish({verified:true});await flush();assert.equal(meter.hidden,true);f.panel.destroy();
 });

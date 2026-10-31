@@ -254,10 +254,42 @@ static void bounded_cleanup_and_timeout(void)
     assert(board_pads_report()->dma_resets == 0u);
 }
 
+static void delayed_completed_conversion_tests(uint32_t start)
+{
+    setup(start, 0u); task(start, 25200u);
+    uint32_t expiry = board_pads_report()->expires_ms;
+    inject(0u, 0u, start + 20u, 25200u);
+    assert(board_pads_busy() && board_pads_report()->errors == 0u);
+    inject(0u, 1u, start + 47u, 25200u);
+    assert(board_pads_busy() && board_pads_report()->errors == 0u);
+    inject(0u, 2u, start + 74u, 25200u);
+    assert(board_pads_report()->state == DIAG_PADS_SETTLE);
+    assert(board_pads_report()->scans == 1u && board_pads_report()->errors == 0u);
+    assert(board_pads_report()->expires_ms == expiry);
+    for (unsigned bank = 0u; bank < 6u; ++bank)
+        assert(board_pads_report()->raw[bank * 16u] == bank * 100u + 3u);
+    assert(board_pads_request(0) == DIAG_SUCCESS);
+    task(start + 74u, 25200u); task(start + 75u, 25200u);
+    assert(!board_pads_active() && board_pads_report()->state == DIAG_PADS_IDLE);
+
+    setup(start, 0u); task(start, 25200u);
+    inject(0u, 0u, start + 20u, 25200u);
+    task(start + 39u, 25200u);
+    assert(board_pads_busy() && board_pads_report()->errors == 0u);
+    task(start + 40u, 25200u);
+    assert(board_pads_report()->state == DIAG_PADS_RESTORE);
+    assert(board_pads_report()->last_failure_result == DIAG_TIMEOUT);
+    assert(board_pads_report()->errors == 1u && board_pads_report()->scans == 0u);
+    task(start + 41u, 25200u);
+    assert(!board_pads_active() && board_pads_report()->state == DIAG_PADS_FAULT);
+}
+
 int main(void)
 {
     complete_frame(0u, 0u);
     complete_frame(UINT32_MAX, UINT32_MAX - 10000u);
+    delayed_completed_conversion_tests(0u);
+    delayed_completed_conversion_tests(UINT32_MAX - 1u);
     renewable_lease_and_stopped_clock();
     stopped_clock_while_main_renews(0u);
     stopped_clock_while_main_renews(UINT32_MAX - 1u);

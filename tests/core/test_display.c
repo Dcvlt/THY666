@@ -4,6 +4,7 @@
 #include "../../core/thy_display.h"
 
 static unsigned assertions;
+static int stream_fixtures;
 #define CHECK(condition) do { ++assertions; if (!(condition)) { \
     fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, #condition); return 0; \
 } } while (0)
@@ -671,9 +672,147 @@ static int test_initial_scene_failure_stays_hidden_and_default_api_is_unchanged(
     return 1;
 }
 
-int main(void)
+static int check_live_dirty_map(void)
 {
-    if (!test_outer_note_rows_precede_title_without_starving_footer() ||
+    unsigned total=0u;
+    for(unsigned n=0u;n<THY_DISPLAY_FRAME_BYTES;++n){
+        unsigned valid=(display.valid[n/8u]>>(n%8u))&1u;
+        unsigned dirty=(display.dirty[n/8u]>>(n%8u))&1u;
+        CHECK(dirty==(!valid||display.target[n]!=display.shadow[n]));total+=dirty;
+    }
+    CHECK(display.report.dirty_bytes==total);return 1;
+}
+
+static void trace_display(unsigned step,int result,uint32_t now)
+{
+    if(!stream_fixtures)return;
+    printf("DISPLAY-%u-%d-%d ",step,result,thy_display_due(&display,now));
+    const uint8_t *bytes=(const uint8_t *)&display;
+    for(unsigned n=0u;n<sizeof display;++n)printf("%02x",bytes[n]);
+    putchar(' ');
+    for(unsigned n=0u;n<sizeof panel;++n)printf("%02x",panel[n]);
+    putchar('\n');
+}
+
+static int commit_any_transfer(uint32_t now)
+{
+    const thy_display_transfer *t=thy_display_prepare(&display,now);
+    if(!t)return 1;
+    if(t->kind==THY_DISPLAY_TRANSFER_DATA){
+        CHECK(!display.report.scene_active||!simulated_visible);
+        CHECK(t->offset+t->count<=sizeof panel&&t->count&&t->count<=16u);
+        memcpy(panel+t->offset,t->data,t->count);
+    }else if(t->kind==THY_DISPLAY_TRANSFER_OFF)simulated_visible=0u;
+    else{
+        CHECK(t->kind==THY_DISPLAY_TRANSFER_ON&&!display.report.dirty_bytes);
+        CHECK(!memcmp(panel,display.target,sizeof panel));simulated_visible=1u;
+    }
+    thy_display_commit(&display,1,now);
+    CHECK(thy_display_panel_visible(&display)==(int)simulated_visible);
+    return 1;
+}
+
+static int test_unchanged_targets_keep_exact_dirty_state_and_immutable_prepared_chunks(void)
+{
+    CHECK(scene_clean_panel());
+    frame[300u]=9u;CHECK(thy_display_submit(&display,frame,100u));
+    const thy_display_transfer *t=thy_display_prepare(&display,101u);CHECK(t!=NULL);
+    thy_display_transfer frozen=*t;
+    frame[300u]=0u;CHECK(thy_display_submit(&display,frame,102u));
+    CHECK(!display.report.dirty_bytes&&display.prepared);
+    CHECK(!thy_display_submit(&display,frame,103u));
+    CHECK(!memcmp(thy_display_prepare(&display,104u),&frozen,sizeof frozen));
+    thy_display_commit(&display,0,105u);CHECK(check_live_dirty_map());
+    CHECK(!thy_display_submit(&display,frame,106u));
+    CHECK(commit_any_transfer(107u));
+    CHECK(display.shadow[300u]==9u&&display.report.dirty_bytes==1u);
+    CHECK(!thy_display_submit(&display,frame,108u));
+    CHECK(check_live_dirty_map()&&commit_any_transfer(109u));
+    CHECK(!display.report.active&&!memcmp(panel,frame,sizeof panel));
+    trace_display(0u,0,109u);
+    /* Deterministic churn mixes identical targets with sparse changes, scene
+     * replacement, off/on fences, immutable payloads and failed deliveries. */
+    for(unsigned step=1u;step<=384u;++step){
+        uint32_t now=UINT32_MAX-40u+step;int result=0;
+        switch(step%12u){
+        case 0u:frame[(step*73u)%1024u]^=0xa5u;result=thy_display_submit(&display,frame,now);break;
+        case 1u:case 3u:case 8u:result=thy_display_submit(&display,frame,now);break;
+        case 2u:case 10u:
+            (void)thy_display_prepare(&display,now);thy_display_defer(&display);
+            thy_display_commit(&display,0,now);break;
+        case 4u:
+            t=thy_display_prepare(&display,now);
+            if(t){frozen=*t;result=thy_display_submit(&display,frame,now);
+                CHECK(!memcmp(thy_display_prepare(&display,now),&frozen,sizeof frozen));}
+            break;
+        case 5u:case 9u:case 11u:CHECK(commit_any_transfer(now));break;
+        case 6u:frame[(step*47u+5u)%1024u]^=0x5au;result=thy_display_submit_scene(&display,frame,now);break;
+        case 7u:result=thy_display_submit_scene(&display,frame,now);break;
+        }
+        CHECK(check_live_dirty_map());trace_display(step,result,now);
+    }
+    (void)thy_display_submit_scene(&display,frame,400u);
+    unsigned remaining=0u;
+    while(display.report.active&&remaining++<512u){
+        CHECK(commit_any_transfer(401u+remaining));CHECK(check_live_dirty_map());
+        trace_display(384u+remaining,0,401u+remaining);
+    }
+    CHECK(remaining<512u&&!display.report.active);
+    CHECK(!memcmp(panel,frame,sizeof panel));return 1;
+}
+
+static int test_sparse_replacements_preserve_unknown_bytes_and_old_prepared_data(void)
+{
+    initialize();
+    CHECK(thy_display_submit(&display,frame,0u));
+    CHECK(commit_to_panel(1u));
+    CHECK(display.report.valid_bytes==16u&&display.report.dirty_bytes==1008u);
+    static const unsigned edges[]={0u,127u,128u,255u,256u,271u,272u,1023u};
+    for(unsigned n=0u;n<sizeof edges/sizeof edges[0];++n)frame[edges[n]]=(uint8_t)(n+1u);
+    CHECK(thy_display_submit(&display,frame,2u));
+    /* Unchanged zero bytes are still unknown, while the two previously sent
+     * bytes (256 and 271) become dirty again. Neither category may disappear. */
+    CHECK(display.report.valid_bytes==16u&&display.report.dirty_bytes==1010u);
+    CHECK(check_live_dirty_map());trace_display(1000u,1,2u);
+    const thy_display_transfer *t=thy_display_prepare(&display,3u);
+    CHECK(t!=NULL&&t->offset==272u&&t->count==16u);
+    thy_display_transfer frozen=*t;
+    frame[127u]=frame[256u]=frame[272u]=0u;
+    frame[511u]=9u;frame[512u]=10u;
+    CHECK(thy_display_submit(&display,frame,4u));
+    CHECK(display.report.dirty_bytes==1009u);
+    CHECK(!memcmp(thy_display_prepare(&display,5u),&frozen,sizeof frozen));
+    thy_display_commit(&display,0,6u);
+    CHECK(check_live_dirty_map());trace_display(1001u,1,6u);
+    CHECK(commit_to_panel(7u));
+    CHECK(display.shadow[272u]==7u&&display.target[272u]==0u);
+    CHECK(check_live_dirty_map());trace_display(1002u,0,7u);
+    CHECK(!thy_display_submit(&display,display.target,8u));
+    CHECK(check_live_dirty_map());CHECK(drain(9u));
+    trace_display(1003u,0,100u);
+    /* First/last bytes and both sides of page boundaries exercise short and
+     * long equal prefixes; repeated replacements cancel outstanding damage. */
+    for(unsigned step=0u;step<32u;++step){
+        unsigned offset=edges[step%(sizeof edges/sizeof edges[0])];
+        frame[offset]^=(uint8_t)(0x81u+step);
+        CHECK(thy_display_submit(&display,frame,100u+step));
+        CHECK(check_live_dirty_map());trace_display(1004u+step,1,100u+step);
+    }
+    CHECK(drain(200u));CHECK(check_live_dirty_map());
+    trace_display(1036u,0,300u);return 1;
+}
+
+int main(int argc,char **argv)
+{
+    if(argc==2&&!strcmp(argv[1],"--stream-fixtures")){
+        stream_fixtures=1;return
+            test_unchanged_targets_keep_exact_dirty_state_and_immutable_prepared_chunks()&&
+            test_sparse_replacements_preserve_unknown_bytes_and_old_prepared_data()?0:1;
+    }
+    if(argc!=1)return 1;
+    if (!test_unchanged_targets_keep_exact_dirty_state_and_immutable_prepared_chunks() ||
+        !test_sparse_replacements_preserve_unknown_bytes_and_old_prepared_data() ||
+        !test_outer_note_rows_precede_title_without_starving_footer() ||
         !test_initial_zero_frame_must_reach_every_panel_byte() ||
         !test_sparse_bytes_use_explicit_nonzero_column_addresses() ||
         !test_latest_target_never_overwrites_a_prepared_payload() ||
@@ -695,6 +834,6 @@ int main(void)
         !test_scene_request_preserves_an_existing_ordinary_inflight_slice() ||
         !test_scene_off_payload_is_immutable_and_queued_scene_can_be_cancelled() ||
         !test_initial_scene_failure_stays_hidden_and_default_api_is_unchanged()) return 1;
-    printf("22 dirty OLED/scene transport scenarios passed (%u assertions)\n", assertions);
+    printf("24 dirty OLED/scene transport scenarios passed (%u assertions)\n", assertions);
     return 0;
 }

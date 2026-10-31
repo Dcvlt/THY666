@@ -11,6 +11,7 @@ import { renderCompanionScreen } from './companion-display.js';
 export { renderCompanionScreen };
 import { initializeHelp } from './help.js';
 import { initializeBackupPanel } from './backup-panel.js';
+import { initializeProfilePanel } from './profile-panel.js';
 import { initializeUpdaterPanel } from './updater-panel.js';
 import { createBrowserUpdaterClient } from './browser-updater-client.js';
 import { initializeAppSettings } from './app-settings.js';
@@ -298,7 +299,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   const diagnostics=initializeDiagnostics(panes.get('diagnostics'));
   const telemetry=el('div','client-telemetry hud-frame hud-frame--task'),telemetryText=el('pre','telemetry-output hud-scroll-region hud-type-mono','Connect to read device telemetry.');
   const telemetryControls=el('div','telemetry-controls'),telemetryPick=el('select','hud-field');telemetryPick.setAttribute('aria-label','Telemetry report');
-  for(const [name,label] of [['status','Activity'],['io','MIDI & scanning'],['settings','Saved settings'],['display','Display timing']]){const option=el('option','',label);option.value=name;telemetryPick.append(option);}
+  for(const [name,label] of [['status','Activity'],['io','MIDI & scanning'],['pads','Pad scanner'],['settings','Saved settings'],['backup status','Backup service'],['display','Display timing']]){const option=el('option','',label);option.value=name;telemetryPick.append(option);}
   let telemetryReading=false,telemetryLive=false,telemetrySamples=0,telemetryLastRead=0,telemetryEpoch=0;
   const telemetrySession=el('p','telemetry-session','');telemetrySession.setAttribute('role','status');
   function stopTelemetry(){telemetryEpoch++;if(telemetryLive)telemetrySession.textContent=`Stopped · ${telemetrySamples} reports`;telemetryLive=false;liveTelemetry.textContent='Start live session';liveTelemetry.setAttribute('aria-pressed','false');}
@@ -355,6 +356,8 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   const appSettings=initializeAppSettings({onPollIntervalChange:ms=>{if(pollConnectionActive&&!disposed)schedulePolling(ms);}});
   const client=createClient({expectedSchema:engine.state.schemaHash(),onState:updateConnection,
     migrateBackupPayload:createBackupPayloadMigrator({createEngine:()=>createCore()})});
+  const profileMount=el('div','profile-mount');panes.get('diagnostics').insertBefore(profileMount,advancedDiagnostics);
+  const profiling=initializeProfilePanel({mount:profileMount,client,runtime});
   const cockpitContext=createCockpitContextCache({read:(row,instance)=>client.read(row,instance)});
   const backup=initializeBackupPanel({mount:backupMount,client,getEngine:()=>engine,onApplied:async()=>{await readConfiguration();await poll();},runtime});
   // Preserve explicit native/helper integrations. Supported browser sessions
@@ -393,6 +396,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     // Structural board state changes only at connection or ownership edges.
     const nextIdentity=state.connected?[state.identity?.uid,state.identity?.build,state.identity?.schema,state.compatible].join(':'):'';
     const connectionKey=[state.connected,state.connecting,state.compatible,nextIdentity,client.available,updateBusy].join(':');
+    profiling.refresh({visible:area==='client'&&page==='diagnostics',blocked:updateBusy});
     if(connectionKey===lastConnectionKey){
       if(!polling&&performanceSnapshot&&state.busy){performanceSnapshot=null;performanceReceivedAt=0;performanceReadAt=null;performanceStale=true;render();}
       if(area==='client'&&page==='backups')backup?.refresh();
@@ -468,6 +472,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     if(next!=='client')stopTelemetry();
     compactNavigation.close();
     area=next;workspace.hidden=next!=='client';docsMount.hidden=next!=='documentation';updatePane.hidden=next!=='update';
+    profiling.refresh({visible:next==='client'&&page==='diagnostics',blocked:Boolean(updater?.usbBusy)});
     syncCockpitActivity();
     for(const [id,nav] of [['update',updateAreaButton],['client',clientAreaButton],['documentation',docsAreaButton]]){
       nav.classList.toggle('is-selected',next===id);nav.setAttribute('aria-pressed',String(next===id));
@@ -485,7 +490,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     for(const [id,pane] of panes)pane.hidden=id!==next;
     for(const [id,nav] of subButtons){nav.classList.toggle('is-selected',id===next);nav.setAttribute('aria-current',id===next?'page':'false');}
     syncCockpitActivity();
-    location.hash=`client/${next}`;if(next==='diagnostics')diagnostics.snapshot(snapshot,client.connected);if(next==='board'){resizeBoard();render();}if(next==='harmony'){harmonyNeedsRefresh=true;void poll();}if(next==='parameters')void refreshRecords(currentRows()).catch(error=>tell(error.message));backup.refresh();updater.refresh();
+    location.hash=`client/${next}`;profiling.refresh({visible:next==='diagnostics',blocked:Boolean(updater?.usbBusy)});if(next==='diagnostics')diagnostics.snapshot(snapshot,client.connected);if(next==='board'){resizeBoard();render();}if(next==='harmony'){harmonyNeedsRefresh=true;void poll();}if(next==='parameters')void refreshRecords(currentRows()).catch(error=>tell(error.message));backup.refresh();updater.refresh();
   }
   function setRailCollapsed(collapsed,persist=true){
     workspace.classList.toggle('rail-collapsed',collapsed);railToggle.setAttribute('aria-expanded',String(!collapsed));
@@ -609,6 +614,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
       syncResetConfirmation();
       render(); // Validated musical feedback does not wait for optional settings reads.
       if(!hostActive||document.hidden||area==='update'||updater?.usbBusy)return;
+      if(area==='client'&&page==='diagnostics')await profiling.poll();
       if(telemetryLive&&area==='client'&&page==='diagnostics'&&!telemetryReading&&Date.now()-telemetryLastRead>=1000){
         telemetryReading=true;telemetryLastRead=Date.now();
         const command=telemetryPick.value||'status',epoch=telemetryEpoch;
@@ -876,6 +882,6 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     client,help,updater,get connected(){return client.connected;},get snapshot(){return snapshot;},
     updatePreview(){/* The disconnected board has no playable preview. */},
     render,showPage,showArea,setHostActive,
-    destroy(){disposed=true;compactNavigation.destroy();cancelPolling();resizeObserver?.disconnect();window.removeEventListener('hashchange',route);window.removeEventListener('beforeunload',unloadUpdate);document.removeEventListener('visibilitychange',visibility);for(const type of ['pointerdown','pointerup','pointercancel','lostpointercapture','click','beforeinput','input','change'])document.removeEventListener(type,intercept,true);document.removeEventListener('keydown',keyGuard,true);document.removeEventListener('keyup',keyGuard,true);help.destroy();backup.destroy();updater.destroy();appSettings.destroy();diagnostics.destroy();cockpit.destroy();resetOverlay.remove();void client.disconnect();},
+    destroy(){disposed=true;compactNavigation.destroy();cancelPolling();resizeObserver?.disconnect();window.removeEventListener('hashchange',route);window.removeEventListener('beforeunload',unloadUpdate);document.removeEventListener('visibilitychange',visibility);for(const type of ['pointerdown','pointerup','pointercancel','lostpointercapture','click','beforeinput','input','change'])document.removeEventListener(type,intercept,true);document.removeEventListener('keydown',keyGuard,true);document.removeEventListener('keyup',keyGuard,true);help.destroy();backup.destroy();profiling.destroy();updater.destroy();appSettings.destroy();diagnostics.destroy();cockpit.destroy();resetOverlay.remove();void client.disconnect();},
   };
 }

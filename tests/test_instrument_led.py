@@ -30,7 +30,7 @@ class InstrumentLedTests(unittest.TestCase):
         env["TEMP"] = env["TMP"] = str(ROOT / ".tools/tmp")
         binary = output / "test_instrument_led.exe"
         compiled = subprocess.run([str(compiler), "cc", *native_target_flags(), "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
-            str(ROOT / "core/thy_core.c"), str(ROOT / "core/thy_midi.c"),
+            str(ROOT / "core/thy_core.c"), str(ROOT / "core/thy_crc32.c"), str(ROOT / "core/thy_midi.c"),
             str(ROOT / "core/thy_instrument.c"),
             *[str(ROOT / "core" / name) for name in ("thy_chord_layout.c", "thy_voicing.c", "thy_library.c", "thy_expression_profile.c")], str(ROOT / "core/thy_lighting.c"),
             str(ROOT / "tests/core/test_instrument_led.c"), "-o", str(binary)],

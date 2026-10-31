@@ -198,6 +198,21 @@ thy_engine_channel_config thy_engine_performance_response(const thy_engine *e,ui
     return c;
 }
 
+static int performance_indicator_value(const thy_engine *e,uint16_t row,uint8_t pad,
+    int32_t *value)
+{
+    if(row==THY_ROW_SENSITIVITY_VELOCITYMODE){
+        thy_instrument_velocity v;uint8_t custom;
+        if(thy_instrument_get_velocity(e->instrument,(int)pad,&v,&custom)!=THY_OK)
+            return THY_STATE_INVALID;
+        *value=v.mode;
+    }else{
+        uint8_t target=thy_engine_performance_route(e,pad);
+        *value=thy_engine_performance_response(e,pad,target).aftertouch;
+    }
+    return THY_STATE_OK;
+}
+
 /* Inspect effective values, including per-pad overrides and inherited routes.
  * The scope is always physical: swapping musical roles cannot swap calibration. */
 int thy_engine_performance_get(const thy_engine *e,uint16_t row,uint8_t scope,int32_t *value)
@@ -211,10 +226,9 @@ int thy_engine_performance_get(const thy_engine *e,uint16_t row,uint8_t scope,in
         unsigned side=i->mapping[pad]/48u;
         if(!(mask&(1u<<side)))continue;
         int32_t current;
-        if(row==THY_ROW_SENSITIVITY_VELOCITYMODE){
-            thy_instrument_velocity v;uint8_t custom;
-            if(thy_instrument_get_velocity(i,(int)pad,&v,&custom)!=THY_OK)return THY_STATE_INVALID;
-            current=v.mode;
+        if(row==THY_ROW_SENSITIVITY_VELOCITYMODE||row==THY_ROW_PERFORMANCE_PRESSUREMODE){
+            if(performance_indicator_value(e,row,(uint8_t)pad,&current)!=THY_STATE_OK)
+                return THY_STATE_INVALID;
         }else if(row==THY_ROW_PERFORMANCE_PROFILEENABLED){
             thy_expression_profile p;uint8_t custom;
             if(thy_instrument_get_expression_profile(i,(uint8_t)pad,&p,&custom)!=THY_OK)return THY_STATE_INVALID;
@@ -227,8 +241,7 @@ int thy_engine_performance_get(const thy_engine *e,uint16_t row,uint8_t scope,in
                 thy_instrument_route route;
                 if(thy_instrument_get_pad_route(i,target,&route)!=THY_OK)return THY_STATE_INVALID;
                 current=e->performance[side].velocity?e->performance[side].velocity:route.velocity;
-            }else if(row==THY_ROW_PERFORMANCE_PRESSUREMODE)current=response.aftertouch;
-            else if(row==THY_ROW_PERFORMANCE_PRESSUREBEND)current=response.bend;
+            }else if(row==THY_ROW_PERFORMANCE_PRESSUREBEND)current=response.bend;
             else if(row==THY_ROW_PERFORMANCE_BENDRANGE)current=response.range;
             else return THY_STATE_UNAVAILABLE;
         }
@@ -236,6 +249,43 @@ int thy_engine_performance_get(const thy_engine *e,uint16_t row,uint8_t scope,in
         else if(*value!=current){*value=row==THY_ROW_SENSITIVITY_VELOCITYMODE?2:-1;return THY_STATE_OK;}
     }
     return have?THY_STATE_OK:THY_STATE_INVALID;
+}
+
+void thy_engine_performance_indicators_read(const thy_engine *e,int include_aftertouch,
+    thy_engine_performance_indicators *out)
+{
+    if(!out)return;
+    *out=(thy_engine_performance_indicators){0};
+    if(!valid(e))return;
+    unsigned velocity_pending=3u,aftertouch_pending=include_aftertouch?3u:0u;
+    unsigned velocity_seen=0u,aftertouch_seen=0u;
+    for(unsigned pad=0u;pad<THY_PAD_COUNT&&(velocity_pending|aftertouch_pending);++pad){
+        unsigned mapped=e->instrument->mapping[pad];
+        /* Each old scoped query validates every preceding mapping, including
+         * the other half. An already mixed result stopped before this pad and
+         * must keep its success even if a later mapping is malformed. */
+        if(mapped>=THY_PAD_COUNT){velocity_pending=aftertouch_pending=0u;break;}
+        unsigned side=mapped/48u,bit=1u<<side;
+        int32_t current;
+        if(velocity_pending&bit){
+            if(performance_indicator_value(e,THY_ROW_SENSITIVITY_VELOCITYMODE,
+                    (uint8_t)pad,&current)!=THY_STATE_OK)velocity_pending&=~bit;
+            else if((velocity_seen&bit)&&out->velocity_mode[side]!=current){
+                out->velocity_mode[side]=2;out->velocity_valid|=(uint8_t)bit;
+                velocity_pending&=~bit;
+            }else{out->velocity_mode[side]=current;velocity_seen|=bit;}
+        }
+        if(aftertouch_pending&bit){
+            if(performance_indicator_value(e,THY_ROW_PERFORMANCE_PRESSUREMODE,
+                    (uint8_t)pad,&current)!=THY_STATE_OK)aftertouch_pending&=~bit;
+            else if((aftertouch_seen&bit)&&out->aftertouch[side]!=current){
+                out->aftertouch[side]=-1;out->aftertouch_valid|=(uint8_t)bit;
+                aftertouch_pending&=~bit;
+            }else{out->aftertouch[side]=current;aftertouch_seen|=bit;}
+        }
+    }
+    out->velocity_valid|=(uint8_t)(velocity_seen&velocity_pending);
+    out->aftertouch_valid|=(uint8_t)(aftertouch_seen&aftertouch_pending);
 }
 
 static int performance_bend_setup(thy_engine *e,unsigned mask)

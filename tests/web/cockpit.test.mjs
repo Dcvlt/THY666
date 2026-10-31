@@ -405,6 +405,18 @@ test('diagnostic charts use real report fields, bound history and clear stale va
   health.destroy();assert.equal(f.mount.querySelector('.diagnostics-dashboard'),null);
 });
 
+test('restore diagnostics distinguish applied-but-unsaved settings from scanner failures',t=>{
+  const f=fixture(t),health=initializeDiagnostics(f.mount);health.snapshot({heldPads:0,generated:0},true);
+  assert.equal(health.report('backup status','BACKUP version=1 state=queued bytes=5726 received=5726 crc32=12345678 payload_crc32=8fd45367 generation=1'),true);
+  assert.match(f.mount.querySelector('.diagnostics-metrics').textContent,/Transfer statequeued.*Payload checksum8fd45367/);
+  assert.match(f.mount.querySelector('.diagnostics-chart-caption').textContent,/Settings were applied.*not verified/);
+  health.report('settings','SETTINGS version=19 status=pending generation=1 saves=1 errors=0');
+  assert.match(f.mount.querySelector('.diagnostics-metrics').textContent,/Save statepending/);
+  health.report('pads','PADS frames=47 scans=752 errors=1');
+  assert.match(f.mount.querySelector('.diagnostics-metrics').textContent,/Acquisition errors1/);
+  assert.equal(health.report('backup status','STATUS state=queued'),false);
+});
+
 
 test('DIN output measures sent bytes even when queues stay empty and resets after reboot', t => {
   const f=fixture(t), health=initializeDiagnostics(f.mount);

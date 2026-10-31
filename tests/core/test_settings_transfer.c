@@ -69,6 +69,7 @@ static void advertised_version_matches_exported_codec(void)
     char expected[48];
     (void)snprintf(expected,sizeof expected,"BACKUP version=1 settings=%u max=",THY_SETTINGS_VERSION);
     request("backup caps",0u,1,1,expected);
+    CHECK(strstr(backup_reply," restore_guard=1")!=NULL);
     request("backup export",1u,1,1,"BACKUP export bytes=");
     (void)snprintf(expected,sizeof expected," settings=%u\r\n",THY_SETTINGS_VERSION);
     CHECK(strstr(backup_reply,expected)!=NULL);
@@ -223,9 +224,19 @@ static void expiration_disconnect_and_save_errors_release(void)
     journal.status=THY_SETTINGS_ERROR;thy_settings_transfer_poll(&backup,&engine,&journal,1,1001u);
     CHECK(backup.state==THY_BACKUP_ERROR&&!thy_settings_transfer_busy(&backup));
     setup_backup();upload_file();request("backup commit",1000u,1,1,"BACKUP applied bytes=");
-    thy_settings_transfer_disconnect(&backup);CHECK(backup.state==THY_BACKUP_ERROR&&!thy_settings_transfer_busy(&backup));
+    thy_settings_transfer_disconnect(&backup);
+    CHECK(backup.state==THY_BACKUP_APPLIED&&thy_settings_transfer_busy(&backup)&&backup.restore_active);
+    CHECK(backup.restore_disconnected&&!backup.restore_host_verified);
+    for(unsigned n=0;n<7000u&&!backup.restore_verified;++n){
+        thy_settings_journal_task(&journal,&engine,1002u+n,1);
+        thy_settings_transfer_poll(&backup,&engine,&journal,1,1002u+n);
+        thy_settings_transfer_disconnect(&backup); /* Repeated DTR-low notification. */
+    }
+    CHECK(backup.restore_verified&&!backup.restore_active&&!backup.restore_host_verified);
+    CHECK(journal.status==THY_SETTINGS_SAVED&&journal.saved_crc==get32(backup_file+12u));
     setup_backup();begin_file(thy_settings_crc32(backup_file,backup_size));thy_settings_transfer_disconnect(&backup);
     CHECK(backup.state==THY_BACKUP_IDLE&&!thy_settings_transfer_staging(&backup));
+    CHECK(!backup.restore_active);
     char out[8];memset(out,'x',sizeof out);
     CHECK(!thy_settings_transfer_command(&backup,&engine,&journal,1,1,0u,"backup caps",out,sizeof out)&&out[0]=='x');
 }
@@ -237,6 +248,146 @@ static void source_build_and_schema_are_provenance_not_update_locks(void)
     CHECK(backup.state==THY_BACKUP_APPLIED&&apply_calls==1u);
     CHECK(encode(roundtrip)==backup_size-64u&&!memcmp(roundtrip,backup_file+64u,backup_size-64u));
 }
+
+static void save_guarded_restore(uint32_t now)
+{
+    for(unsigned n=0;n<7000u&&!backup.restore_verified&&backup.state!=THY_BACKUP_ERROR;++n){
+        thy_settings_journal_task(&journal,&engine,now+n,1);
+        thy_settings_transfer_poll(&backup,&engine,&journal,1,now+n);
+    }
+    CHECK(backup.restore_verified&&journal.loaded&&journal.status==THY_SETTINGS_SAVED&&!journal.writing);
+    CHECK(backup.restore_crc==get32(backup_file+12u)&&backup.restore_bytes==backup_size-64u);
+    CHECK(backup.restore_generation==journal.generation&&journal.saved_crc==backup.restore_crc);
+}
+static void restore_active_status(uint32_t now,int active)
+{
+    request("backup status",now,0,0,"BACKUP version=1 state=");
+    CHECK(strstr(backup_reply,active?" restore_active=1":" restore_active=0")!=NULL);
+    CHECK(backup.restore_active==(unsigned)active);
+}
+static void complete_request(uint32_t now,uint32_t crc_value,const char *expected)
+{
+    (void)snprintf(backup_line,sizeof backup_line,"backup complete %u",crc_value);
+    request(backup_line,now,1,1,expected);
+}
+static void guarded_restore_waits_for_full_host_readback_completion(void)
+{
+    ++scenarios;setup_backup();instrument.fixed_velocity=81u;export_file();upload_file();
+    thy_restore_progress progress;thy_settings_transfer_progress(&backup,&journal,&progress);
+    CHECK(progress.active&&progress.pads_locked&&progress.phase==THY_RESTORE_RECEIVING);
+    CHECK(progress.completed==backup_size&&progress.total==backup_size);
+    restore_active_status(500u,1);CHECK(!backup.restore_applied&&!backup.restore_verified&&!backup.restore_host_verified);
+    complete_request(501u,get32(backup_file+12u),"ERR ");
+    CHECK(!apply_calls&&backup.restore_active);
+    request("backup commit",1000u,1,1,"BACKUP applied bytes=");
+    CHECK(backup.restore_applied&&backup.restore_active&&!backup.restore_host_verified&&apply_calls==1u);
+    thy_settings_transfer_progress(&backup,&journal,&progress);
+    CHECK(progress.active&&progress.pads_locked&&progress.phase==THY_RESTORE_SAVING);
+    CHECK(!progress.completed&&!progress.total); /* Waiting to save has no invented percent. */
+    complete_request(1001u,get32(backup_file+12u),"ERR ");
+    save_guarded_restore(1002u);CHECK(!thy_settings_transfer_busy(&backup));
+    thy_settings_transfer_progress(&backup,&journal,&progress);
+    CHECK(progress.active&&progress.pads_locked&&progress.phase==THY_RESTORE_CHECKING);
+    CHECK(!progress.completed&&!progress.total);
+    restore_active_status(9000u,1);
+    uint32_t expected_crc=backup.restore_crc,expected_generation=backup.restore_generation;
+    request("backup export",9001u,1,1,"BACKUP export bytes=");
+    CHECK(backup.state==THY_BACKUP_DOWNLOAD&&backup.restore_active&&backup.restore_verified);
+    CHECK(backup.received==0u&&backup.restore_crc==expected_crc&&backup.restore_generation==expected_generation);
+    /* Read every byte through the actual chunk command, as the Client does. */
+    for(uint32_t at=0u;at<backup_size;at+=32u){
+        unsigned count=backup_size-at;if(count>32u)count=32u;
+        (void)snprintf(backup_line,sizeof backup_line,"backup get %u %u",at,count);
+        request(backup_line,9002u+at/32u,1,1,"BACKUP data offset=");
+        const char *hex_bytes=strstr(backup_reply," hex=");CHECK(hex_bytes!=NULL);hex_bytes+=5u;
+        for(unsigned n=0u;n<count;++n){unsigned value=256u;CHECK(sscanf(hex_bytes+n*2u,"%2x",&value)==1&&value<=255u);original_file[at+n]=(uint8_t)value;}
+    }
+    CHECK(!memcmp(original_file+64u,backup_file+64u,backup_size-64u));
+    thy_settings_transfer_progress(&backup,&journal,&progress);
+    CHECK(progress.phase==THY_RESTORE_CHECKING&&progress.completed==backup_size&&progress.total==backup_size);
+    request("backup abort",9500u,1,1,"BACKUP aborted");
+    CHECK(backup.state==THY_BACKUP_IDLE&&backup.restore_active&&backup.restore_verified);
+    CHECK(backup.restore_crc==expected_crc&&backup.restore_generation==expected_generation);
+    request("backup abort",9501u,1,1,"ERR backup-applied");
+    CHECK(backup.restore_active&&backup.restore_verified&&!backup.restore_host_verified);
+    (void)snprintf(backup_line,sizeof backup_line,"backup begin %u %u",backup_size,thy_settings_crc32(backup_file,backup_size));
+    request(backup_line,9501u,1,1,"ERR backup-busy");
+    complete_request(9502u,expected_crc^1u,"ERR ");CHECK(backup.restore_active&&!backup.restore_host_verified);
+    complete_request(9503u,expected_crc,"BACKUP complete payload_crc32=");
+    char acknowledgement[80];(void)snprintf(acknowledgement,sizeof acknowledgement,"BACKUP complete payload_crc32=%08x generation=%u\r\n",expected_crc,expected_generation);
+    CHECK(!strcmp(backup_reply,acknowledgement));
+    CHECK(!backup.restore_active&&backup.restore_verified&&backup.restore_host_verified&&apply_calls==1u);
+    thy_settings_transfer_progress(&backup,&journal,&progress);
+    CHECK(!progress.active&&!progress.pads_locked&&progress.phase==THY_RESTORE_SUCCESS);
+    CHECK(progress.completed==backup_size-64u&&progress.total==backup_size-64u);
+    restore_active_status(9504u,0);
+    CHECK(encode(roundtrip)==backup_size-64u&&!memcmp(roundtrip,backup_file+64u,backup_size-64u));
+    /* A new, separately requested restore becomes possible only after completion. */
+    begin_file(thy_settings_crc32(backup_file,backup_size));CHECK(backup.restore_active);
+    request("backup abort",11u,1,1,"BACKUP aborted");CHECK(!backup.restore_active);
+}
+static void completion_requires_current_saved_restore_identity(void)
+{
+    ++scenarios;
+    setup_backup();export_file();upload_file();
+    request("backup commit",1000u,1,1,"BACKUP applied bytes=");save_guarded_restore(1001u);
+    (void)snprintf(backup_line,sizeof backup_line,"backup complete %u",backup.restore_crc);
+    request(backup_line,9000u,0,1,"ERR backup-complete");
+    CHECK(backup.restore_active&&!backup.restore_host_verified&&apply_calls==1u);
+    request(backup_line,9001u,1,0,"ERR backup-complete");
+    CHECK(backup.restore_active&&!backup.restore_host_verified&&apply_calls==1u);
+    for(unsigned condition=0u;condition<4u;++condition){
+        setup_backup();export_file();upload_file();
+        request("backup commit",1000u,1,1,"BACKUP applied bytes=");save_guarded_restore(1001u);
+        uint32_t crc_value=backup.restore_crc;
+        if(condition==0u)journal.status=THY_SETTINGS_PENDING;
+        else if(condition==1u)journal.saved_crc^=1u;
+        else if(condition==2u)++journal.generation;
+        else journal.writing=1u;
+        complete_request(9000u,crc_value,"ERR ");
+        CHECK(backup.restore_active&&!backup.restore_host_verified&&apply_calls==1u);
+    }
+    request("backup complete -1",9004u,1,1,"ERR backup-command");
+    request("backup complete 4294967296",9005u,1,1,"ERR backup-command");
+    CHECK(backup.restore_active&&apply_calls==1u);
+}
+static void verification_download_cleanup_keeps_the_restore_guard(void)
+{
+    ++scenarios;setup_backup();export_file();upload_file();
+    request("backup commit",1000u,1,1,"BACKUP applied bytes=");save_guarded_restore(1001u);
+    uint32_t crc_value=backup.restore_crc,generation=backup.restore_generation;
+    request("backup export",9000u,1,1,"BACKUP export bytes=");
+    CHECK(!thy_settings_transfer_expire(&backup,18999u));CHECK(thy_settings_transfer_expire(&backup,19000u));
+    CHECK(backup.state==THY_BACKUP_IDLE&&backup.restore_active&&backup.restore_verified&&!backup.restore_host_verified);
+    CHECK(backup.restore_crc==crc_value&&backup.restore_generation==generation);
+    request("backup export",19001u,1,1,"BACKUP export bytes=");
+    thy_settings_transfer_disconnect(&backup);
+    CHECK(!backup.restore_active&&backup.restore_verified&&!backup.restore_host_verified);
+    CHECK(backup.restore_crc==crc_value&&backup.restore_generation==generation);
+    CHECK(journal.status==THY_SETTINGS_SAVED&&journal.saved_crc==crc_value);
+}
+static void precommit_cancel_and_save_failure_release_are_explicit(void)
+{
+    ++scenarios;setup_backup();export_file();begin_file(thy_settings_crc32(backup_file,backup_size));
+    CHECK(backup.restore_active&&!backup.restore_applied);
+    request("backup abort",11u,1,1,"BACKUP aborted");CHECK(!backup.restore_active&&!apply_calls);
+    begin_file(thy_settings_crc32(backup_file,backup_size));thy_settings_transfer_disconnect(&backup);
+    CHECK(!backup.restore_active&&!apply_calls&&backup.state==THY_BACKUP_IDLE);
+    begin_file(thy_settings_crc32(backup_file,backup_size));CHECK(thy_settings_transfer_expire(&backup,10010u));
+    CHECK(!backup.restore_active&&!apply_calls);
+    upload_file();request("backup commit",1000u,1,1,"BACKUP applied bytes=");
+    journal.status=THY_SETTINGS_ERROR;journal.writing=1u;
+    thy_settings_transfer_poll(&backup,&engine,&journal,1,1001u);
+    CHECK(backup.state==THY_BACKUP_ERROR&&backup.restore_active&&!backup.restore_verified);
+    for(unsigned n=0u;n<3u;++n){
+        thy_settings_transfer_disconnect(&backup);
+        CHECK(backup.state==THY_BACKUP_ERROR&&backup.restore_active&&!backup.restore_verified&&!backup.restore_host_verified);
+    }
+    request("backup abort",1002u,1,1,"ERR ");CHECK(backup.restore_active);
+    journal.writing=0u;request("backup abort",1003u,1,1,"BACKUP aborted");
+    CHECK(!backup.restore_active&&!backup.restore_host_verified&&journal.status==THY_SETTINGS_ERROR);
+    CHECK(apply_calls==1u); /* No cancellation, polling or failure retries the apply. */
+}
 int main(void)
 {
     advertised_version_matches_exported_codec();
@@ -245,5 +396,9 @@ int main(void)
     changed_applied_settings_cannot_claim_saved_verification();
     expiration_disconnect_and_save_errors_release();
     source_build_and_schema_are_provenance_not_update_locks();
+    guarded_restore_waits_for_full_host_readback_completion();
+    completion_requires_current_saved_restore_identity();
+    verification_download_cleanup_keeps_the_restore_guard();
+    precommit_cancel_and_save_failure_release_are_explicit();
     printf("%u settings transfer C tests passed (%u assertions)\n",scenarios,checks);return 0;
 }

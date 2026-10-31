@@ -164,7 +164,7 @@ dependencies = [
 
 [[package]]
 name = "thy666-updater"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "getrandom",
  "hidapi",

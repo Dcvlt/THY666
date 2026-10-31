@@ -49,9 +49,9 @@ feedback adapts to active engines: connection assembly, expression routing,
 Arp pitch ribbons, Harmony movement/history and clear recording states.
 Labels read the board's assignments; the Web screen follows the app theme.
 These Client refinements are software-tested and await a connected board check.
-Local development adds firmware-reported MPE member output meters and sequencer
-track playheads. These need the matching development firmware and are not part
-of the published v0.2.2 package; hardware qualification is pending.
+v0.3.0 adds firmware-reported MPE member output meters and sequencer
+track playheads. These need matching firmware; their broader hardware
+qualification is pending.
 Harmony groups suggestions and playing controls. The guide
 uses illustrations, expandable reference sections and phone-friendly tables.
 The Client and project site share a [component library and design guide](docs/design-system.md),
@@ -61,7 +61,7 @@ distinct from page navigation.
 
 ## Current status
 
-**Hardware alpha. v0.2.2 is the current release; broader board qualification continues.** Existing playing,
+**Hardware alpha. v0.3.0 is the current accepted version; broader board qualification continues.** Existing playing,
 MIDI, display, storage and Windows update paths have device evidence. The latest
 musical additions have passed software checks and focused board tests, including
 Harmony exploration, held-note stability and saved preferences after power-off.
@@ -73,7 +73,7 @@ device image, and configuration preservation or automatic rollback is not
 promised. Follow the [installation guide](docs/installation.md) and the notes
 attached to the exact release you choose.
 
-The development build uses settings V19. **Performance → Settings for** scopes
+v0.3.0 uses settings V19. **Performance → Settings for** scopes
 velocity, Aftertouch, bend and MPE pressure output to Both, Left or Right; MPE
 enable and its zone remain global. Pressure remains the default MPE message,
 with CC74 and CC1 alternatives for different synth assignments. These additions
@@ -106,6 +106,36 @@ codec to migrate it before upload,
 keeps the original file, and verifies the complete saved payload afterward.
 Update verification checks the same supported settings versions and prepares any
 needed backup conversion off-device before a separate restore confirmation.
+Restoration also rechecks the instrument after saved readback. Diagnostics exposes
+backup-transfer state and pad-scanner errors; a pending save or failed recovery
+is never treated as a verified restoration.
+Guarded restoration adds matching progress on the board and Client, locks playing
+and editing, and waits for the complete saved-payload comparison before unlocking.
+Its failure and disconnect paths are host-tested and await device qualification.
+The subsequent efficiency pass removes repeated song, USB, idle-note and display
+work and shares checksum code, preserving capacities and formats. Exact-output
+software checks pass; the rendering follow-up below also has paired board
+measurements. See the
+[resource review](docs/firmware-budget.md#behavior-preserving-efficiency-pass)
+and [optimization guidance](docs/optimization.md).
+The research follow-up narrows sparse display updates and empty USB expression
+checks further, with matching MIDI/state/frame traces. A separate native
+undefined-behavior test configuration and CI job help protect later low-level
+changes; see [development checks](docs/development.md#undefined-behavior-checks).
+The rendering follow-up uses page-byte drawing, skips empty sounding-note
+blocks and combines expression-indicator reads without a retained cache or
+changing refresh timing. Exact-output checks preserve existing screens and
+musical behavior. Paired board captures confirmed lower rendering cost for
+idle, held-note and MPE pressure workloads, with the same frame cadence and
+unchanged static RAM/CCM allocation. These are focused measurements rather than
+worst-case latency or stack guarantees.
+An optional bounded performance recorder adds timed captures and JSON export in
+Client Diagnostics. It measures foreground work, service gaps and destination
+queue waits, including a disconnected workload. Timed completion, retrieval
+after disconnection and JSON export passed focused board checks with idle,
+ordinary playing and MPE pressure workloads. Recorder overhead and worst-case
+loads remain unqualified. See
+[performance profiling](docs/profiling.md).
 V13-to-V15 restoration of the captured Windows configuration passed saved
 readback and a full power-off check. V14 migration and broader saved-material
 coverage still need physical qualification.

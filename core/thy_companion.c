@@ -4,6 +4,7 @@
 #include "thy_views.h"
 #include "thy_harmony_workspace.h"
 #include "thy_ui.h"
+#include "thy_crc32.h"
 
 _Static_assert(THY_GUIDANCE_LIMIT<=24u,"Harmony scale rows must fit the640-byte wire snapshot");
 _Static_assert(THY_HARMONY_WORKSPACE_CHOICES<=24u,"Harmony chord choices must fit the shared recommendation area");
@@ -29,7 +30,6 @@ static void u32(uint8_t *p,unsigned at,uint32_t n){for(unsigned nbyte=0;nbyte<4u
 static void u64(uint8_t *p,unsigned at,uint64_t n){u32(p,at,(uint32_t)n);u32(p,at+4u,(uint32_t)(n>>32u));}
 static void text(uint8_t *p,unsigned at,unsigned limit,const char *s){if(s)for(unsigned n=0;n<limit && s[n];++n)p[at+n]=(uint8_t)s[n];}
 static void bit(uint8_t *p,unsigned at,unsigned n){p[at+n/8u]|=(uint8_t)(1u<<(n&7u));}
-static uint32_t crc32(const uint8_t *p,size_t bytes){uint32_t c=UINT32_MAX;for(size_t n=0;n<bytes;++n){c^=p[n];for(unsigned b=0;b<8u;++b)c=(c>>1u)^((0u-(c&1u))&UINT32_C(0xedb88320));}return ~c;}
 void thy_companion_init(thy_companion *s,uint8_t *buffer,size_t cap,const thy_companion_identity *id,thy_companion_visual_fn visual,void *ctx)
 {if(s)*s=(thy_companion){.buffer=buffer,.capacity=cap,.identity=id?*id:(thy_companion_identity){0},.visual=visual,.context=ctx};}
 int thy_companion_expire(thy_companion *s,uint32_t now)
@@ -117,12 +117,12 @@ int thy_companion_service(thy_companion *s,const thy_engine *e,uint32_t now)
     if(thy_companion_expire(s,now))return 0;
     pad_map_label(e,s->map_cursor,s->buffer+THY_COMPANION_PAD_MAP_RECORDS+16u*s->map_cursor);
     if(++s->map_cursor<96u)return 0;
-    s->captured_bytes=THY_COMPANION_PAD_MAP_BYTES;s->crc=crc32(s->buffer,s->captured_bytes);
+    s->captured_bytes=THY_COMPANION_PAD_MAP_BYTES;s->crc=thy_crc32(s->buffer,s->captured_bytes);
     s->map_state=2u;s->last_ms=now;return 1;
 }
 static void snapshot_finish(thy_companion *s,uint32_t now,uint16_t bytes)
 {
-    s->captured_bytes=bytes;s->crc=crc32(s->buffer,bytes);++s->sequence;
+    s->captured_bytes=bytes;s->crc=thy_crc32(s->buffer,bytes);++s->sequence;
     s->active=1u;s->captured_ms=s->last_ms=now;
 }
 
@@ -272,7 +272,10 @@ static int snapshot(thy_companion *s,const thy_engine *e,uint32_t now)
     if(!s->visual(s->context,p+THY_COMPANION_OLED,p+THY_COMPANION_RGB,p+THY_COMPANION_CENTER,&frame_ms,&visible))return 0;
     const thy_instrument *i=e->instrument;const thy_state *state=&e->state;const thy_core *core=i->core;
     u32(p,16,now);u32(p,20,frame_ms);u32(p,24,i->revision);u32(p,28,state->revision);
-    for(unsigned n=0;n<THY_KEY_COUNT;++n)if(core->refs[n]||thy_core_deferred(core,(uint16_t)n))bit(p,THY_COMPANION_NOTES,n%128u);
+    /* sounding_count includes owned and sustain-deferred keys. Pending strum
+     * attacks and held Arp pools are not ledger entries; they stay separate. */
+    if(core->sounding_count)
+        for(unsigned n=0;n<THY_KEY_COUNT;++n)if(core->refs[n]||thy_core_deferred(core,(uint16_t)n))bit(p,THY_COMPANION_NOTES,n%128u);
     uint64_t pool[2]={0,0};
     for(unsigned a=0;a<2u;++a)if(e->arps[a].config.enabled)for(unsigned n=0;n<THY_ARP_INPUTS;++n)if(e->arps[a].inputs[n].held){
         pool[0]|=e->arps[a].inputs[n].pitches[0];pool[1]|=e->arps[a].inputs[n].pitches[1];}

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "thy_sequencer.h"
+#include "thy_crc32.h"
 
 /* Keep this module usable by the freestanding WASM and Cortex-M builds. */
 static void seq_copy(void *to,const void *from,size_t count)
@@ -787,8 +788,6 @@ static void put16(uint8_t *p,uint16_t v){p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);}
 static void put32(uint8_t *p,uint32_t v){put16(p,(uint16_t)v);put16(p+2,(uint16_t)(v>>16));}
 static uint16_t get16(const uint8_t *p){return (uint16_t)(p[0]|((uint16_t)p[1]<<8));}
 static uint32_t get32(const uint8_t *p){return get16(p)|((uint32_t)get16(p+2)<<16);}
-static uint32_t crc32(const uint8_t *p,size_t count)
-{uint32_t crc=UINT32_MAX;for(size_t n=0;n<count;++n){crc^=p[n];for(unsigned bit=0;bit<8u;++bit)crc=(crc>>1)^((0u-(crc&1u))&0xedb88320u);}return ~crc;}
 static void encode_track(uint8_t *p,const thy_seq_track *t)
 {put32(p,t->content_end);put32(p+4,t->loop_start);put32(p+8,t->loop_end);put32(p+12,t->revision);
  p[16]=t->channel;p[17]=t->destinations;p[18]=t->velocity;p[19]=t->muted;p[20]=t->processor;p[21]=t->record_source;p[22]=t->record_policy;p[23]=t->flags;put32(p+24,t->grid_ticks);}
@@ -812,16 +811,20 @@ size_t thy_sequencer_song_size(const thy_sequencer *s)
 int thy_sequencer_encode(const thy_sequencer *s,uint8_t *out,size_t capacity,size_t *written)
 {
     if(!s || !out || !written || s->count>THY_SEQ_EVENTS || capacity<thy_sequencer_song_size(s))return THY_INVALID_ARGUMENT;
+    uint32_t occupied_tracks=0u;
+    for(unsigned n=0;n<s->count;++n)
+        if(s->events[n].track<THY_SEQ_TRACKS)
+            occupied_tracks|=UINT32_C(1)<<s->events[n].track;
     size_t size=thy_sequencer_song_size(s);seq_fill(out,0,32u);seq_copy(out,"THYS",4u);put16(out+4,2u);put16(out+6,32u);
     put32(out+8,(uint32_t)size);put16(out+16,s->count);put16(out+18,THY_SEQ_TRACKS);
     put16(out+20,s->next_id);put16(out+22,s->next_group);put32(out+24,s->revision);
     for(unsigned t=0;t<THY_SEQ_TRACKS;++t){thy_seq_track config=s->tracks[t];
         uint32_t needed=config.loop_end>config.loop_start?(config.loop_end-config.loop_start+47u)/48u:0u;
         if(config.grid_ticks && config.grid_ticks<needed)config.grid_ticks=needed;
-        if(thy_sequencer_track_count(s,(uint8_t)t))config.flags|=THY_SEQ_FLAG_CREATED;
+        if(occupied_tracks&(UINT32_C(1)<<t))config.flags|=THY_SEQ_FLAG_CREATED;
         encode_track(out+32u+t*28u,&config);}
     for(unsigned n=0;n<s->count;++n)encode_event(out+32u+THY_SEQ_TRACKS*28u+n*16u,&s->events[n]);
-    put32(out+12,crc32(out+16,size-16u));
+    put32(out+12,thy_crc32(out+16,size-16u));
     int result=thy_sequencer_validate(out,size);if(result)return result;
     *written=size;return THY_OK;
 }
@@ -832,7 +835,7 @@ int thy_sequencer_validate(const uint8_t *p,size_t size)
     if(seq_compare(p,"THYS",4u) ||
         (version!=1u && version!=2u) || get16(p+6)!=32u || get32(p+8)!=size || get16(p+18)!=THY_SEQ_TRACKS ||
         get16(p+16)>THY_SEQ_EVENTS || size!=32u+THY_SEQ_TRACKS*stride+get16(p+16)*16u ||
-        get32(p+12)!=crc32(p+16,size-16u) || get32(p+28))return THY_SEQ_CORRUPT;
+        get32(p+12)!=thy_crc32(p+16,size-16u) || get32(p+28))return THY_SEQ_CORRUPT;
     for(unsigned t=0;t<THY_SEQ_TRACKS;++t){const uint8_t *tp=p+32u+t*stride;thy_seq_track track=decode_track(tp,version);
         if(!valid_track(&track) || (version==1u && (track.flags&128u)))return THY_SEQ_CORRUPT;}
     uint16_t max_id=0,max_group=0;
@@ -840,7 +843,10 @@ int thy_sequencer_validate(const uint8_t *p,size_t size)
         if(!valid_event(&e) || e.track>=THY_SEQ_TRACKS || !e.id || !e.group)return THY_SEQ_CORRUPT;
         thy_seq_track track=decode_track(p+32u+e.track*stride,version);
         if(e.tick+e.duration>track.content_end || (version==2u && !(track.flags&THY_SEQ_FLAG_CREATED)))return THY_SEQ_CORRUPT;
-        for(unsigned j=0;j<n;++j)if(get16(p+32u+THY_SEQ_TRACKS*stride+j*16u+8u)==e.id)return THY_SEQ_CORRUPT;
+        /* A new maximum cannot duplicate an earlier ID. Edits/imports may
+         * reorder IDs, so retain the complete prior scan for every other ID. */
+        if(e.id<=max_id)
+            for(unsigned j=0;j<n;++j)if(get16(p+32u+THY_SEQ_TRACKS*stride+j*16u+8u)==e.id)return THY_SEQ_CORRUPT;
         if(e.id>max_id)max_id=e.id;if(e.group>max_group)max_group=e.group;
     }
     if((get16(p+20) && get16(p+20)<=max_id) || (get16(p+22) && get16(p+22)<=max_group))return THY_SEQ_CORRUPT;

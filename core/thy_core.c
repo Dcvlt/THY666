@@ -908,6 +908,32 @@ uint16_t thy_core_sounding(const thy_core *core)
     return core != NULL ? core->sounding_count : 0u;
 }
 
+/* Byte assembly is alias/alignment safe in portable C. The target compiler
+ * recognizes it as a word load; only nonzero-ness matters, not byte order. */
+static uint32_t reference_word(const uint8_t *refs)
+{
+    return (uint32_t)refs[0] | ((uint32_t)refs[1] << 8u) |
+        ((uint32_t)refs[2] << 16u) | ((uint32_t)refs[3] << 24u);
+}
+
+void thy_core_sounding_pitches(const thy_core *core, uint8_t pitches[128])
+{
+    if (pitches == NULL) return;
+    for (unsigned pitch = 0u; pitch < 128u; ++pitch) pitches[pitch] = 0u;
+    if (core == NULL || core->sounding_count == 0u) return;
+
+    _Static_assert(THY_KEY_COUNT % 8u == 0u && 128u % 8u == 0u,
+                   "pitch blocks must align with deferred bytes and channels");
+    for (unsigned key = 0u; key < THY_KEY_COUNT; key += 8u) {
+        uint8_t deferred = core->deferred_bits[key / 8u];
+        if (!(reference_word(core->refs + key) |
+              reference_word(core->refs + key + 4u) | deferred)) continue;
+        for (unsigned bit = 0u; bit < 8u; ++bit)
+            if (core->refs[key + bit] || (deferred & (1u << bit)))
+                pitches[(key % 128u) + bit] = 1u;
+    }
+}
+
 uint16_t thy_core_reserved(const thy_core *core)
 {
     return core != NULL ? obligation_count(core) : 0u;

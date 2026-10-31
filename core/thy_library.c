@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "thy_library.h"
+#include "thy_crc32.h"
 #include <string.h>
 
 /* Field offsets are part of the byte codec, never compiler padding. */
@@ -230,13 +231,7 @@ int thy_library_delete_six(thy_library *library, uint8_t slot)
 uint32_t thy_library_crc32(const uint8_t *bytes, size_t count)
 {
     if(!bytes && count) return 0u;
-    uint32_t crc = UINT32_MAX;
-    for(size_t n = 0; n < count; ++n) {
-        crc ^= bytes[n];
-        for(unsigned bit = 0; bit < 8u; ++bit)
-            crc = (crc >> 1) ^ ((0u - (crc & 1u)) & UINT32_C(0xedb88320));
-    }
-    return crc ^ UINT32_MAX;
+    return thy_crc32(bytes,count);
 }
 
 static int overlaps(const void *left, size_t left_count, const void *right, size_t right_count)

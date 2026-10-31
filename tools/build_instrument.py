@@ -31,11 +31,11 @@ def main():
     data = generate(output)
     board, app = ROOT / 'firmware/diagnostic', ROOT / 'firmware/instrument'
     sources = [app / n for n in ('app.c', 'board.c', 'pads.c', 'usb.c',
-        'usb_descriptors.c', 'protocol.c', 'transport.c', 'led.c', 'control_lights.c', 'din.c', 'touch_config.c', 'settings.c')]
+        'usb_descriptors.c', 'protocol.c', 'profile.c', 'transport.c', 'led.c', 'control_lights.c', 'din.c', 'touch_config.c', 'settings.c')]
     sources += [board / n for n in ('startup.S', 'runtime.c', 'controls.c', 'led.c', 'center.c')]
-    sources += [ROOT / 'core' / n for n in ('thy_core.c', 'thy_chord_layout.c', 'thy_voicing.c', 'thy_harmony.c', 'thy_harmony_workspace.c', 'thy_library.c', 'thy_library_ui.c', 'thy_library_engine.c', 'thy_mpe.c', 'thy_channel_expression.c', 'thy_expression_profile.c', 'thy_expression_engine.c', 'thy_midi.c', 'thy_clock.c', 'thy_transport.c', 'thy_arp.c', 'thy_rhythm.c', 'thy_calibration.c', 'thy_calibration_engine.c', 'thy_sequencer.c', 'thy_sequencer_ui.c', 'thy_sequence_engine.c', 'thy_song_transfer.c', 'thy_instrument.c', 'thy_lighting.c', 'thy_ui.c',
+    sources += [ROOT / 'core' / n for n in ('thy_core.c', 'thy_crc32.c', 'thy_chord_layout.c', 'thy_voicing.c', 'thy_harmony.c', 'thy_harmony_workspace.c', 'thy_library.c', 'thy_library_ui.c', 'thy_library_engine.c', 'thy_mpe.c', 'thy_channel_expression.c', 'thy_expression_profile.c', 'thy_expression_engine.c', 'thy_midi.c', 'thy_clock.c', 'thy_transport.c', 'thy_arp.c', 'thy_rhythm.c', 'thy_calibration.c', 'thy_calibration_engine.c', 'thy_sequencer.c', 'thy_sequencer_ui.c', 'thy_sequence_engine.c', 'thy_song_transfer.c', 'thy_instrument.c', 'thy_lighting.c', 'thy_ui.c',
         'thy_state.c', 'thy_menu_data.c', 'thy_engine.c', 'thy_studio_ui.c', 'thy_display.c', 'thy_settings.c', 'thy_settings_transfer.c', 'thy_companion.c')]
-    sources += [output / 'instrument_data.c']
+    sources += [ROOT / 'core/thy_profile.c', output / 'instrument_data.c']
     sources += [TINYUSB_ROOT / n for n in USB_SOURCES]
     inputs = set([*sources, *board.rglob('*.h'), *app.rglob('*.h'),
         *ROOT.joinpath('core').glob('*.h'), board / 'board.c', board / 'pads.c', app / 'linker.ld',
@@ -73,8 +73,9 @@ def main():
         'debug_path_anonymization': debug_paths,
         'memory_bytes': inspection['memory_bytes'], 'reserved_stack_bytes': 8192,
         'tests': [], 'flash_ready': False, 'device_validated': False,
-        'scope': 'Offline instrument with physical-half Performance policies, selectable MPE pressure outputs, revised expression indicators and settings v19. Legacy settings, expression, physical calibration, library and songs migrate through the shared codec. Size-optimized LTO and bounded cooperative work; no device access.',
+        'scope': 'Offline instrument with scoped expression, settings v19, guarded restoration and optional bounded RAM-only performance profiling. Shared settings migration and size-optimized LTO; no device access.',
         'limits': ['This source revision has not been flashed or device-validated',
+            'performance capture includes interrupts and observer overhead; destination-ring waits end at sink acceptance, not wire or sound; target overhead remains unmeasured',
             'strike velocity uses recent ADC rise with millisecond resolution and no added attack window; physical soft/hard presets require target-specific qualification',
             'sensitivity profiles are user-specific configuration',
             'new framebuffer and note-color output are software-tested; physical component RGB naming and new timing remain unmeasured',
@@ -96,6 +97,12 @@ def main():
         host_usb.write_text('#include <stdbool.h>\n#include <stdint.h>\n'
             'bool tud_midi_packet_write(const uint8_t packet[4]);\n', encoding='utf-8')
         jobs = [
+            ('test_crc32', [ROOT / 'tests/core/test_crc32.c']),
+            ('test_profile', [ROOT / 'tests/core/test_profile.c']),
+            ('test_settings_observer', [ROOT / 'tests/core/test_settings_observer.c',
+                ROOT / 'core/thy_instrument.c', ROOT / 'core/thy_state.c', ROOT / 'core/thy_engine.c',
+                ROOT / 'core/thy_menu_data.c', ROOT / 'core/thy_settings.c', ROOT / 'core/thy_ui.c']),
+            ('test_instrument_profile', [ROOT / 'tests/core/test_instrument_profile.c']),
             ('test_assigned_voices', [ROOT / 'tests/core/test_assigned_voices.c']),
             ('test_mpe', [ROOT / 'tests/core/test_mpe.c']),
             ('test_channel_expression', [ROOT / 'tests/core/test_channel_expression.c']),
@@ -138,14 +145,22 @@ def main():
                 ROOT / 'core/thy_instrument.c', app / 'protocol.c', app / 'transport.c', app / 'touch_config.c']),
             ('test_instrument_app', [ROOT / 'tests/core/test_instrument_app.c',
                 ROOT / 'core/thy_instrument.c', ROOT / 'core/thy_state.c',
-                ROOT / 'core/thy_engine.c', ROOT / 'core/thy_menu_data.c', ROOT / 'core/thy_settings.c', ROOT / 'core/thy_settings_transfer.c', ROOT / 'core/thy_companion.c', ROOT / 'core/thy_studio_ui.c', ROOT / 'core/thy_ui.c', app / 'transport.c']),
+                ROOT / 'core/thy_engine.c', ROOT / 'core/thy_menu_data.c', ROOT / 'core/thy_settings.c', ROOT / 'core/thy_settings_transfer.c', ROOT / 'core/thy_companion.c', ROOT / 'core/thy_studio_ui.c', ROOT / 'core/thy_ui.c', app / 'transport.c', app / 'profile.c']),
         ]
+        # Reuse the real-app dependencies; this fixture includes profile.c with
+        # an injected counter so active/off traces share the actual main loop.
+        app_sources=next(tested for name,tested in jobs if name=='test_instrument_app')
+        jobs.append(('test_instrument_profile_app',
+            [ROOT/'tests/core/test_instrument_profile_app.c',
+             *[p for p in app_sources[1:] if p!=app/'profile.c']]))
         for name, tested in jobs:
             target = output / (name + '.exe')
-            extra = ['-I', str(host_include)] if name == 'test_instrument_app' else []
+            app_fixture=name in ('test_instrument_app','test_instrument_profile_app')
+            extra = ['-I', str(host_include)] if app_fixture else []
             rhythm_sources = [ROOT / 'core' / name for name in ('thy_harmony_workspace.c','thy_expression_engine.c','thy_library_engine.c','thy_rhythm.c','thy_calibration.c','thy_calibration_engine.c','thy_sequencer.c','thy_sequencer_ui.c','thy_sequence_engine.c','thy_song_transfer.c')] if any(p.name == 'thy_engine.c' for p in tested) else []
             if rhythm_sources and not any(p.name == 'thy_lighting.c' for p in tested): rhythm_sources.append(ROOT / 'core/thy_lighting.c')
-            command = [str(compiler), 'cc', *extra, *native, str(ROOT / 'core/thy_core.c'),
+            command = [str(compiler), 'cc', *extra, *native, str(ROOT / 'core/thy_core.c'), str(ROOT / 'core/thy_crc32.c'),
+                str(ROOT / 'core/thy_profile.c'),
                 str(ROOT / 'core/thy_chord_layout.c'), str(ROOT / 'core/thy_voicing.c'), str(ROOT / 'core/thy_harmony.c'), str(ROOT / 'core/thy_library.c'), str(ROOT / 'core/thy_library_ui.c'), str(ROOT / 'core/thy_midi.c'), str(ROOT / 'core/thy_mpe.c'), str(ROOT / 'core/thy_channel_expression.c'), str(ROOT / 'core/thy_expression_profile.c'), str(ROOT / 'core/thy_clock.c'),
                 str(ROOT / 'core/thy_transport.c'), str(ROOT / 'core/thy_arp.c'),
                 *map(str, rhythm_sources), *map(str, tested), '-o', str(target)]
@@ -153,7 +168,7 @@ def main():
             result = subprocess.run([str(target)], cwd=ROOT, env=env, check=True,
                                     text=True, capture_output=True)
             print(result.stdout, end='', flush=True)
-            recorded_sources = [*tested, host_usb] if name == 'test_instrument_app' else tested
+            recorded_sources = [*tested, host_usb] if app_fixture else tested
             manifest['tests'].append({'name': name, 'passed': True, 'output': result.stdout,
                 'binary_sha256': sha(target), 'source_sha256': {str(p.relative_to(ROOT)): sha(p) for p in recorded_sources}})
     manifest['artifacts'] = {p.name: {'bytes': p.stat().st_size, 'sha256': sha(p)}
@@ -165,6 +180,8 @@ def main():
     manifest['sources_unchanged_during_build'] = True
     snapshot = output / 'source-snapshot'
     snapshot_paths = set(inputs)
+    snapshot_paths.add(ROOT / 'tests/core/test_crc32.c')
+    snapshot_paths.update(ROOT / 'tests/core' / n for n in ('test_profile.c','test_settings_observer.c'))
     snapshot_paths.update(TINYUSB_ROOT.joinpath('src').rglob('*.h'))
     snapshot_paths.update(DEPS.joinpath('cmsis-core').glob('*'))
     snapshot_paths.update(DEPS.joinpath('cmsis-device-f4').glob('*'))

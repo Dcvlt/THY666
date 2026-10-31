@@ -13,6 +13,7 @@ static uint8_t frozen[THY_COMPANION_SNAPSHOT_BYTES];
 static thy_instrument_pad layout[96];
 static uint32_t generation;
 static unsigned assertions,visual_calls;
+static int ledger_fixtures;
 static int provider_available;
 #define CHECK(x) do{++assertions;if(!(x)){fprintf(stderr,"%s:%d %s\n",__FILE__,__LINE__,#x);return 0;}}while(0)
 static uint16_t get16(unsigned at){return (uint16_t)(memory.stage[at]|((uint16_t)memory.stage[at+1u]<<8u));}
@@ -161,7 +162,11 @@ static int maximum_note_set_and_long_labels_keep_wire_fields_separate(void)
     instrument.user_scale=1u;
     memset(instrument.library.scales[0].name,'S',sizeof instrument.library.scales[0].name);
     instrument.library.scales[0].name[sizeof instrument.library.scales[0].name-1u]=0u;
-    for(unsigned note=0;note<128u;++note)core.refs[note]=1u;
+    int16_t pitches[64];
+    for(unsigned note=0;note<64u;++note)pitches[note]=(int16_t)note;
+    CHECK(thy_core_press(&core,0u,pitches,64u,0,0u,THY_ROUTE_USB0,96u)==THY_OK);
+    for(unsigned note=0;note<64u;++note)pitches[note]=(int16_t)(note+64u);
+    CHECK(thy_core_press(&core,1u,pitches,64u,0,0u,THY_ROUTE_USB0,96u)==THY_OK);
     CHECK(strstr(command(1,0,"companion snapshot"),"SNAPSHOT seq=1"));
     CHECK(!strcmp((char *)memory.stage+THY_COMPANION_HARMONY,"128 NOTES"));
     CHECK(memory.stage[THY_COMPANION_HARMONY+31u]==0u);
@@ -174,9 +179,10 @@ static int maximum_note_set_and_long_labels_keep_wire_fields_separate(void)
      * without intruding into the next field or either input-note bitmap. */
     instrument.held_input_valid[0]=instrument.held_color_valid[0]=1u;
     instrument.held_color_root[0]=1u;
-    core.refs[7]=1u;
+    unsigned count=1u;pitches[0]=7;
     for(unsigned interval=0;interval<12u;++interval)
-        if(UINT16_C(0x26d)&(1u<<interval))core.refs[13u+interval]=1u;
+        if(UINT16_C(0x26d)&(1u<<interval))pitches[count++]=(int16_t)(13u+interval);
+    CHECK(thy_core_press(&core,0u,pitches,count,0,0u,THY_ROUTE_USB0,96u)==THY_OK);
     CHECK(strstr(command(1,0,"companion snapshot"),"SNAPSHOT seq=1"));
     CHECK(!strcmp((char *)memory.stage+THY_COMPANION_HARMONY,"C# DIM7 ADD9 ADD11/G"));
     CHECK(memory.stage[THY_COMPANION_HARMONY+31u]==0u);
@@ -623,9 +629,83 @@ static int performance_playheads_copy_transport_loop_pause_queue_and_clock_loss(
     CHECK(get32(520u+20u*24u+8u)==t->tracks[20].playhead);
     CHECK(!core.queue_count&&!visual_calls);CHECK(guards());return 1;
 }
-int main(void)
+static int capture_ledger(uint32_t now,uint64_t low,uint64_t high)
 {
-    if(!frozen_snapshot_and_runtime_are_actual()||!exclusive_staging_expiry_and_readonly_pad_selection()||
+    static thy_core before_core;
+    before_core=core;
+    CHECK(strstr(command(1,now,"companion snapshot"),"SNAPSHOT seq="));
+    unsigned count=0u;
+    for(unsigned note=0u;note<128u;++note){
+        unsigned expected=(unsigned)(((note<64u?low:high)>>(note%64u))&1u);
+        CHECK(((memory.stage[THY_COMPANION_NOTES+note/8u]>>(note%8u))&1u)==expected);
+        count+=expected;
+    }
+    CHECK(memory.stage[1619]==count);
+    CHECK(!memcmp(&core,&before_core,sizeof core));
+    if(ledger_fixtures){
+        printf("LEDGER-%u ",now);
+        for(unsigned n=0u;n<THY_COMPANION_SNAPSHOT_BYTES;++n)printf("%02x",memory.stage[n]);
+        putchar('\n');
+    }
+    char release[48];(void)snprintf(release,sizeof release,"companion release %u",companion.sequence);
+    CHECK(strstr(command(1,now+1u,release),"RELEASED"));
+    CHECK(guards());return 1;
+}
+
+static int note_ledger_covers_idle_strum_overlap_sustain_generated_and_arp_gaps(void)
+{
+    init();const uint64_t c=UINT64_C(1)<<60u,eg=(UINT64_C(1)<<0u)|(UINT64_C(1)<<3u);
+    CHECK(capture_ledger(0u,0u,0u));
+    CHECK(thy_core_sustain(&core,THY_ROUTE_ALL,0u,1)==THY_OK);
+    CHECK(!core.sounding_count&&core.sustain_count==3u);
+    CHECK(capture_ledger(100u,0u,0u));
+    const int16_t notes[]={60,64,67};thy_shape shape={.strum_ms=100u};
+    CHECK(thy_core_press_shaped(&core,0u,notes,3u,0,0u,THY_ROUTE_ALL,96u,&shape)==THY_OK);
+    CHECK(core.pending_keys==6u&&core.sounding_count==3u);
+    CHECK(capture_ledger(200u,c,0u)); /* Future E/G attacks stay absent. */
+    CHECK(thy_core_press(&core,1u,notes,1u,0,0u,THY_ROUTE_ALL,80u)==THY_OK);
+    CHECK(core.refs[60u]==2u&&core.sounding_count==3u);
+    CHECK(capture_ledger(300u,c,0u));
+    CHECK(thy_core_advance(&core,200u)==THY_OK);
+    CHECK(capture_ledger(400u,c,eg));
+    CHECK(thy_core_release(&core,0u)==THY_OK&&thy_core_release(&core,1u)==THY_OK);
+    CHECK(!core.refs[60u]&&thy_core_deferred(&core,60u)&&core.sounding_count==9u);
+    CHECK(capture_ledger(500u,c,eg));
+    thy_generated_handle generated;
+    CHECK(thy_core_generated_acquire(&core,100u,1u,72u,2u,THY_ROUTE_DIN,90u,&generated)==THY_OK);
+    CHECK(capture_ledger(600u,c,eg|(UINT64_C(1)<<8u)));
+    CHECK(thy_core_sustain(&core,THY_ROUTE_ALL,0u,0)==THY_OK);
+    CHECK(core.sounding_count==1u&&core.generated_count==1u);
+    CHECK(capture_ledger(700u,0u,UINT64_C(1)<<8u));
+    CHECK(thy_core_generated_release(&core,generated)==THY_OK);
+    CHECK(!core.sounding_count&&core.queue_count>0u);
+    CHECK(capture_ledger(800u,0u,0u)); /* Undrained MIDI is not an owned note. */
+    thy_arp_config config=engine.arps[0].config;config.enabled=1u;config.start=THY_ARP_GRID;
+    CHECK(thy_arp_configure(&engine.arps[0],&core,&config,1u,1u,1)==THY_OK);
+    CHECK(thy_arp_press(&engine.arps[0],&core,0u,0u,notes,3u,96u,1u,1u,1)==THY_OK);
+    CHECK(!core.sounding_count&&engine.arps[0].held_count==1u);
+    CHECK(capture_ledger(900u,0u,0u));
+    CHECK(memory.stage[1618]==1u);
+    CHECK(memory.stage[THY_COMPANION_POOL+7u]&(1u<<4u));
+    CHECK(!strcmp((char *)memory.stage+THY_COMPANION_HARMONY,"C MAJ"));
+    CHECK(thy_arp_advance(&engine.arps[0],&core,config.rate_ticks,1u,1)==THY_OK);
+    CHECK(core.sounding_count>0u&&capture_ledger(1000u,c,0u));
+    CHECK(thy_arp_advance(&engine.arps[0],&core,config.rate_ticks+config.rate_ticks*config.gate_percent/100u,1u,1)==THY_OK);
+    CHECK(!core.sounding_count&&engine.arps[0].held_count==1u);
+    CHECK(capture_ledger(1100u,0u,0u));
+    CHECK(memory.stage[THY_COMPANION_POOL+7u]&(1u<<4u));
+    CHECK(thy_arp_release(&engine.arps[0],&core,0u,config.rate_ticks+config.rate_ticks*config.gate_percent/100u,1u,1)==THY_OK);
+    CHECK(capture_ledger(1200u,0u,0u));return 1;
+}
+
+int main(int argc,char **argv)
+{
+    if(argc==2&&!strcmp(argv[1],"--ledger-fixtures")){
+        ledger_fixtures=1;return note_ledger_covers_idle_strum_overlap_sustain_generated_and_arp_gaps()?0:1;
+    }
+    if(argc!=1)return 1;
+    if(!note_ledger_covers_idle_strum_overlap_sustain_generated_and_arp_gaps()||
+       !frozen_snapshot_and_runtime_are_actual()||!exclusive_staging_expiry_and_readonly_pad_selection()||
        !schema_scoped_parameters_navigation_and_explicit_actions()||!remote_controls_are_taps_and_cannot_release_a_physical_control()||
        !maximum_note_set_and_long_labels_keep_wire_fields_separate()||
        !optional_harmony_snapshot_reuses_staging_and_preserves_visual_cadence()||
@@ -638,5 +718,5 @@ int main(void)
        !performance_snapshot_is_frozen_exclusive_and_readonly()||
        !performance_mpe_reports_real_admission_backpressure_and_retirement()||
        !performance_playheads_copy_transport_loop_pause_queue_and_clock_loss())return 1;
-    printf("Companion:16 scenarios passed (%u assertions); service%zu bytes, caller-owned staging%u bytes.\n",assertions,sizeof(thy_companion),THY_COMPANION_SNAPSHOT_BYTES);return 0;
+    printf("Companion:17 scenarios passed (%u assertions); service%zu bytes, caller-owned staging%u bytes.\n",assertions,sizeof(thy_companion),THY_COMPANION_SNAPSHOT_BYTES);return 0;
 }

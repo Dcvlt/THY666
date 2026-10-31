@@ -33,6 +33,29 @@ Clang/WASM installation can substitute for Zig:
 python tools/build_core.py --cc clang --test --core-only
 ```
 
+### Undefined-behavior checks
+
+Run an additional native diagnostic build before changing arithmetic, layouts,
+codecs or queue handling:
+
+```sh
+python tools/build_core.py --sanitize=undefined
+```
+
+This runs every portable native suite at `-O2` with assertions enabled and fatal
+undefined-behavior traps. Each invocation first verifies a clean program, a
+deliberate signed overflow and a failing assertion; unsupported instrumentation
+fails the run. The pinned Windows compiler lacks the standalone UBSan reporting
+runtime, so trap mode stops the affected executable without a symbolic UBSan
+message. Debug symbols and the failing suite remain available for investigation.
+
+Results go into a fresh `build/core-ubsan/` subdirectory. The command does not
+rebuild WebAssembly, regenerate UI assets, overwrite the normal build manifest
+or access a device. `--wasm-only` is incompatible; `--cc clang` remains available
+with the same mandatory probes. Public core CI has a separate diagnostic job.
+These checks cover executed host paths, not MCU MMIO/DMA or every possible input.
+See [optimization guidance](optimization.md) for interpretation and next steps.
+
 ## Connected Client and optional archival data
 
 The normal browser and desktop Client start using the shared C core and public
@@ -165,6 +188,13 @@ end-to-end macOS/Linux workflows. Configuration restoration, interrupted-update
 recovery and automatic rollback remain separate unqualified capabilities.
 
 ## Verification
+
+For target optimization evidence, use the optional
+[performance capture](profiling.md) in Client Diagnostics. Its portable
+accumulator, journal observers, instrument adapter and destination-queue hooks
+have synthetic host tests. Keep instrumentation disabled for baseline behavior
+checks; actual recorder overhead requires paired board measurements. Captures
+are RAM-only and do not replace tests, ELF inspection or a stack watermark.
 
 Run focused native and browser suites for changed behavior, then the applicable
 target integration checks. Inspect generated ELF/map/stack reports for memory

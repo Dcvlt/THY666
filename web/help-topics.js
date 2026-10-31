@@ -365,6 +365,8 @@ export const HELP_TOPICS = [
         'With resource-enabled firmware, Activity shows CPU activity, loop timing, fixed RAM allocation, observed stack peak and firmware flash. System → Resources shows these on the board; System → Storage shows saved-state and song usage. The CPU continuously polls: near 100% activity is normal, not an overload warning. Stack peak is observed since boot, not a worst-case guarantee.',
         'Live sessions sample at most once per second and retain up to 60 values. They pause when hidden and stop when you leave Diagnostics, disconnect or start an update. The timestamp identifies the last received report.',
         'Held pads and generated-note usage are measured by the board. MIDI charts DIN bytes sent per second; backlog means messages still waiting, so zero backlog while playing is normal. Two reports are needed for a rate.',
+        'Timing capture records a timed session on supported firmware. Choose 15, 30 or 60 seconds, Start capture, then play or leave the board idle. Stop early if needed and Export JSON when finished. Recording continues if you disconnect; reconnect to read it before power-off. A new capture replaces the previous one.',
+        'Capture timing includes interrupts and recorder overhead. Queue wait ends at firmware sink acceptance, not sound at the synth. Percentiles show histogram bucket limits. Compare one workload change at a time; ordinary diagnostic live monitoring is a separate feature.',
       ]),
       section('When a value does not change', [
         'Release affected pads and controls, stop generators if the setting requires it, and check whether you are editing a draft. RIGHT applies a device-menu draft; LEFT cancels it.',
@@ -902,7 +904,8 @@ export const HELP_TOPICS = [
       ]),
       section('Restore with verification', [
         'Choose a .thyb file and review its board identity, source build, settings version and checksum result. File selection only inspects it. Restore backup opens a separate confirmation; stop playback and release all inputs before confirming the whole-state replacement.',
-        'After the device applies and saves it, read back the saved state and compare it with the intended payload. Report a mismatch instead of treating an acknowledged transfer as a verified restore. Cold-boot persistence is an additional check.',
+        'On firmware supporting guarded restore, the board shows Receiving, Saving and Checking and temporarily locks playing and editing. Keep it connected until completion. Progress reflects transferred or saved bytes; checking never uses a countdown.',
+        'The Client compares the complete saved payload before the board unlocks. The updater then rechecks instrument health. If an error appears, keep the backup and inspect Backup service, Saved settings and Pad scanner in Diagnostics; no automatic retry is sent. Cold-boot persistence is an additional check.',
       ]),
       section('Boundaries', [
         'A complete applied-state file protects supported preferences and content, but cannot repair an erased bootloader or guarantee rollback after a power loss during installation. An explicit Windows restore passed saved readback and a byte-identical export after a confirmed cold reboot. That tested configuration had an empty song/library and default pad overrides; nonempty content and calibrated profiles still need device qualification.',

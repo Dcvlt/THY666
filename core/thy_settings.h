@@ -75,6 +75,20 @@ enum thy_settings_status {
     THY_SETTINGS_DEFAULTS, THY_SETTINGS_SAVED, THY_SETTINGS_PENDING,
     THY_SETTINGS_SAVING, THY_SETTINGS_ERROR, THY_SETTINGS_UNSUPPORTED
 };
+/* Optional foreground diagnostics. Hooks must not reenter or mutate journal
+ * state. Their caller-owned lifetime covers the binding; NULL is unbound.
+ * No observer, pointer, timestamp or sample is part of the settings codec. */
+enum thy_settings_observe_phase {
+    THY_SETTINGS_OBSERVE_ENCODE, THY_SETTINGS_OBSERVE_VALIDATE,
+    THY_SETTINGS_OBSERVE_CRC, THY_SETTINGS_OBSERVE_PROGRAM,
+    THY_SETTINGS_OBSERVE_ERASE
+};
+typedef struct thy_settings_observer {
+    const uint8_t *enabled;
+    void *context;
+    uint32_t (*begin)(void *,unsigned phase);
+    void (*end)(void *,unsigned phase,uint32_t stamp);
+} thy_settings_observer;
 typedef struct thy_settings_journal {
     thy_settings_io io;
     uint8_t record[THY_SETTINGS_RECORD_BYTES];
@@ -83,6 +97,7 @@ typedef struct thy_settings_journal {
     uint16_t payload_bytes;
     uint8_t status, loaded, recovered, observed, writing, erase_pending;
     uint8_t loaded_version, migration_pending;
+    const thy_settings_observer *observer;
 } thy_settings_journal;
 
 /* Read-only scan. Chooses newest committed CRC/semantic-valid record. A torn

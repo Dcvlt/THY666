@@ -2,13 +2,13 @@
  * Narrow adapters for the bundled desktop window. The existing client owns
  * console validation and sequencing; Rust alone opens native USB handles.
  */
-import { createDeviceClient } from './device-client.js';
+import { createDeviceClient, isProfileCommand } from './device-client.js';
 import { UPDATE_HELPER_PROTOCOL, UPDATE_PACKAGE_MAX_BYTES } from './updater-client.js';
 
 export const DESKTOP_PROTOCOL='THY666-DESKTOP/1';
 const VID=0xcafe,PID=0x4009;
 const errorOf=value=>{const error=new Error(typeof value==='string'?value:value?.message||'The native operation could not finish.');if(value?.kind==='rejected')error.helperRejected=true;return error;};
-const validCommand=command=>typeof command==='string'&&command.length>0&&command.length<=159&&!/[\r\n\x00-\x1f\x7f-\uffff]/.test(command)&&/^(?:companion |backup |song |status$|io$|settings$|display$|pad \d+$|velocity \d+$)/.test(command);
+const validCommand=command=>typeof command==='string'&&command.length>0&&command.length<=159&&!/[\r\n\x00-\x1f\x7f-\uffff]/.test(command)&&(/^(?:companion |backup |song |status$|io$|settings$|display$|pads$|pad \d+$|velocity \d+$)/.test(command)||isProfileCommand(command));
 
 // This application-owned chooser replaces the browser serial chooser. Opening
 // it is read-only; Connect is a separate explicit selection, even for one port.

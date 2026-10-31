@@ -1,5 +1,5 @@
 /* Presentation only: the wizard controller supplies every device state. */
-import { createUpdateBoardArt, createUpdateLogoArt, createUpdateIcon, createUpdateProgressArt } from './updater-art.js';
+import { createUpdateBoardArt, createUpdateLogoArt, createUpdateIcon, createUpdateProgressBox } from './updater-art.js';
 import { UPDATE_HEALTH_CHECKS } from './updater-checks.js';
 
 export function createUpdaterLayout(doc, prefix) {
@@ -79,7 +79,7 @@ export function createUpdaterLayout(doc, prefix) {
   const restore=button('Restore saved configuration','restore','update-primary'),keepSettings=button('Keep current settings instead','keep-settings','update-quiet');
   const restorationActions=el('div','update-inline-actions');restorationActions.append(restore,keepSettings);restoration.append(restorationTitle,restorationSummary,restorationActions);restoration.hidden=true;
   const verify=button('Connect and verify','verify','update-primary'),companion=button('Go to Client','companion','update-primary');bodies[3].append(healthList,applicationSummary);actions[3].append(verify,companion);
-  function progressBox(label){const box=el('div','update-progress');box.setAttribute('role','progressbar');box.setAttribute('aria-label',label);box.setAttribute('aria-valuemin','0');box.setAttribute('aria-valuemax','100');const art=createUpdateProgressArt(doc),copy=el('p','update-progress-copy');box.append(art,copy);return{box,art,copy};}
+  const progressBox=label=>createUpdateProgressBox(doc,label);
   const backupProgress=progressBox('Configuration backup progress'),installProgress=progressBox('Firmware transfer progress'),restoreProgress=progressBox('Configuration restoration progress');bodies[1].append(backupProgress.box);bodies[2].append(installProgress.box,transferDetails,recovery);restoration.append(restoreProgress.box);bodies[3].append(restoration);
   const status=el('p','update-status updater-notice');status.dataset.updaterReadout='notice';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
   const viewport=el('div','update-viewport hud-frame hud-frame--task');viewport.append(simulationBadge,browserSummary,setup,...stages.slice(1),status);root.append(heading,rail,viewport);

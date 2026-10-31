@@ -18,7 +18,7 @@
 #include "../../firmware/instrument/touch_config.h"
 #include "../../firmware/instrument/display.h"
 
-static unsigned checks, scenarios, panic_calls,backup_calls,companion_calls;
+static unsigned checks, scenarios, panic_calls,backup_calls,companion_calls,profile_calls;
 #define CHECK(x) do { ++checks; assert(x); } while (0)
 static thy_core core;
 static thy_instrument instrument;
@@ -54,6 +54,10 @@ size_t thy_instrument_app_backup_command(const char *line,char *output,size_t ca
 size_t thy_instrument_app_companion_command(const char *line,char *output,size_t capacity) {
     CHECK(strstr(line,"companion ")==line&&capacity>=384u);++companion_calls;
     strcpy(output,"COMPANION/1 stub\r\n");return strlen(output);
+}
+size_t thy_instrument_app_profile_command(const char *line,char *output,size_t capacity) {
+    CHECK(strstr(line,"profile ")==line&&capacity>=512u);++profile_calls;
+    strcpy(output,"PROFILE version=1 supported=1\r\n");return strlen(output);
 }
 const char *thy_instrument_app_scale_name(void) { return "MAJOR C"; }
 bool thy_instrument_app_ready(void) { return ready; }
@@ -474,7 +478,7 @@ static void touch_capture_and_lossless_pages(void)
     CHECK(thy_instrument_sample(&instrument, 0u, 250u, ++now) == THY_OK);
     board.touch_initialized_mask = 15u;
     read_only("help", output);
-    CHECK(strcmp(output,"OK THYINSTRUMENT/1 commands=status,pads,pad,edges,io,panic,help,settings storage_writes=none autosave=idle\r\n") == 0);
+    CHECK(strcmp(output,"OK THYINSTRUMENT/1 commands=status,pads,pad,edges,io,panic,help,settings,profile storage_writes=none autosave=idle\r\n") == 0);
     read_only("help touch", output); CHECK(strstr(output,"OK TOUCH/1 commands=touch;") == output);
     read_only("touch", output);
     CHECK(strcmp(output,"TOUCH center_poll_ms=8 default_center_poll_ms=8 top_poll_ms=20 ready=15 failed=0 capture_pending=0 capture_complete=0 capture_failed=0 uid=00112233445566778899aabb config_bytes=128 writes=none\r\n") == 0);
@@ -655,6 +659,7 @@ int main(int argc, char **argv)
         ++scenarios;char output[THY_DIAG_REPLY_MAX];
         read_only("backup caps",output);CHECK(!strcmp(output,"BACKUP stub\r\n")&&backup_calls==1u);
         read_only("companion caps",output);CHECK(!strcmp(output,"COMPANION/1 stub\r\n")&&companion_calls==1u);
+        read_only("profile caps",output);CHECK(!strcmp(output,"PROFILE version=1 supported=1\r\n")&&profile_calls==1u);
     }
     printf("instrument protocol: %u scenarios, %u assertions; pad/journal/IO, strict arguments, touch readback, display reports, read-only ownership and panic passed\n", scenarios, checks);
     return 0;
