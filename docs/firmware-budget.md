@@ -554,3 +554,43 @@ and offline Rust package validation pass. Client label requests are optional,
 revision-cached and limited to a visible label overlay; pending work is bounded
 before returning to base feedback. Actual device timing, label refresh during
 playing and the new artifact's stack watermark remain hardware checks.
+
+## Local MPE member and sequencer playhead telemetry
+
+Development build `121c7cff4fb51de6`, under
+`build/instrument-performance-local-01/`, adds a 1,024-byte optional performance
+snapshot. It uses the existing 1,680-byte caller-owned staging rather than
+allocating another frame. Fifteen member records and 21 track records have fixed
+24-byte layouts. Captured MPE velocity fills an existing padding byte: each
+voice remains 24 bytes and the Companion service remains 88 bytes. Settings V19,
+owner pools, track/event capacities and playback scheduling are unchanged.
+
+The frozen-build review and budget comparison against the published v0.2.2
+firmware (`d792e046105e196e`) pass locally:
+
+| Resource | Occupied | Change from v0.2.2 | Remaining |
+| --- | ---: | ---: | ---: |
+| Raw application image / 512 KiB | 460,496 B | +2,032 B | 63,792 B |
+| Linked application flash | 460,468 B | +2,032 B | 63,820 B |
+| Static SRAM allocation | 101,792 B | 0 B | 21,084 B contiguous before the separate stack, after alignment |
+| CCM / 64 KiB | 55,672 B | 0 B | 9,864 B |
+| Reserved stack | 8,192 B | 0 B | Runtime high-water not measured for this build |
+
+Capture scans at most 15 members, their bounded owner keys and three output
+destinations, then copies 21 actual track/transport states. It does not render,
+advance musical time, service MIDI, allocate memory or mutate ownership. The
+Client admits at most one optional performance transaction per 200 ms through
+the existing serialized poll, after base feedback and only for relevant visible
+Board panels. Label and Harmony staging retains exclusive ownership.
+
+Pinned Zig 0.14.1 Cortex-M4 soft-float `-Oz`, non-LTO stack reports give 72 bytes
+for `thy_companion_command`, 80 for the performance snapshot with its voice
+helper inlined, 16 for the common header and 20 for finalization. The new
+command/snapshot/finalization component path totals 172 bytes before callers and
+interrupts. This is not a linked LTO worst-case-stack or timing proof.
+
+The full core and instrument suites, real C-to-WASM-to-Client decoding tests,
+frozen-source audit and capacity checks pass. A local `.333` candidate passed
+Rust package inspection and a synthetic transfer. No hardware was accessed;
+maximum polling/playing load, receiver comparison, input/release latency and
+the actual stack watermark remain on the board checklist.

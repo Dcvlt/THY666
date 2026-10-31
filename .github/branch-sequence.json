@@ -1,5 +1,5 @@
 {
-  "last_allocated": 10,
+  "last_allocated": 11,
   "allocations": {
     "01": "feature/01-branch-governance",
     "02": "feature/02-readme-front-door",
@@ -10,6 +10,7 @@
     "07": "feature/07-client-refinement",
     "08": "fix/08-readme-title",
     "09": "feature/09-expression-performance",
-    "10": "fix/10-client-sidebar-polish"
+    "10": "fix/10-client-sidebar-polish",
+    "11": "feature/11-performance-telemetry"
   }
 }

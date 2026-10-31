@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { initializeCockpit, initializeDiagnostics } from '../../web/cockpit.js';
+import {performancePacket} from './performance-fixture.mjs';
+import {decodePerformanceSnapshot} from '../../web/companion-protocol.js';
 import { decodeCompanionSnapshot } from '../../web/companion-protocol.js';
 
 const dataKey = key => key.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
@@ -440,4 +442,53 @@ test('resource gauges require target values and valid timing or stack samples', 
   assert.match(f.mount.textContent,/This firmware does not expose resources/);
   assert.equal(meter('Firmware flash').hidden,true);
   health.snapshot(null,false);assert.equal(health.report('status',report),false);
+});
+
+
+test('MPE member meters use queued per-voice data, captured physical mapping and fixed reusable rows',t=>{
+  const f=fixture(t),sample=decodePerformanceSnapshot(performancePacket({voices:15,tracks:21}));
+  sample.voices[0].pad=0;sample.voices[0].logicalPad=60;
+  const data={...snapshot(),context:{performance:{supported:true,available:true,snapshot:sample}}};
+  f.cockpit.update(data,{connected:true});
+  assert.equal(f.mount.querySelectorAll('.cockpit-voice-row').length,15);assert.equal(f.mount.querySelectorAll('.cockpit-track-row').length,21);
+  assert.equal(f.mount.querySelectorAll('.cockpit-voice-row').filter(node=>!node.hidden).length,15);
+  assert.match(f.value('voice-state-0'),/Reserved/);assert.match(f.value('voice-state-3'),/Sustained/);
+  assert.match(f.value('voice-route-0'),/^R13/,'Physical labels follow mapped position, not the electrical index.');
+  assert.match(f.value('voice-values-14'),/CC1 112/);assert.match(f.mount.textContent,/accepted into the board’s MIDI queue/);
+  assert.match(f.mount.querySelector('[data-cockpit-voice="0"]').getAttribute('aria-label'),/active references none.*Queued Pressure 0/);
+  const count=f.nodes(),writes=f.document.writes;f.cockpit.update(data,{connected:true});assert.equal(f.nodes(),count);assert.equal(f.document.writes,writes);
+  assert.equal(f.hardwareCalls(),0);
+});
+
+test('sequencer playheads follow only reported positions across loop jumps, pauses, mute and clock loss',t=>{
+  const f=fixture(t),sample=decodePerformanceSnapshot(performancePacket({tracks:21})),data={...snapshot(),context:{performance:{supported:true,available:true,snapshot:sample}}};
+  f.cockpit.update(data,{connected:true});assert.equal(f.mount.querySelectorAll('.cockpit-track-row').filter(node=>!node.hidden).length,21);
+  assert.equal(f.value('track-step-20'),'Step 11 / 16');assert.match(f.value('track-state-1'),/Muted/);
+  const row=f.mount.querySelector('[data-cockpit-track="1"]'),needle=row.querySelector('.cockpit-playhead-needle'),before=needle.getAttribute('d');
+  sample.transport=2;f.cockpit.update(data,{connected:true});assert.match(f.value('track-state-1'),/^Paused/);assert.equal(needle.getAttribute('d'),before);
+  sample.transport=1;sample.suspended=true;sample.clockReady=false;sample.clockStatus=3;f.cockpit.update(data,{connected:true});
+  assert.match(f.value('track-state-1'),/^Clock lost/);assert.equal(needle.getAttribute('d'),before);
+  sample.suspended=false;sample.clockReady=true;sample.tracks[1].playhead=sample.tracks[1].loopStart;sample.tracks[1].generation++;
+  f.cockpit.update(data,{connected:true});assert.equal(needle.getAttribute('d'),'M1.00 1V15');assert.equal(f.value('track-step-1'),'Step 1 / 16');
+  assert.match(f.value('track-state-0'),/^Stopped/,'A stopped individual track does not become playing with the global transport.');
+});
+
+test('unsupported, stale and disconnected performance detail never leaves old meters presented as live',t=>{
+  const f=fixture(t),sample=decodePerformanceSnapshot(performancePacket({voices:1,tracks:1})),base=snapshot();
+  f.cockpit.update({...base,context:{performance:{supported:true,available:true,snapshot:sample}}},{connected:true});
+  assert.equal(f.mount.querySelector('[data-cockpit-voice="0"]').hidden,false);
+  for(const context of [{supported:true,available:false,stale:true,snapshot:sample},{supported:false,available:false}]){
+    f.cockpit.update({...base,context:{performance:context}},{connected:true});
+    assert.equal(f.mount.querySelector('[data-cockpit-voice="0"]').hidden,true);assert.equal(f.mount.querySelector('[data-cockpit-track="0"]').hidden,true);
+    assert.match(f.value('voice-detail-status'),context.stale?/fresh data/:/Update firmware/);
+  }
+  f.cockpit.update(null);assert.equal(f.mount.querySelector('[data-cockpit-voice="0"]').hidden,true);
+});
+
+test('reusing a member channel replaces its gesture, pitch, owner and queued values without an old voice trail',t=>{
+  const f=fixture(t),sample=decodePerformanceSnapshot(performancePacket({voices:1})),data={...snapshot(),context:{performance:{supported:true,available:true,snapshot:sample}}};
+  f.cockpit.update(data,{connected:true});const row=f.mount.querySelector('[data-cockpit-voice="0"]'),count=f.nodes();
+  Object.assign(sample.voices[0],{gesture:999,note:72,logicalPad:95,pad:20,pressure:80,upper:63,bend:7000,pendingAttack:false});
+  f.cockpit.update(data,{connected:true});assert.equal(f.nodes(),count);assert.equal(f.value('voice-name-0'),'C5 · Ch 2');assert.match(f.value('voice-route-0'),/^R48/);
+  assert.match(f.value('voice-values-0'),/Pressure 80 · Upper 63 · Bend 7000/);assert.match(row.getAttribute('aria-label'),/Gesture 999/);assert.doesNotMatch(row.getAttribute('aria-label'),/C4|Gesture 100\./);
 });

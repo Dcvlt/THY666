@@ -1074,6 +1074,18 @@ uintptr_t bridge_harmony_snapshot(uint32_t now) {
         "companion harmony snapshot", response, sizeof response);
     return service.active ? (uintptr_t)companion_frame : 0;
 }
+uintptr_t bridge_performance_snapshot(uint32_t now) {
+    thy_companion service;
+    const thy_companion_identity identity = {
+        "0000000000000000", "000000000000000000000000", NULL
+    };
+    char response[THY_COMPANION_RESPONSE_BYTES];
+    thy_companion_init(&service, companion_frame, sizeof companion_frame,
+        &identity, NULL, NULL);
+    (void)thy_companion_command(&service, &shared_engine, 1, now,
+        "companion performance snapshot", response, sizeof response);
+    return service.active ? (uintptr_t)companion_frame : 0;
+}
 int bridge_harmony_action(int action,int32_t value) {
     if (action<THY_HARMONY_ACTIVATE || action>THY_HARMONY_COMPARE_SCALE) return -1;
     return thy_engine_harmony_action(&shared_engine,(uint8_t)action,value);

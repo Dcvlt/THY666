@@ -92,6 +92,26 @@ This needs no board, native HID library or private musical data. The generated
 WASM/manifest pair contains only updater policy and is checked before site or
 desktop packaging. See [Browser installation](browser-installation.md).
 
+### Local performance telemetry preview
+
+After building the portable core and browser updater, stage a separate local
+preview with synthetic input captured from the actual C engine:
+
+```sh
+python tools/build_site.py --output build/performance-preview
+node tools/render_performance_preview.mjs
+python -m http.server 3356 --bind 127.0.0.1 --directory build/performance-preview
+```
+
+Open `http://127.0.0.1:3356/performance-preview.html`. Its scene selector covers
+15 MPE members, upper-zone assignment, reserved strum voices, sustain, 21 track
+playheads, external-clock pause/loss and stale/unsupported detail. Snapshots are
+frozen; the preview never advances positions in JavaScript or opens a device.
+Dark and light appearances use the production Client widgets. The preview files
+stay in the ignored build directory and are excluded from normal site/desktop
+bundles. Physical MIDI delivery, foreground timing and display polling still
+require the [board checks](v0.2-board-checklist.md).
+
 ## STM32 instrument
 
 ```sh

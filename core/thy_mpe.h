@@ -35,6 +35,7 @@ typedef struct thy_mpe_voice {
     uint8_t pressure, sent_pressure, modifier, modifier_pressure;
     uint8_t timbre, sent_timbre;
     uint8_t pressure_output; /* Captured through retiring cleanup. */
+    uint8_t velocity; /* Captured attack value, retained through retirement. */
     int8_t interval;
 } thy_mpe_voice;
 

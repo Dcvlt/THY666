@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {performancePacket} from './performance-fixture.mjs';
 import assert from 'node:assert/strict';
 import {
   BACKUP_HEADER_BYTES, BACKUP_MAX_BYTES, deviceCRC32, deviceFields,
@@ -121,11 +122,11 @@ function reseal(bytes) {
 
 function environment(t, { override, writable = '1', schema = SCHEMA, expectedSchema = SCHEMA, timeoutMs = 40,
   fragment = false, statusSequence = ['applied', 'queued', 'saved-verified'], exportBytes,native=false,
-  settingsVersion=13,migrateBackupPayload,harmony=false,reset=false,padMap=false } = {}) {
+  settingsVersion=13,migrateBackupPayload,harmony=false,reset=false,padMap=false,performance=false } = {}) {
   let waiter = null, closed = false, time = 0;
   const queued = [], states = [], commands = [], portEvents = new Map();
   const server = { file: makeBackup({settingsVersion}), snapshot: Uint8Array.from({ length: 1680 }, (_, n) => n & 255),
-    harmony:Uint8Array.from({length:800},(_,n)=>n&255),padMap:Uint8Array.from({length:1672},(_,n)=>n&255),padMapRevision:17,padMapPending:false,generation: 7, committed: false, upload: null, statusReads: 0, received: 0 };
+    performance:performancePacket(),harmony:Uint8Array.from({length:800},(_,n)=>n&255),padMap:Uint8Array.from({length:1672},(_,n)=>n&255),padMapRevision:17,padMapPending:false,generation: 7, committed: false, upload: null, statusReads: 0, received: 0 };
   const push = text => {
     if (closed) return;
     const bytes = encoder.encode(text);
@@ -142,9 +143,10 @@ function environment(t, { override, writable = '1', schema = SCHEMA, expectedSch
   };
   const statusLine = state => `BACKUP version=1 state=${state} bytes=${server.committed ? server.file.length : 0} received=${server.received} crc32=${crc(server.file)} payload_crc32=${crc(server.file.subarray(64))} generation=31`;
   function respond(command) {
-    if (command === 'companion caps') return `COMPANION/1 CAPS role=instrument backup=1 song=1 companion=1 uid=${UID} build=${BUILD} schema=${schema} writable=${writable} chunk=128${harmony?' harmony=1 harmony_bytes=800':''}${reset?' reset=1':''}${padMap?' pad_map=1 pad_map_bytes=1672':''}`;
+    if (command === 'companion caps') return `COMPANION/1 CAPS role=instrument backup=1 song=1 companion=1 uid=${UID} build=${BUILD} schema=${schema} writable=${writable} chunk=128${harmony?' harmony=1 harmony_bytes=800':''}${reset?' reset=1':''}${padMap?' pad_map=1 pad_map_bytes=1672':''}${performance?' performance=1 performance_bytes=1024':''}`;
     if (command === 'backup caps') return `BACKUP version=1 settings=${settingsVersion} max=${BACKUP_MAX_BYTES} chunk=32 target=1043 compatibility=65537 uid=${UID} build=${BUILD} schema=${schema}`;
     if (command === 'companion snapshot') {server.frozen=server.snapshot;return `COMPANION/1 SNAPSHOT seq=${server.generation} bytes=${server.snapshot.length} crc32=${crc(server.snapshot)}`;}
+    if(command==='companion performance snapshot'){server.frozen=server.performance;return `COMPANION/1 PERFORMANCE seq=${server.generation} bytes=1024 crc32=${crc(server.performance)}`;}
     if (command === 'companion harmony snapshot') {server.frozen=server.harmony;return `COMPANION/1 HARMONY seq=${server.generation} bytes=800 crc32=${crc(server.harmony)}`;}
     if(/^companion pad-map(?: \d+)?$/.test(command)){
       if(Number(command.split(' ')[2])===server.padMapRevision)return `COMPANION/1 PADMAP unchanged=1 revision=${server.padMapRevision}`;
@@ -625,4 +627,27 @@ test('stale snapshot data cannot satisfy a new generation and overlong device li
   } });
   await long.client.connect(); await assert.rejects(long.client.snapshot(), /line limit/);
   assert.equal(long.client.connected, false);
+});
+
+
+test('optional performance capture uses the same bounded serial/native CRC transaction and releases staging',async t=>{
+  for(const native of [false,true]){
+    const f=environment(t,{native,performance:true,fragment:!native});await f.client.connect();
+    assert.equal(f.client.performanceSupported,true);
+    const packet=await f.client.performanceSnapshot();assert.equal(packet.generation,7);assert.deepEqual(packet.bytes,f.server.performance);
+    assert.equal(f.commands.at(-1),'companion release 7');assert.equal(f.client.busy,false);
+  }
+  const old=environment(t);await old.client.connect();assert.equal(old.client.performanceSupported,false);
+  await assert.rejects(old.client.performanceSnapshot(),/newer firmware/);
+  assert.equal(old.commands.some(command=>command==='companion performance snapshot'),false);
+});
+
+test('malformed performance lengths, chunks and CRCs release the frozen lease',async t=>{
+  for(const failure of ['length','crc','generation']){
+    const f=environment(t,{native:true,performance:true,override:(command,{server})=>{
+      if(command==='companion performance snapshot'&&failure!=='generation')return `COMPANION/1 PERFORMANCE seq=7 bytes=${failure==='length'?1025:1024} crc32=00000000`;
+      if(command==='companion get 7 0 128'&&failure==='generation')return `COMPANION/1 DATA seq=8 offset=0 hex=${hex(server.performance.subarray(0,128))}`;
+    }});await f.client.connect();await assert.rejects(f.client.performanceSnapshot(),/length|checksum|generation/);
+    assert.equal(f.commands.at(-1),'companion release 7');
+  }
 });

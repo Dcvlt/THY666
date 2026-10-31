@@ -49,6 +49,9 @@ feedback adapts to active engines: connection assembly, expression routing,
 Arp pitch ribbons, Harmony movement/history and clear recording states.
 Labels read the board's assignments; the Web screen follows the app theme.
 These Client refinements are software-tested and await a connected board check.
+Local development adds firmware-reported MPE member output meters and sequencer
+track playheads. These need the matching development firmware and are not part
+of the published v0.2.2 package; hardware qualification is pending.
 Harmony groups suggestions and playing controls. The guide
 uses illustrations, expandable reference sections and phone-friendly tables.
 The Client and project site share a [component library and design guide](docs/design-system.md),

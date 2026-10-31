@@ -188,14 +188,43 @@ Panels adapt to what you are playing:
 
 | Panel | What to look for |
 | --- | --- |
-| Expression | Left/right pressure, captured strike velocity and the selected pressure destination. Aftertouch-stage marks explain the split. |
+| Expression | Left/right input peaks and routing, plus each MPE member's reported output pressure, upper axis, bend, note, channel and ownership state on telemetry-enabled firmware. |
 | Arps | A dim pitch pool with sounding notes brightened. This is the combined pool, rather than an individual Arp step display. |
 | Harmony | Current chord → selected suggestion, the board's explanation, shared/changed tones and recent chord history. |
-| Sequencer | Selected track, stopped/playing state and distinct armed/recording feedback. |
+| Sequencer | Selected track, stopped/playing state, armed/recording feedback and sampled loop positions for all created tracks on telemetry-enabled firmware. |
 
-Missing values stay unavailable. The Client does not invent MPE member activity,
-Arp phase or track playheads from its own clock. Detailed per-voice and playback
-position telemetry remains future work.
+Missing or stale values stay unavailable. Older firmware retains the aggregate
+panels and explains that detailed output/playhead telemetry needs an update.
+The Client does not invent MPE member activity, Arp phase or track playheads
+from its own clock. These development additions await a connected board check.
+
+### Live performance snapshots
+
+Compatible firmware advertises `performance=1 performance_bytes=1024` in
+`companion caps`. The optional `companion performance snapshot` command freezes
+a `THYPER1` version 1 packet; the ordinary sequence-bound chunk/CRC/release
+transaction reads it. It shares the existing caller-owned staging with display,
+Harmony, pad-map and storage transfers. It does not render a frame, advance time,
+send MIDI or change notes/settings. Field offsets are defined in
+`core/thy_companion.h` and checked by the shared Client decoder.
+
+| Part | Reported state |
+| --- | --- |
+| Header and transport | Device/build/schema identity, capture time, sequencer revision, transport/clock generations, 64-bit position, tempo, clock readiness, pause/suspension, selected track and capture state |
+| 15 MPE member slots | Captured channel, pitch, physical source, destinations, pressure mapping and velocity; last accepted output values, desired values and pending-strum/sustain/retiring state |
+| 21 track slots | Created/enabled/running/muted/one-shot state, actual loop start/length and playhead, grid spacing, run generation, queued launch/stop and recording state |
+
+Output values mean MIDI events accepted by the core's output queue. They do not
+prove delivery through USB/DIN or a receiver's response. Input peak gauges remain
+separate from member output meters. A reserved strum voice is not yet sounding;
+a sustained or retiring channel remains occupied until its existing cleanup ends.
+
+The Client requests this packet only while its Board meters are relevant, after
+base feedback, at most once per 200 ms. It uses the existing serialized poll
+loop, without another timer. Hidden or inactive windows, disconnects, updater
+ownership and other blocking work suppress requests. Received positions are
+sampled directly; there is no local extrapolation between snapshots. Stopped,
+paused, clock-suspended and absent tracks retain their distinct meanings.
 
 The startup presentation draws the logo's diamonds in sequence, then its center
 numbers and broken-line ripples on black. The app appears once initialization

@@ -211,6 +211,7 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
     get available(){return Boolean(serial?.requestPort);},get connected(){return state.connected;},
     get busy(){return operations>0;},get compatible(){return state.compatible;},
     get harmonySupported(){return state.connected&&caps?.harmony==='1'&&caps?.harmony_bytes==='800';},
+    get performanceSupported(){return state.connected&&caps?.performance==='1'&&caps?.performance_bytes==='1024';},
     get padMapSupported(){return state.connected&&caps?.pad_map==='1'&&caps?.pad_map_bytes==='1672';},
     get resetSupported(){return state.connected&&caps?.reset==='1';},
     get identity(){return caps?{...caps}:null;},get backupIdentity(){return backupCaps?{...backupCaps}:null;},
@@ -271,6 +272,18 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
         const bytes=await chunks('companion',count,crcValue(result.crc32),generation+' ');
         return {generation,bytes,receivedAt:now()};
       }finally{if(generation!==null){try{await exchange(`companion release ${generation}`,/^COMPANION\/1 RELEASED/);}catch{}}}
+    });},
+    performanceSnapshot(){const requestPort=port,requestCaps=caps;return exclusive(async()=>{
+      if(port!==requestPort||caps!==requestCaps)throw new Error('The device connection changed during the performance request.');
+      if(!client.performanceSupported)throw new Error('Detailed MPE and sequencer feedback requires newer firmware.');
+      let generation=null;
+      try{
+        const result=deviceFields(await exchange('companion performance snapshot',/^COMPANION\/1 PERFORMANCE /),'COMPANION/1 PERFORMANCE');
+        generation=integer(result.seq,1,0xffffffff,'performance snapshot generation');
+        const count=integer(result.bytes,1024,1024,'performance snapshot length');
+        const bytes=await chunks('companion',count,crcValue(result.crc32),generation+' ');
+        return {generation,bytes,receivedAt:now()};
+      }finally{if(generation!==null&&port===requestPort&&caps===requestCaps){try{await exchange(`companion release ${generation}`,/^COMPANION\/1 RELEASED/);}catch{}}}
     });},
     padMapSnapshot(knownRevision=null){const requestPort=port,requestCaps=caps;return exclusive(async()=>{
       if(port!==requestPort||caps!==requestCaps)throw new Error('The device connection changed during the pad-label request.');

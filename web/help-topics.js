@@ -351,13 +351,14 @@ export const HELP_TOPICS = [
       ]),
       section('Live playing panels', [
         'After the first device snapshot, the board and panels assemble into view. Motion stays behind the readings, pauses offscreen and respects reduced motion.',
-        'Unavailable readings stay blank. These panels do not estimate MPE member channels or musical playheads from the browser clock.',
+        'With telemetry-enabled development firmware, MPE members show their reported queued output and sequencer tracks show their sampled loop position. Reserved strum attacks, sustain/cleanup, pause and clock suspension remain distinct. Older firmware explains when an update is needed.',
+        'Unavailable or stale readings stay blank. These panels do not estimate MPE member channels or musical playheads from the browser clock. These development additions still need a connected board check.',
       ]),
       table('Read the playing panels', ['Panel', 'Useful feedback'], [
-        ['Expression', 'Compare Left/Right pressure, strike velocity and Pressure/CC74/CC1 routing. Aftertouch-stage marks show the split.'],
+        ['Expression', 'Compare Left/Right input pressure and strike velocity, then inspect each MPE member’s note, channel, captured routing and reported pressure/upper-axis/bend output. Queue acceptance does not confirm receiver delivery.'],
         ['Arps', 'Dim notes form the combined input pool; bright notes are sounding now.'],
         ['Harmony', 'Follow the current chord to the selected suggestion, its explanation and shared or changed tones.'],
-        ['Sequencer', 'See the selected track and distinguish stopped, playing, armed and recording states.'],
+        ['Sequencer', 'See the selected track and each created track’s device-reported loop position. Distinguish stopped, playing, armed, recording and queued launch/stop states.'],
       ]),
       section('Read device health', [
         'Open Diagnostics. Choose Activity, MIDI, Settings or Display in the report list, then Read report for a single measurement or Start live session for a trend.',

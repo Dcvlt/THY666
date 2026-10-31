@@ -39,7 +39,7 @@
 .cockpit-signal-rule::after { content: ''; width: 3px; height: 3px; position: absolute; right: 0; top: 0; border: 1px solid var(--cockpit-line); background: var(--cockpit-paper); transform: rotate(45deg); }
 .cockpit-source-bar>[data-cockpit-value="scale"] { max-width: 30ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cockpit-signal-label { color: var(--cockpit-type); font-size: 7px; letter-spacing: .18em; }
-.cockpit-panels { display: grid; grid-template-columns: 1.17fr 1fr 1.12fr 1fr; gap: 13px; }
+.cockpit-panels { display: grid; grid-template-columns: 1.17fr 1fr 1.12fr 1fr; gap: 13px; align-items: start; }
 .cockpit-panel { min-width: 0; padding: 14px 14px 12px; }
 .cockpit-panel-head { position: relative; display: flex; align-items: center; gap: 8px; margin-bottom: 9px; padding-bottom: 8px; border: 0; }
 .cockpit-panel-head::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 6px; background: var(--cockpit-line); pointer-events: none; clip-path: polygon(0 0,39% 0,42% 70%,76% 70%,79% 0,100% 0,100% 19%,81% 19%,78% 89%,40% 89%,37% 19%,0 19%); }
@@ -252,3 +252,26 @@
   .cockpit-tone-map { height: 40px; }
   .cockpit .cockpit-context-panels { grid-template-columns: 1fr; }
 }
+
+/* Device-sampled output and positions. Values never animate between samples. */
+.cockpit-detail-heading { display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:18px; }
+.cockpit .cockpit-detail-heading h3 { margin:0;color:var(--cockpit-ink);font:500 11px/1.5 var(--font-accent,system-ui); }
+.cockpit-detail-heading>.cockpit-value,.cockpit-detail-note,.cockpit-detail-empty { color:var(--cockpit-type);font:10px/1.6 var(--font-base,system-ui); }
+.cockpit-detail-note { margin:6px 0 10px; }
+.cockpit-voice-list,.cockpit-track-list { max-height:360px;overflow:auto;overscroll-behavior:contain;padding-right:8px;margin-top:10px; }
+.cockpit-voice-row,.cockpit-track-row { padding:10px 0;border-top:1px solid var(--cockpit-dim); }
+.cockpit-voice-heading,.cockpit-voice-footer,.cockpit-track-heading,.cockpit-track-footer { display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap; }
+.cockpit .cockpit-voice-heading .cockpit-value,.cockpit .cockpit-track-heading .cockpit-value { font-size:11px;color:var(--cockpit-type); }
+.cockpit .cockpit-voice-heading>.cockpit-value:first-child,.cockpit .cockpit-track-heading>.cockpit-value:first-child { color:var(--cockpit-ink); }
+.cockpit .cockpit-voice-footer .cockpit-value,.cockpit .cockpit-track-footer .cockpit-value { color:var(--cockpit-type);font-size:9px;line-height:1.6; }
+.cockpit-voice-graph { display:block;width:100%;height:52px;margin:6px 0; }
+.cockpit-voice-graph .cockpit-axis-label { fill:var(--cockpit-type);font-size:8px; }
+.cockpit-output-fill,.cockpit-playhead-fill { fill:var(--cockpit-ink); }
+.cockpit-output-fill.is-upper { fill:none;stroke:var(--cockpit-ink);stroke-width:1; }
+.cockpit-output-bend,.cockpit-playhead-needle { fill:none;stroke:var(--cockpit-ink);stroke-width:2; }
+.cockpit-voice-row.is-reserved .cockpit-output-fill,.cockpit-voice-row.is-retiring .cockpit-output-fill { fill:none;stroke:var(--cockpit-ink);stroke-width:1; }
+.cockpit-track-graph { display:block;width:100%;height:22px;margin:4px 0; }
+.cockpit-track-row.is-selected { border-left:2px solid var(--cockpit-ink);padding-left:10px; }
+.cockpit-track-row.is-muted .cockpit-playhead-fill { fill:var(--cockpit-dim); }
+.cockpit-track-row.is-recording .cockpit-playhead-needle { stroke-width:3; }
+.cockpit-voice-row[hidden],.cockpit-track-row[hidden],.cockpit-detail-empty[hidden] { display:none; }

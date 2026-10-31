@@ -6,7 +6,7 @@ import { STUDIO_MENU, MENU_ROWS } from './studio-menu.js';
 import { createDeviceClient, inspectDeviceBackup } from './device-client.js';
 import { createCore } from './core.js';
 import { createBackupPayloadMigrator } from './backup-migration.js';
-import { decodeCompanionSnapshot, decodeHarmonySnapshot, decodePadMapSnapshot, paintDeviceOLED } from './companion-protocol.js';
+import { decodeCompanionSnapshot, decodeHarmonySnapshot, decodePadMapSnapshot, decodePerformanceSnapshot, paintDeviceOLED } from './companion-protocol.js';
 import { renderCompanionScreen } from './companion-display.js';
 export { renderCompanionScreen };
 import { initializeHelp } from './help.js';
@@ -167,6 +167,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   let previewPayload=null,restoringPreview=null,polling=false,disposed=false,lastGeneration=null,lastRevision='',lastValues=0,readIndex=0,selectedPad=0;
   let configurationPending=false,configurationRetryAt=0;
   let harmonySnapshot=null,harmonyNeedsRefresh=true;
+  let performanceSnapshot=null,performanceReadAt=null,performanceReceivedAt=0,performanceStale=false;
   let resetDialogOpen=false,resetBusy=false,resetDisplayedEpoch=0,resetFocus=null,resetRenderedFrame=null;
   let pollTimer=null,pollEpoch=0,pollConnectionActive=false,hostActive=true,lastConnectionKey='';
   let connectionEpoch=0,connectionIdentity='';
@@ -393,6 +394,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     const nextIdentity=state.connected?[state.identity?.uid,state.identity?.build,state.identity?.schema,state.compatible].join(':'):'';
     const connectionKey=[state.connected,state.connecting,state.compatible,nextIdentity,client.available,updateBusy].join(':');
     if(connectionKey===lastConnectionKey){
+      if(!polling&&performanceSnapshot&&state.busy){performanceSnapshot=null;performanceReceivedAt=0;performanceReadAt=null;performanceStale=true;render();}
       if(area==='client'&&page==='backups')backup?.refresh();
       if(area==='update'||updater?.modalOpen||updateBusy)updater?.refresh();
       return;
@@ -400,6 +402,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     lastConnectionKey=connectionKey;
     if(nextIdentity!==connectionIdentity){
       connectionIdentity=nextIdentity;connectionEpoch++;cockpitContext.reset();snapshot=null;
+      performanceSnapshot=null;performanceReadAt=null;performanceReceivedAt=0;performanceStale=false;
       renderedSnapshot=renderedWeb=renderedOLED=renderedCockpit=null;lastCockpitAt=0;
       labelMapEpoch++;labelsEnabled=false;labelMap=null;labelMapPending=false;labelStableKey='';labelInstrumentRevision=null;
       labelJobStarted=labelJobPolls=labelRetryAt=0;
@@ -601,6 +604,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
         if(!current()||labelMapPending)return;
       }
       const packet=await client.snapshot();if(!current())return;snapshot=decodeCompanionSnapshot(packet.bytes,identity);
+      if(!performanceWanted()){performanceSnapshot=null;performanceReadAt=null;performanceReceivedAt=0;performanceStale=false;}
       if(area==='client'&&page==='diagnostics')diagnostics.snapshot(snapshot,true);
       syncResetConfirmation();
       render(); // Validated musical feedback does not wait for optional settings reads.
@@ -637,17 +641,30 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
         harmonySnapshot=decodeHarmonySnapshot(packet.bytes,identity);harmonyNeedsRefresh=false;
       }
       if(area==='client'&&page==='harmony')harmony.update(harmonySnapshot,{connected:client.connected,supported:client.harmonySupported,writable:client.compatible,controlsReady:harmonyControlsReady()});
+      // One optional, bounded capture shares the normal poll and releases its
+      // staging lease before pad labels. Never synthesize a playhead locally.
+      if(performanceWanted()&&client.performanceSupported&&(performanceReadAt===null||Date.now()<performanceReadAt||Date.now()-performanceReadAt>=200)){
+        performanceReadAt=Date.now();
+        try{
+          const packet=await client.performanceSnapshot();
+          if(!current()||!performanceWanted())return;
+          performanceSnapshot=decodePerformanceSnapshot(packet.bytes,identity);
+          performanceReceivedAt=packet.receivedAt??Date.now();performanceStale=false;
+        }catch(error){performanceStale=true;throw error;}
+      }
       if(labelsWanted())await refreshPadLabels(snapshot);
       if(!current())return;
       lastRevision=signature;render();
-    }catch(error){if(current()&&!/^(?:COMPANION\/1 )?ERR (?:busy|rate|snapshot-active)/.test(error.message))tell(error.message);}
+    }catch(error){if(current()){performanceStale=true;render();if(!/^(?:COMPANION\/1 )?ERR (?:busy|rate|snapshot-active)/.test(error.message))tell(error.message);}}
     finally{polling=false;}
   }
   function cockpitVisible(){return Boolean(client.connected&&snapshot&&hostActive&&!document.hidden&&area==='client'&&page==='board'&&!updater?.usbBusy);}
+  function performanceWanted(){return Boolean(cockpitVisible()&&(snapshot.mpe||snapshot.sequenceOpen||snapshot.engine===2||snapshot.running||snapshot.recording));}
   function wantsHarmonySnapshot(){return Boolean(hostActive&&!document.hidden&&area==='client'&&(page==='harmony'||page==='board'&&snapshot?.engine===6)&&!updater?.usbBusy);}
   function syncCockpitActivity(){
     if(labelMapPending&&!labelsWanted())void cancelPadLabels().catch(error=>{if(client.connected)tell(error.message);});
     const active=cockpitVisible();if(active===cockpitActivity)return;cockpitActivity=active;
+    if(!active){performanceSnapshot=null;performanceReceivedAt=0;performanceReadAt=null;performanceStale=false;}
     cockpitMount.classList.toggle('cockpit-motion-paused',!active);cockpit.setActive?.(active);
   }
   function labelsWanted(){return labelsEnabled&&Boolean(client.connected&&client.padMapSupported&&hostActive&&!document.hidden&&area==='client'&&page==='board'&&!updater?.usbBusy);}
@@ -707,10 +724,12 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   function contextualSnapshot(live){
     const cached=cockpitContext.current;
     const harmony=live.engine===6&&harmonySnapshot?.revision===live.harmonyRevision?harmonySnapshot:null;
-    const revision=`${cached?.revision??0}:${harmony?.revision??'-'}:${live.harmonyRevision}`;
+    const supported=Boolean(client.performanceSupported),stale=performanceStale||Boolean(client.busy&&!polling)||Boolean(performanceSnapshot&&(Date.now()<performanceReceivedAt||Date.now()-performanceReceivedAt>Math.max(1000,appSettings.pollIntervalMs*2)));
+    const performance={supported,available:Boolean(supported&&performanceSnapshot&&!stale),stale,pending:supported&&!performanceSnapshot,snapshot:stale?null:performanceSnapshot};
+    const revision=`${cached?.revision??0}:${harmony?.revision??'-'}:${live.harmonyRevision}:${supported}:${stale}:${performanceSnapshot?.sequence??'-'}`;
     if(live.context?.revision===revision)return live;
     return {...live,context:{revision,
-      expression:cached?.expression??null,pending:cached?.pending??true,harmony}};
+      expression:cached?.expression??null,pending:cached?.pending??true,harmony,performance}};
   }
   function harmonyControlsReady(){
     return Boolean(snapshot&&snapshot.level===0&&!snapshot.resetOpen&&!snapshot.editing&&!snapshot.info&&!snapshot.about&&!snapshot.design&&
@@ -799,7 +818,7 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
     }
     // Header, sidebar and presentation controls keep native keyboard activation.
     // Their Enter/arrow keys must never navigate the physical instrument.
-    if(event.target.closest?.('.companion-topbar,.companion-rail,.board-toolbar,.companion-display-tools')&&['ArrowLeft','ArrowUp','ArrowRight','ArrowDown','Enter',' '].includes(event.key)){
+    if(event.target.closest?.(' .companion-topbar,.companion-rail,.board-toolbar,.companion-display-tools,.cockpit .hud-scroll-region')&&['ArrowLeft','ArrowUp','ArrowRight','ArrowDown','Enter',' '].includes(event.key)){
       event.stopPropagation();return;
     }
     const instrumentKey=/^[0-9qwertyuiop ]$/i.test(event.key)||['ArrowLeft','ArrowUp','ArrowRight','ArrowDown','Enter','Escape'].includes(event.key);
