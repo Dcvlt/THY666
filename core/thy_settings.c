@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "thy_settings.h"
+#include "thy_crc32.h"
 
 /* Keep large codec workspaces in separate call frames under target LTO.
  * Inlining encode/apply into the permanent foreground main frame overlaps
@@ -791,13 +792,37 @@ THY_SETTINGS_NOINLINE int thy_settings_apply(thy_engine *e,const uint8_t *in,siz
     thy_engine_harmony_reset(e);
     ++i->revision; return 1;
 }
-static uint32_t crc_update(uint32_t crc,const uint8_t *data,size_t bytes) {
-    for(size_t n=0;n<bytes;++n) {crc^=data[n]; for(unsigned b=0;b<8u;++b) crc=(crc>>1)^((0u-(crc&1u))&UINT32_C(0xedb88320));}
-    return crc;
-}
-uint32_t thy_settings_crc32(const uint8_t *data,size_t bytes) {return ~crc_update(UINT32_MAX,data,bytes);}
+uint32_t thy_settings_crc32(const uint8_t *data,size_t bytes) {return thy_crc32(data,bytes);}
 static uint32_t get32(const uint8_t *p) {return (uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;}
 static void put32(uint8_t *p,uint32_t n) {for(unsigned b=0;b<4u;++b) p[b]=(uint8_t)(n>>(b*8u));}
+static uint32_t observe_begin(thy_settings_journal *j,unsigned phase) {
+    const thy_settings_observer *o=j->observer;
+    return o&&o->enabled&&*o->enabled&&o->begin&&o->end?o->begin(o->context,phase):0u;
+}
+static void observe_end(thy_settings_journal *j,unsigned phase,uint32_t stamp) {
+    const thy_settings_observer *o=j->observer;
+    if(o&&o->enabled&&*o->enabled&&o->begin&&o->end)o->end(o->context,phase,stamp);
+}
+static uint32_t journal_crc(thy_settings_journal *j,const uint8_t *data,size_t count) {
+    uint32_t stamp=observe_begin(j,THY_SETTINGS_OBSERVE_CRC);
+    uint32_t result=thy_settings_crc32(data,count);
+    observe_end(j,THY_SETTINGS_OBSERVE_CRC,stamp);return result;
+}
+static int journal_validate(thy_settings_journal *j,const uint8_t *data,size_t count,uint16_t scales) {
+    uint32_t stamp=observe_begin(j,THY_SETTINGS_OBSERVE_VALIDATE);
+    int result=thy_settings_validate(data,count,scales);
+    observe_end(j,THY_SETTINGS_OBSERVE_VALIDATE,stamp);return result;
+}
+static int journal_program(thy_settings_journal *j,uint32_t offset,const uint8_t word[4]) {
+    uint32_t stamp=observe_begin(j,THY_SETTINGS_OBSERVE_PROGRAM);
+    int result=j->io.program(j->io.context,offset,word);
+    observe_end(j,THY_SETTINGS_OBSERVE_PROGRAM,stamp);return result;
+}
+static int journal_erase(thy_settings_journal *j,unsigned sector) {
+    uint32_t stamp=observe_begin(j,THY_SETTINGS_OBSERVE_ERASE);
+    int result=j->io.erase(j->io.context,sector);
+    observe_end(j,THY_SETTINGS_OBSERVE_ERASE,stamp);return result;
+}
 static int read_slot(thy_settings_journal *j,unsigned slot) {
     if(!j->io.read(j->io.context,slot*THY_SETTINGS_SLOT_BYTES,j->record,THY_SETTINGS_HEADER_BYTES)) return -1;
     if(get32(j->record)!=UINT32_C(0x36594854) || get32(j->record+4)!=UINT32_C(0x31535436)) return 0;
@@ -814,12 +839,12 @@ static int read_slot(thy_settings_journal *j,unsigned slot) {
          * writes; never erase it just because this firmware cannot decode it.
          * Corrupt/torn records retain ordinary fallback/recovery semantics. */
         uint8_t block[32]; uint32_t expected=get32(j->record+20);
-        put32(j->record+20,0u); uint32_t crc=crc_update(UINT32_MAX,j->record,32u);
+        put32(j->record+20,0u); uint32_t crc=thy_crc32_update(UINT32_MAX,j->record,32u);
         put32(j->record+20,expected);
         for(uint32_t at=0u;at<bytes;) {
             size_t count=bytes-at<sizeof block?(size_t)(bytes-at):sizeof block;
             if(!j->io.read(j->io.context,slot*THY_SETTINGS_SLOT_BYTES+32u+at,block,count)) return -1;
-            crc=crc_update(crc,block,count); at+=(uint32_t)count;
+            crc=thy_crc32_update(crc,block,count); at+=(uint32_t)count;
         }
         return ~crc==expected?2:0;
     }
@@ -827,7 +852,7 @@ static int read_slot(thy_settings_journal *j,unsigned slot) {
     /* CRC covers immutable header (including version, length, generation),
      * and payload. The CRC word itself is zero while calculating. */
     uint32_t crc=get32(j->record+20); put32(j->record+20,0u);
-    uint32_t actual=thy_settings_crc32(j->record,32u+bytes); put32(j->record+20,crc);
+    uint32_t actual=journal_crc(j,j->record,32u+bytes); put32(j->record+20,crc);
     if(crc!=actual) return 0;
     if(version<1u || version>THY_SETTINGS_VERSION) return 2;
     return (uint32_t)thy_settings_payload_version(j->record+32u,bytes)==version ? 1 : 0;
@@ -844,7 +869,7 @@ THY_SETTINGS_NOINLINE int thy_settings_journal_init(thy_settings_journal *j,cons
             continue;
         }
         uint32_t bytes=get32(j->record+12), generation=get32(j->record+16);
-        if(!thy_settings_validate(j->record+32u,bytes,scales)) {++j->rejected; continue;}
+        if(!journal_validate(j,j->record+32u,bytes,scales)) {++j->rejected; continue;}
         if(j->newest_slot==THY_SETTINGS_NONE || (int32_t)(generation-j->generation)>0) {
             j->newest_slot=slot; j->generation=generation; j->payload_bytes=(uint16_t)bytes;
         }
@@ -855,7 +880,7 @@ THY_SETTINGS_NOINLINE int thy_settings_journal_init(thy_settings_journal *j,cons
     j->loaded=1u; j->status=THY_SETTINGS_SAVED;
     j->loaded_version=(uint8_t)get32(j->record+8);
     j->migration_pending=j->loaded_version!=THY_SETTINGS_VERSION;
-    j->saved_crc=thy_settings_crc32(j->record+32u,j->payload_bytes);
+    j->saved_crc=journal_crc(j,j->record+32u,j->payload_bytes);
     /* A rejected recognizable record means a previous save was interrupted
      * or damaged. Older valid records left by rotation do not imply recovery. */
     j->recovered=j->rejected!=0u;
@@ -877,7 +902,7 @@ THY_SETTINGS_NOINLINE void thy_settings_journal_task(thy_settings_journal *j,con
     if(j->writing) {
         if(!idle) return;
         if(j->erase_pending) {
-            if(!j->io.erase(j->io.context,j->write_slot/THY_SETTINGS_SLOTS_PER_SECTOR)) {fail(j); return;}
+            if(!journal_erase(j,j->write_slot/THY_SETTINGS_SLOTS_PER_SECTOR)) {fail(j); return;}
             j->erase_pending=0u; if(!blank_slot(j,j->write_slot)) fail(j); return;
         }
         uint32_t at=j->write_offset;
@@ -886,21 +911,24 @@ THY_SETTINGS_NOINLINE void thy_settings_journal_task(thy_settings_journal *j,con
         if(at>=j->write_bytes) at=28u;
         uint8_t verify[4]; const uint8_t *word=j->record+at;
         uint32_t offset=j->write_slot*THY_SETTINGS_SLOT_BYTES+at;
-        if(!j->io.program(j->io.context,offset,word) || !j->io.read(j->io.context,offset,verify,4u)) {fail(j); return;}
+        if(!journal_program(j,offset,word) || !j->io.read(j->io.context,offset,verify,4u)) {fail(j); return;}
         for(unsigned n=0;n<4u;++n) if(verify[n]!=word[n]) {fail(j); return;}
         if(at==28u) {
             /* Full readback, CRC and semantic verification after commit. */
-            if(read_slot(j,j->write_slot)!=1 || !thy_settings_validate(j->record+32u,j->payload_bytes,e->state.scale_count)) {fail(j); return;}
+            if(read_slot(j,j->write_slot)!=1 || !journal_validate(j,j->record+32u,j->payload_bytes,e->state.scale_count)) {fail(j); return;}
             j->newest_slot=j->write_slot; j->generation=get32(j->record+16);
-            j->saved_crc=thy_settings_crc32(j->record+32u,j->payload_bytes);
+            j->saved_crc=journal_crc(j,j->record+32u,j->payload_bytes);
             j->loaded_version=THY_SETTINGS_VERSION; j->migration_pending=0u;
             j->loaded=1u; j->writing=0u; j->observed=0u; ++j->saves; j->status=THY_SETTINGS_SAVED;
         } else j->write_offset=at+4u;
         return;
     }
     size_t bytes=0;
-    if(!thy_settings_encode(e,j->record+32u,THY_SETTINGS_PAYLOAD_MAX,&bytes)) {fail(j); return;}
-    uint32_t crc=thy_settings_crc32(j->record+32u,bytes);
+    uint32_t stamp=observe_begin(j,THY_SETTINGS_OBSERVE_ENCODE);
+    int encoded=thy_settings_encode(e,j->record+32u,THY_SETTINGS_PAYLOAD_MAX,&bytes);
+    observe_end(j,THY_SETTINGS_OBSERVE_ENCODE,stamp);
+    if(!encoded) {fail(j); return;}
+    uint32_t crc=journal_crc(j,j->record+32u,bytes);
     if(j->loaded && !j->migration_pending && crc==j->saved_crc) {j->observed=0u; j->status=THY_SETTINGS_SAVED; return;}
     if(!j->observed || crc!=j->observed_crc) {j->observed=1u; j->observed_crc=crc; j->changed_ms=now; j->status=THY_SETTINGS_PENDING; return;}
     if(!idle || (uint32_t)(now-j->changed_ms)<1500u) return;
@@ -920,7 +948,7 @@ THY_SETTINGS_NOINLINE void thy_settings_journal_task(thy_settings_journal *j,con
     put32(j->record,UINT32_C(0x36594854)); put32(j->record+4,UINT32_C(0x31535436));
     put32(j->record+8,THY_SETTINGS_VERSION); put32(j->record+12,(uint32_t)bytes);
     put32(j->record+16,j->generation+1u); put32(j->record+28,UINT32_C(0x51afe666));
-    put32(j->record+20,thy_settings_crc32(j->record,32u+bytes));
+    put32(j->record+20,journal_crc(j,j->record,32u+bytes));
     j->payload_bytes=(uint16_t)bytes; j->write_bytes=(32u+(uint32_t)bytes+3u)&~3u;
     for(unsigned n=32u+(unsigned)bytes;n<j->write_bytes;++n) j->record[n]=255u;
     j->write_offset=0u; j->writing=1u; j->status=THY_SETTINGS_SAVING;
@@ -933,7 +961,7 @@ int thy_settings_journal_recall_song(thy_settings_journal *j,thy_engine *e)
     uint32_t bytes=get32(j->record+12);
     size_t parameters=parameter_bytes(get32(j->record+8));
     if(bytes<parameters ||
-        !thy_settings_validate(j->record+32u,bytes,e->state.scale_count)) return 0;
+        !journal_validate(j,j->record+32u,bytes,e->state.scale_count)) return 0;
     int result=thy_engine_sequencer_song_import(e,j->record+32u+parameters,bytes-parameters);
     if(result!=THY_OK) return 0;
     j->observed=0u; return 1;

@@ -14,6 +14,43 @@
 #define THY_COMPANION_MIN_CAPTURE_MS 50u
 #define THY_COMPANION_PAD_MAP_BYTES 1672u
 #define THY_COMPANION_PAD_MAP_RECORDS 136u
+#define THY_COMPANION_PERFORMANCE_VERSION 1u
+#define THY_COMPANION_PERFORMANCE_BYTES 1024u
+#define THY_COMPANION_PERFORMANCE_VOICES 160u
+#define THY_COMPANION_PERFORMANCE_TRACKS 520u
+#define THY_COMPANION_PERFORMANCE_RECORD_BYTES 24u
+/* Optional THYPER1 v1. Read-only frozen performance projection, sharing the
+ * existing caller-owned staging. Header20=sequence revision,24=transport
+ * generation,28=PPQN:u16,30=bend range,31=manager channel(255 unavailable).
+ * Global136=position:u64,144=clock generation:u32,148=tempo milliBPM:u32,
+ * 152=flags,153=transport state,154=clock source,155=clock status,
+ * 156=capture state,157=capture track(255 off),158=selected track,159=members.
+ * Flags: MPE available/enabled/upper zone, transport suspended, clock ready.
+ * 15 voice records at160: state/channel/pitch/physical pad/logical position/
+ * destinations/sounding destinations/flags/velocity/output/sent primary/sent
+ * upper/sent bend:u16/desired primary/desired upper/desired bend:u16/reference/
+ * modifier pad(255 none)/gesture identity:u32. Flags: pending attack, sustained,
+ * pending expression, glide modifier. Free records are zero with identifiers
+ * channel,pitch,pad,logical,reference,modifier set255. Sent values mean accepted
+ * into the core MIDI FIFO, not acknowledged by a receiver or physical sink.
+ * 21 track records at520: loop start/length/playhead/grid ticks/generation:u32,
+ * flags/pending launch/processor/capture state:u8. Flags: created,enabled,
+ * running,muted,one-shot,valid position. Uncreated records are zero. Playheads
+ * are actual transport positions; reading never advances a clock/scheduler. */
+enum thy_companion_performance_flag {
+    THY_COMPANION_PERF_MPE_AVAILABLE=1u, THY_COMPANION_PERF_MPE_ENABLED=2u,
+    THY_COMPANION_PERF_UPPER_ZONE=4u, THY_COMPANION_PERF_SUSPENDED=8u,
+    THY_COMPANION_PERF_CLOCK_READY=16u
+};
+enum thy_companion_voice_flag {
+    THY_COMPANION_VOICE_PENDING=1u, THY_COMPANION_VOICE_SUSTAINED=2u,
+    THY_COMPANION_VOICE_EXPRESSION_PENDING=4u, THY_COMPANION_VOICE_MODIFIER=8u
+};
+enum thy_companion_track_flag {
+    THY_COMPANION_TRACK_CREATED=1u, THY_COMPANION_TRACK_ENABLED=2u,
+    THY_COMPANION_TRACK_RUNNING=4u, THY_COMPANION_TRACK_MUTED=8u,
+    THY_COMPANION_TRACK_ONESHOT=16u, THY_COMPANION_TRACK_POSITION=32u
+};
 enum thy_companion_pad_kind {
     THY_COMPANION_PAD_HOLE, THY_COMPANION_PAD_NOTE, THY_COMPANION_PAD_CHORD,
     THY_COMPANION_PAD_CONTROL, THY_COMPANION_PAD_STEP
@@ -107,6 +144,7 @@ int thy_companion_service(thy_companion *,const thy_engine *,uint32_t now);
  * companion caps | status | snapshot | get <seq> <offset> <count1..128>
  * companion release <seq> | pad <logical0..95>
  * companion harmony snapshot (optional512-byte cached Harmony projection)
+ * companion performance snapshot (optional1024-byte runtime-only projection)
  * companion pad-map [known-map-key] (optional1672-byte physical pad labels;
  * pending replies include the reserved seq for cancellation through RELEASE;
  * unchanged replies create no staging lease)

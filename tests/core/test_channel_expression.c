@@ -275,6 +275,35 @@ static int transport_blocked_keys_exclude_suppressed_fresh_and_overrun_inputs(vo
     CHECK(release(0)==THY_OK);drain();CHECK(press(0,60,2,7,flags(2,0))==THY_OK);
     CHECK(!expression.excluded_destinations[0]);return 1;
 }
+static int empty_transport_bitmap_preserves_all_expression_and_ownership(void)
+{
+    init();uint8_t bitmap[2u*16u*128u/8u]={0};
+    int16_t notes[]={60,64,67};thy_shape shape={.strum_ms=10};
+    CHECK(thy_core_press_shaped(&core,0,notes,3,0,2,7,96,&shape)==THY_OK);
+    CHECK(thy_channel_expression_capture(&expression,0,flags(2,1))==THY_OK);
+    CHECK(thy_channel_expression_pressure_axes(&expression,0,90,110)==THY_OK);
+    thy_channel_expression_usb_reset(&expression); /* Exclusions survive an empty map. */
+    CHECK(press(1,62,3,7,flags(2,2))==THY_OK);
+    CHECK(thy_channel_expression_pressure_axes(&expression,1,45,70)==THY_OK);
+    CHECK(thy_channel_expression_service(&expression)==THY_OK);
+    CHECK(core.pending_keys!=0u&&expression.excluded_destinations[0]==3u&&
+        expression.excluded_destinations[1]==0u);
+    saved=expression;
+    static thy_core before;before=core;
+    for(unsigned repeat=0;repeat<8u;++repeat)
+        thy_channel_expression_usb_blocked(&expression,bitmap,sizeof bitmap);
+    CHECK(!memcmp(&expression,&saved,sizeof expression));
+    CHECK(!memcmp(&core,&before,sizeof core));
+    CHECK(thy_core_advance(&core,30u)==THY_OK);drain();
+    CHECK(thy_core_sustain(&core,THY_ROUTE_USB0|THY_ROUTE_USB1|THY_ROUTE_DIN,2u,1)==THY_OK);
+    CHECK(release(0)==THY_OK);
+    CHECK(thy_core_deferred(&core,thy_core_key(THY_USB0,2u,60u)));
+    saved=expression;before=core;
+    thy_channel_expression_usb_blocked(&expression,bitmap,sizeof bitmap);
+    CHECK(!memcmp(&expression,&saved,sizeof expression));
+    CHECK(!memcmp(&core,&before,sizeof core));
+    return 1;
+}
 int main(void)
 {
     if(!cold_default_and_validation()||!max_pressure_and_captured_routes()||
@@ -283,6 +312,7 @@ int main(void)
         !activated_prefix_and_pending_cancellation()||!bounded_fair_service_under_continuous_changes()||
         !rank_survives_many_retriggers()||!generated_attack_commit_and_external_panic()||
         !usb_epoch_excludes_old_contributors_but_preserves_din()||!usb_epoch_marks_both_cables_and_pending_strums()||
-        !transport_blocked_keys_exclude_suppressed_fresh_and_overrun_inputs())return 1;
-    printf("Channel expression: 13 scenarios passed (%u assertions; workspace %zu bytes)\n",assertions,sizeof expression);return 0;
+        !transport_blocked_keys_exclude_suppressed_fresh_and_overrun_inputs()||
+        !empty_transport_bitmap_preserves_all_expression_and_ownership())return 1;
+    printf("Channel expression: 14 scenarios passed (%u assertions; workspace %zu bytes)\n",assertions,sizeof expression);return 0;
 }

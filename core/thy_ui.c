@@ -51,9 +51,22 @@ static void pixel(uint8_t *out, unsigned x, unsigned y, int enabled)
 static void rectangle(uint8_t *out, unsigned x, unsigned y, unsigned w,
     unsigned h, int enabled)
 {
-    for (unsigned dy = 0; dy < h && y + dy < THY_UI_HEIGHT; ++dy)
-        for (unsigned dx = 0; dx < w && x + dx < THY_UI_WIDTH; ++dx)
-            pixel(out, x + dx, y + dy, enabled);
+    if (!w || !h || x >= THY_UI_WIDTH || y >= THY_UI_HEIGHT) return;
+    if (w > THY_UI_WIDTH - x) w = THY_UI_WIDTH - x;
+    if (h > THY_UI_HEIGHT - y) h = THY_UI_HEIGHT - y;
+    const unsigned end = y + h, last_page = (end - 1u) / 8u;
+    /* One mask per page preserves pixels outside the clipped rectangle.
+     * Work follows the native page bytes instead of visiting every pixel. */
+    for (unsigned page = y / 8u; page <= last_page; ++page) {
+        unsigned low = page == y / 8u ? y % 8u : 0u;
+        unsigned high = page == last_page ? (end - 1u) % 8u + 1u : 8u;
+        uint8_t mask = (uint8_t)((0xffu << low) & (0xffu >> (8u - high)));
+        uint8_t *row = out + page * THY_UI_WIDTH + x;
+        if (enabled)
+            for (unsigned dx = 0; dx < w; ++dx) row[dx] |= mask;
+        else
+            for (unsigned dx = 0; dx < w; ++dx) row[dx] &= (uint8_t)~mask;
+    }
 }
 
 static void text(uint8_t *out, unsigned x, unsigned y, const char *label,
@@ -63,9 +76,25 @@ static void text(uint8_t *out, unsigned x, unsigned y, const char *label,
     while (*label && limit-- && x + 4u <= THY_UI_WIDTH) {
         uint8_t columns[4];
         glyph(*label++, columns);
-        for (unsigned dx = 0; dx < 4u; ++dx)
-            for (unsigned dy = 0; dy < 5u; ++dy)
-                if (columns[dx] & (1u << dy)) pixel(out, x + dx, y + dy, !inverse);
+        if (x <= THY_UI_WIDTH - 4u && y < THY_UI_HEIGHT) {
+            unsigned page = y / 8u, shift = y % 8u;
+            uint8_t *row = out + page * THY_UI_WIDTH + x;
+            for (unsigned dx = 0; dx < 4u; ++dx) {
+                uint16_t bits = (uint16_t)((unsigned)columns[dx] << shift);
+                if (inverse) row[dx] &= (uint8_t)~bits;
+                else row[dx] |= (uint8_t)bits;
+                if ((bits >> 8u) && page + 1u < THY_UI_HEIGHT / 8u) {
+                    if (inverse) row[THY_UI_WIDTH + dx] &= (uint8_t)~(bits >> 8u);
+                    else row[THY_UI_WIDTH + dx] |= (uint8_t)(bits >> 8u);
+                }
+            }
+        } else {
+            /* Retain the unsigned coordinate-wrap behavior of the public
+             * drawing API, even for callers outside the visible panel. */
+            for (unsigned dx = 0; dx < 4u; ++dx)
+                for (unsigned dy = 0; dy < 5u; ++dy)
+                    if (columns[dx] & (1u << dy)) pixel(out, x + dx, y + dy, !inverse);
+        }
         x += 5u;
     }
 }

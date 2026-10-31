@@ -4,7 +4,7 @@
  */
 import { inspectDeviceBackup } from './device-client.js';
 import { createUpdaterClient, consumeUpdaterHandoff, UPDATE_HELPER_PROTOCOL, UPDATE_PACKAGE_MAX_BYTES } from './updater-client.js';
-import { createUpdateIcon } from './updater-art.js';
+import { createUpdateIcon, paintUpdateProgress as paintProgress, restoreProgressCopy } from './updater-art.js';
 import { createUpdaterLayout } from './updater-layout.js';
 import { UPDATE_HEALTH_CHECKS, checkUpdateIdentity, checkUpdateHealth } from './updater-checks.js';
 export { createUpdaterClient, UPDATE_HELPER_PROTOCOL, UPDATE_PACKAGE_MAX_BYTES };
@@ -176,7 +176,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
       supported && currentDevice() && (currentBackup() || unavailable.checked === true);
   }
   function preservationResolved() { return !preservationRequested || ['verified','declined'].includes(restorationState); }
-  function successfulInstallation() { return applicationVerification?.verified===true&&!operation?.simulation&&preservationResolved(); }
+  function successfulInstallation() { return applicationVerification?.verified===true&&applicationVerification.healthFresh!==false&&!operation?.simulation&&preservationResolved(); }
   function restoreIdentity() {
     if(!backup?.bytes)throw new Error('The retained configuration backup is unavailable. Keep the downloaded file.');
     checkUpdateIdentity(operation,client.identity);
@@ -187,7 +187,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
     return info;
   }
   function mayRestore() {
-    if(disposed||step!==3||!preservationRequested||!applicationVerification?.verified||
+    if(disposed||step!==3||!preservationRequested||!applicationVerification?.verified||applicationVerification.healthFresh===false||
       operation?.state!=='awaiting-verification'||operation.simulation||operation.firmware_kind==='stock'||
       working||locked||client.busy||restorationState==='verified'||restorationState==='declined'||typeof client.restoreBackup!=='function')return false;
     try{return !backupPreparation?.error&&Boolean(restoreIdentity());}catch{return false;}
@@ -205,16 +205,6 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
     if(focus){
       headings[step].focus({preventScroll:true});
       stages[step].scrollIntoView?.({block:'start',behavior:doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
-    }
-  }
-  function paintProgress(value,{state='idle',completed=0,total=0,message=''}={}) {
-    const ratio=total>0?Math.min(1,Math.max(0,completed/total)):null;
-    value.box.hidden=state==='idle';value.box.dataset.state=state;value.copy.textContent=message;
-    if(ratio===null)value.box.removeAttribute('aria-valuenow');else value.box.setAttribute('aria-valuenow',String(Math.round(ratio*100)));
-    value.box.setAttribute('aria-valuetext',message);
-    for(const segment of value.art.querySelectorAll('[data-segment]')){
-      const index=Number(segment.getAttribute('data-segment'));
-      segment.setAttribute('data-state',ratio!==null&&index<Math.floor(ratio*30)?'done':state==='running'?'busy':'pending');
     }
   }
   async function loadReleases(){
@@ -288,7 +278,8 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
       } else applicationVerification = { verified: false, state: 'unavailable', scope: 'running-application-build-and-uid' };
     }
     applicationSummary.hidden = operation?.state !== 'awaiting-verification';
-    applicationSummary.textContent = applicationVerification?.state === 'simulation' ? 'SIMULATION does not verify a physical board. A real installation still needs its own checks.' : applicationVerification?.verified ?
+    applicationSummary.textContent = applicationVerification?.state === 'simulation' ? 'SIMULATION does not verify a physical board. A real installation still needs its own checks.' : applicationVerification?.healthFresh===false&&applicationVerification?.verified ?
+      'The board and firmware matched before restoration. Recheck current instrument health before continuing.' : applicationVerification?.verified ?
       'The intended board, firmware and basic driver reports passed. This is not raw flash readback; test normal playing before relying on the installation.' :
       applicationVerification?.state === 'mismatch' ? 'The connected application build or board UID differs from this update. Keep the package and backup, and inspect the running device before considering another installation.' :
       applicationVerification?.state === 'unavailable' ? 'The running application identity cannot be matched because the full expected build or target UID is unavailable. Inspect device identity and behavior before considering another installation.' :
@@ -336,13 +327,14 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
     restoration.dataset.state=restorationState;
     restorationSummary.textContent=restorationState==='verified'?'Your configuration was restored, saved and re-exported. The complete saved payload matches the independently checked restore payload.':restorationState==='declined'?'You chose to keep the current settings. The downloaded backup remains available for a later explicit restore.':restorationState==='running'?'Restoring your configuration and checking the saved readback. Keep the board connected and every pad released.':restorationState==='failed'?`${restorationError} No restore retry was sent. Keep the downloaded backup and inspect the current device state before another explicit attempt.`:firmwareVerified?backupPreparation?.error?`Firmware checks passed. ${backupPreparation.error} Keep the original backup; no restore was sent.`:backupPreparation?.migrated?`Firmware checks passed. Your settings V${backupPreparation.sourceSettingsVersion} backup was checked and converted to V${backupPreparation.settingsVersion} off-device. Review before restoring; the original file is unchanged.`:'Firmware checks passed. Restore the saved configuration next, or explicitly choose to keep the current settings.':'First verify the intended board and firmware. Your retained backup will not be written before those checks pass.';
     const restoreMatch=/Sending backup · ([0-9]+)\/([0-9]+) bytes/.exec(client.status?.message||'');
-    paintProgress(restoreProgress,{state:restorationState==='running'?'running':restorationState==='verified'?'done':restorationState==='failed'?'failure':'idle',completed:restorationState==='verified'?1:Number(restoreMatch?.[1]||0),total:restorationState==='verified'?1:Number(restoreMatch?.[2]||0),message:restorationSummary.textContent});
-    completion.hidden=!operation;completion.dataset.state=firmwareVerified&&restorationState==='verified'?'restored':firmwareVerified?'verified':complete&&operation?.firmware_kind==='stock'?'stock-complete':complete?'finished':operation?.state==='failed'?'failure':'busy';
+    const trackedRestore=restorationState==='running'?client.status?.restoreProgress:null;
+    paintProgress(restoreProgress,{state:restorationState==='running'?'running':restorationState==='verified'?'done':restorationState==='failed'?'failure':'idle',completed:restorationState==='verified'?1:trackedRestore?.completed??Number(restoreMatch?.[1]||0),total:restorationState==='verified'?1:trackedRestore?.total??Number(restoreMatch?.[2]||0),message:trackedRestore?restoreProgressCopy(trackedRestore):restorationSummary.textContent});
+    completion.hidden=!operation;completion.dataset.state=restorationState==='failed'?'failure':firmwareVerified&&restorationState==='verified'?'restored':firmwareVerified?'verified':complete&&operation?.firmware_kind==='stock'?'stock-complete':complete?'finished':operation?.state==='failed'?'failure':'busy';
     completion.dataset.identity=operation?.firmware_kind==='stock'?'other':'thy666';logoArt.dataset.state=completion.dataset.state;logoArt.dataset.identity=completion.dataset.identity;
-    completionTitle.textContent=firmwareVerified?(restorationState==='verified'?'Settings Restored':'Firmware verified'):complete?(operation.simulation?'Simulation complete':operation.firmware_kind==='stock'?'Update finished':'Firmware installed'):operation?.state==='failed'?'Update needs attention':'Installing firmware';
-    completionCopy.textContent=verified?(restorationState==='verified'?'Firmware checks passed and the saved configuration matches your backup. Test normal playing and persistence before relying on the installation.':restorationState==='declined'?'Firmware checks passed. You chose to keep the current settings; your backup was not restored.':'Your TheoryBoard passed the basic checks. Ready to make music.'):firmwareVerified&&preservationRequested?'The firmware is healthy. Configuration restoration is still pending.':operation?.simulation?(complete?'Practice complete. No physical firmware has been installed or verified.':'Practicing the update workflow. No physical board is accessed.'):operation?.firmware_kind==='stock'&&complete?'The original firmware transfer checks passed. It does not provide THY666 telemetry; check normal startup and playing yourself.':complete?'The transfer checks passed. Reconnect to verify the running instrument.':'Keep USB connected and the updater open.';
+    completionTitle.textContent=restorationState==='failed'?'Settings need attention':firmwareVerified?(restorationState==='verified'?'Settings Restored':'Firmware verified'):complete?(operation.simulation?'Simulation complete':operation.firmware_kind==='stock'?'Update finished':'Firmware installed'):operation?.state==='failed'?'Update needs attention':'Installing firmware';
+    completionCopy.textContent=restorationState==='failed'?'The firmware was verified before restoration. Current instrument health and saved settings are not confirmed. Keep your backup and inspect the reports below.':verified?(restorationState==='verified'?'Firmware checks passed and the saved configuration matches your backup. Test normal playing and persistence before relying on the installation.':restorationState==='declined'?'Firmware checks passed. You chose to keep the current settings; your backup was not restored.':'Your TheoryBoard passed the basic checks. Ready to make music.'):firmwareVerified&&preservationRequested?'Firmware checks passed before restoration. Restore your configuration, then recheck the instrument.':operation?.simulation?(complete?'Practice complete. No physical firmware has been installed or verified.':'Practicing the update workflow. No physical board is accessed.'):operation?.firmware_kind==='stock'&&complete?'The original firmware transfer checks passed. It does not provide THY666 telemetry; check normal startup and playing yourself.':complete?'The transfer checks passed. Reconnect to verify the running instrument.':'Keep USB connected and the updater open.';
     if(operation&&completion.parentNode!==bodies[step===2?2:3])bodies[step===2?2:3].prepend(completion);
-    verify.hidden=!complete||operation?.firmware_kind==='stock'||Boolean(operation?.simulation)||firmwareVerified;verify.disabled=busy||locked||verifying||client.available===false;
+    verify.hidden=!complete||operation?.firmware_kind==='stock'||Boolean(operation?.simulation)||(firmwareVerified&&applicationVerification.healthFresh!==false);verify.disabled=busy||locked||verifying||client.available===false;
     verify.textContent=connected?'Run basic checks':'Connect and verify';companion.hidden=!verified;
     if(operation?.firmware_kind==='stock')applicationSummary.hidden=true;
     // The logo/result block owns the heading once installation begins.
@@ -512,26 +504,45 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
       say(helperSimulation?'Simulation only. No physical board is accessed.':'');
     }
   }
+  async function readApplicationHealth({settlePads=false}={}){
+    let checking='identity';
+    try{
+      if(!client.connected)throw new Error('Connect the board to check instrument health.');
+      const identity={...client.identity};
+      health.set('identity',{state:'busy',message:'Comparing the running firmware…'});refresh();
+      health.set('identity',{state:'pass',message:checkUpdateIdentity(operation,identity)});
+      for(const id of ['status','io','settings','display']){
+        checking=id;health.set(id,{state:'busy',message:'Reading the board…'});refresh();
+        checkUpdateIdentity(operation,client.identity);
+        let remaining=settlePads&&id==='io'?20:0;
+        for(;;){
+          const report=await client.telemetry(id);
+          if(disposed)throw new Error('The verification page was closed.');
+          try{
+            health.set(id,{state:'pass',message:checkUpdateHealth(id,report,operation,client.backupIdentity)});refresh();break;
+          }catch(error){
+            if(error.code!=='pads-settling'||remaining--<=0)throw error;
+            health.set(id,{state:'busy',message:'Pads settling · keep all pads released'});refresh();
+            await new Promise(resolve=>setTimer(resolve,100));
+            if(disposed)throw new Error('The verification page was closed.');
+            checkUpdateIdentity(operation,client.identity);
+            if(!client.connected)throw new Error('The board disconnected during pad settling.');
+          }
+        }
+      }
+      checkUpdateIdentity(operation,client.identity);
+      if(!client.connected)throw new Error('The board disconnected before verification finished.');
+      return {verified:true,healthFresh:true,state:'matched',scope:'basic-installation-health',actualBuild:identity.build,actualUID:identity.uid};
+    }catch(error){healthError=error.message;health.set(checking,{state:'failure',message:error.message});throw error;}
+  }
   async function verifyInstallation(){
     if(!operation||operation.state!=='awaiting-verification'||operation.simulation||operation.firmware_kind==='stock'||verifying)return;
     await run(async()=>{
       verifying=true;health.clear();healthError='';applicationVerification=null;backupPreparation=null;
-      let checking='identity';
       try{
         if(!client.connected)await connectApplication();
         if(!client.connected)throw new Error('Choose your THY666 board to complete verification.');
-        const identity={...client.identity};
-        health.set('identity',{state:'busy',message:'Comparing the running firmware…'});refresh();
-        const message=checkUpdateIdentity(operation,identity);health.set('identity',{state:'pass',message});
-        for(const id of ['status','io','settings','display']){
-          checking=id;health.set(id,{state:'busy',message:'Reading the board…'});refresh();
-          checkUpdateIdentity(operation,client.identity);
-          const report=await client.telemetry(id);if(disposed)return;
-          const message=checkUpdateHealth(id,report,operation,client.backupIdentity);health.set(id,{state:'pass',message});refresh();
-        }
-        checkUpdateIdentity(operation,client.identity);
-        if(!client.connected)throw new Error('The board disconnected before verification finished.');
-        applicationVerification={verified:true,state:'matched',scope:'basic-installation-health',actualBuild:identity.build,actualUID:identity.uid};
+        applicationVerification=await readApplicationHealth();
         if(preservationRequested&&backup?.bytes){
           try{
             const info=restoreIdentity();
@@ -544,7 +555,7 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
           }catch(error){backupPreparation={error:error.message};}
         }
         say(backupPreparation?.error?'Firmware checks passed. Backup preparation needs attention; no restore was sent.':preservationRequested&&!preservationResolved()?'Firmware checks passed. Review and restore your saved configuration, or explicitly keep the current settings.':'Firmware verified. The firmware identity and basic health checks passed.',preservationRequested&&!preservationResolved()?'info':'success');
-      }catch(error){healthError=error.message;health.set(checking,{state:'failure',message:error.message});applicationVerification={verified:false,state:'failed',scope:'basic-installation-health'};throw error;}
+      }catch(error){applicationVerification={verified:false,healthFresh:false,state:'failed',scope:'basic-installation-health'};throw error;}
       finally{verifying=false;}
     });
   }
@@ -563,8 +574,12 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
     if(confirmationKind!=='restore'||!mayRestore()){closeConfirmation();return;}
     const expectedOperation=operation.operation_id,retained=backup;
     try{restoreIdentity();}catch(error){closeConfirmation();say(error.message,'error');return;}
-    closeConfirmation({focus:false});restorationState='running';restorationError='';setLocked(true);
+    closeConfirmation({focus:false});restorationState='running';restorationError='';
+    applicationVerification={...applicationVerification,healthFresh:false};
+    for(const id of ['status','io','settings','display'])health.set(id,{state:'pending',message:'Recheck after restoration'});
+    setLocked(true);
     await run(async()=>{
+      let savedVerified=false;
       try{
         const result=await client.restoreBackup(retained.bytes.slice());
         if(disposed)return;
@@ -572,8 +587,10 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
         restoreIdentity();
         if(result?.verified!==true||(result.sourcePayloadCRC??result.payloadCRC)!==retained.payloadCRC)
           throw new Error('The saved restoration result does not match the retained configuration.');
+        savedVerified=true;
+        applicationVerification=await readApplicationHealth({settlePads:true});
         restorationState='verified';say('Settings Restored. Configuration saved and read back exactly.','success');
-      }catch(error){if(!disposed){restorationState='failed';restorationError=error.message;say(`Configuration restoration needs attention: ${error.message} No automatic restore retry was sent.`,'error');}}
+      }catch(error){if(!disposed){restorationState='failed';restorationError=(savedVerified?'Saved settings match the backup, but the instrument failed its post-restore checks. ':'')+error.message;say(`Configuration restoration needs attention: ${restorationError} No automatic restore retry was sent.`,'error');}}
       finally{setLocked(false);}
       if(restorationState==='verified'&&!disposed){
         try{await onRestored();}
@@ -583,7 +600,8 @@ export function initializeUpdaterPanel({ mount, client, createHelper = createUpd
   }
   function keepCurrentSettings() {
     if(confirmationKind!=='keep-settings'||!mayKeepSettings()){closeConfirmation();return;}
-    closeConfirmation();restorationState='declined';restorationError='';say('Firmware verified. You chose to keep the current settings; no configuration restore was sent.','success');
+    closeConfirmation();restorationState='declined';restorationError='';
+    say(applicationVerification?.healthFresh===false?'Current settings kept. Recheck instrument health before continuing.':'Firmware verified. You chose to keep the current settings; no configuration restore was sent.',applicationVerification?.healthFresh===false?'info':'success');
   }
   listen(root, 'click', event => {
     const target = event.target.closest?.('[data-updater-action]'); if (!target || target.disabled) return;

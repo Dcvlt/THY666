@@ -2,7 +2,7 @@
 
 Versions use **vX.X.X** tags, with X.X.X in package metadata. Prerelease status
 is a GitHub release property rather than a different version spelling.
-`python tools/check_release_version.py --tag v0.2.2` checks the JavaScript,
+`python tools/check_release_version.py --tag v0.3.0` checks the JavaScript,
 Tauri, Rust package and lockfile versions together.
 
 ## Downloads
@@ -21,12 +21,22 @@ The browser Client needs no desktop download. GitHub also adds **Source code**
 ZIP/TAR archives automatically; these contain project source, not built apps or
 firmware, and do not include the separate musical input needed to build firmware.
 
-The historical v0.1.0 release provides source only. The current v0.2.2 release includes
+The historical v0.1.0 release provides source only. Release downloads include
 standalone firmware, matching source/input, Windows and macOS Clients, and
 checksums. Read the notes attached to the release for platform and device-test
 limits.
 
 ## Release history
+
+- **v0.3.0:** Performance telemetry and timed Diagnostics captures, guarded
+  configuration-restoration progress, and behavior-preserving rendering and
+  musical-snapshot optimizations. The accepted firmware is
+  **db4aaa0ea0e62fe0**. Focused board comparisons measured 10.5% less render work
+  at idle, 35.3% with three held notes and 41.4% during MPE pressure, with unchanged
+  frame cadence. Static RAM/CCM did not grow; the firmware uses 848 additional
+  flash bytes. The browser update and running application were verified. Guarded
+  restore failure/disconnect paths, maximum-load timing and broader platform
+  qualification remain separate; no backup was restored in these checks.
 
 - **v0.2.2:** Split physical-half expression settings, selectable MPE pressure
   output and the shared HUD component system. The approved site and Client design

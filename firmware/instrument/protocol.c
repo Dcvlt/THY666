@@ -254,6 +254,8 @@ static int equal(const char *a, const char *b) {
 }
 size_t thy_diag_command(const char *line, char *output, size_t capacity) {
     if (!line || !output || capacity < THY_DIAG_REPLY_MAX) return 0;
+    if(line[0]=='p' && line[1]=='r' && line[2]=='o' && line[3]=='f' && line[4]=='i' && line[5]=='l' && line[6]=='e' && line[7]==' ')
+        return thy_instrument_app_profile_command(line,output,capacity);
     if(line[0]=='s' && line[1]=='o' && line[2]=='n' && line[3]=='g' && line[4]==' ')
         return thy_instrument_app_song_command(line,output,capacity);
     if(line[0]=='b' && line[1]=='a' && line[2]=='c' && line[3]=='k' && line[4]=='u' && line[5]=='p' && line[6]==' ')
@@ -263,7 +265,7 @@ size_t thy_diag_command(const char *line, char *output, size_t capacity) {
     writer w = {output, 0, capacity};
     const thy_instrument *state = thy_instrument_app_state();
     uint32_t id = 0u, offset = 0u;
-    if (equal(line, "help")) put(&w, "OK THYINSTRUMENT/1 commands=status,pads,pad,edges,io,panic,help,settings storage_writes=none autosave=idle");
+    if (equal(line, "help")) put(&w, "OK THYINSTRUMENT/1 commands=status,pads,pad,edges,io,panic,help,settings,profile storage_writes=none autosave=idle");
     else if (equal(line,"help velocity")) put(&w,"OK VELOCITY/1 command=velocity_N id=0..95 config_writes=none mode=0_fixed,1_strike speed=ADC_per_ms");
     else if (equal(line, "help touch")) put(&w, "OK TOUCH/1 commands=touch;touch capture MASK;touch bank BANK;touch page BANK OFFSET;display mask=1..15 bank=0..3 offset=0,16,32,48,64,80,96,112 config_writes=none");
     else if (equal(line, "touch")) touch_reply(&w);

@@ -1,8 +1,9 @@
 import test from 'node:test';
+import {performancePacket} from './performance-fixture.mjs';
 import assert from 'node:assert/strict';
 import {
   BACKUP_HEADER_BYTES, BACKUP_MAX_BYTES, deviceCRC32, deviceFields,
-  inspectDeviceBackup, createDeviceClient,
+  inspectDeviceBackup, createDeviceClient, isProfileCommand,
 } from '../../web/device-client.js';
 
 const UID = '0123456789abcdef01234567', BUILD = '90d128d90324c978', SCHEMA = 'ab'.repeat(32);
@@ -121,11 +122,11 @@ function reseal(bytes) {
 
 function environment(t, { override, writable = '1', schema = SCHEMA, expectedSchema = SCHEMA, timeoutMs = 40,
   fragment = false, statusSequence = ['applied', 'queued', 'saved-verified'], exportBytes,native=false,
-  settingsVersion=13,migrateBackupPayload,harmony=false,reset=false,padMap=false } = {}) {
+  settingsVersion=13,migrateBackupPayload,harmony=false,reset=false,padMap=false,performance=false,restoreGuard=false } = {}) {
   let waiter = null, closed = false, time = 0;
   const queued = [], states = [], commands = [], portEvents = new Map();
   const server = { file: makeBackup({settingsVersion}), snapshot: Uint8Array.from({ length: 1680 }, (_, n) => n & 255),
-    harmony:Uint8Array.from({length:800},(_,n)=>n&255),padMap:Uint8Array.from({length:1672},(_,n)=>n&255),padMapRevision:17,padMapPending:false,generation: 7, committed: false, upload: null, statusReads: 0, received: 0 };
+    performance:performancePacket(),harmony:Uint8Array.from({length:800},(_,n)=>n&255),padMap:Uint8Array.from({length:1672},(_,n)=>n&255),padMapRevision:17,padMapPending:false,generation: 7, committed: false, upload: null, statusReads: 0, received: 0 };
   const push = text => {
     if (closed) return;
     const bytes = encoder.encode(text);
@@ -140,11 +141,12 @@ function environment(t, { override, writable = '1', schema = SCHEMA, expectedSch
       else push(line);
     });
   };
-  const statusLine = state => `BACKUP version=1 state=${state} bytes=${server.committed ? server.file.length : 0} received=${server.received} crc32=${crc(server.file)} payload_crc32=${crc(server.file.subarray(64))} generation=31`;
+  const statusLine = state => `BACKUP version=1 state=${state} bytes=${server.committed ? server.file.length : 0} received=${server.received} crc32=${crc(server.file)} payload_crc32=${crc(server.file.subarray(64))} generation=31${restoreGuard?` restore_active=${server.restoreActive?1:0} restore_phase=${server.restoreActive?(state==='saved-verified'?'checking':'saving'):'idle'} restore_completed=0 restore_total=0`:''}`;
   function respond(command) {
-    if (command === 'companion caps') return `COMPANION/1 CAPS role=instrument backup=1 song=1 companion=1 uid=${UID} build=${BUILD} schema=${schema} writable=${writable} chunk=128${harmony?' harmony=1 harmony_bytes=800':''}${reset?' reset=1':''}${padMap?' pad_map=1 pad_map_bytes=1672':''}`;
-    if (command === 'backup caps') return `BACKUP version=1 settings=${settingsVersion} max=${BACKUP_MAX_BYTES} chunk=32 target=1043 compatibility=65537 uid=${UID} build=${BUILD} schema=${schema}`;
+    if (command === 'companion caps') return `COMPANION/1 CAPS role=instrument backup=1 song=1 companion=1 uid=${UID} build=${BUILD} schema=${schema} writable=${writable} chunk=128${harmony?' harmony=1 harmony_bytes=800':''}${reset?' reset=1':''}${padMap?' pad_map=1 pad_map_bytes=1672':''}${performance?' performance=1 performance_bytes=1024':''}`;
+    if (command === 'backup caps') return `BACKUP version=1 settings=${settingsVersion} max=${BACKUP_MAX_BYTES} chunk=32 target=1043 compatibility=65537 uid=${UID} build=${BUILD} schema=${schema}${restoreGuard?' restore_guard=1':''}`;
     if (command === 'companion snapshot') {server.frozen=server.snapshot;return `COMPANION/1 SNAPSHOT seq=${server.generation} bytes=${server.snapshot.length} crc32=${crc(server.snapshot)}`;}
+    if(command==='companion performance snapshot'){server.frozen=server.performance;return `COMPANION/1 PERFORMANCE seq=${server.generation} bytes=1024 crc32=${crc(server.performance)}`;}
     if (command === 'companion harmony snapshot') {server.frozen=server.harmony;return `COMPANION/1 HARMONY seq=${server.generation} bytes=800 crc32=${crc(server.harmony)}`;}
     if(/^companion pad-map(?: \d+)?$/.test(command)){
       if(Number(command.split(' ')[2])===server.padMapRevision)return `COMPANION/1 PADMAP unchanged=1 revision=${server.padMapRevision}`;
@@ -180,9 +182,11 @@ function environment(t, { override, writable = '1', schema = SCHEMA, expectedSch
       const [, , offset, length] = command.split(' ').map((word, index) => index > 1 ? Number(word) : word);
       return `BACKUP data offset=${offset} hex=${hex(server.download.subarray(offset, offset + length))}`;
     }
-    if (command === 'backup abort') return 'BACKUP aborted';
+    if (command === 'backup abort') {if(!server.committed)server.restoreActive=false;return 'BACKUP aborted';}
+    if(command.startsWith('backup complete ')){server.restoreActive=false;return `BACKUP complete payload_crc32=${crc(server.file.subarray(64))} generation=31`;}
     if (command === 'backup status') return statusLine(server.committed ? statusSequence[Math.min(server.statusReads++, statusSequence.length - 1)] : 'idle');
     if (command.startsWith('backup begin ')) {
+      if(restoreGuard)server.restoreActive=true;
       const [, , length, checksum] = command.split(' ');
       server.upload = new Uint8Array(Number(length)); server.expectedCRC = Number(checksum); server.received = 0;
       return `BACKUP ready bytes=${length}`;
@@ -548,6 +552,50 @@ test('restore can retry a prior ERROR state while the device still enforces jour
   assert.equal(failed.commands.includes('backup commit'),false);
 });
 
+test('guarded restore unlocks only after exact readback and matching completion acknowledgement',async t=>{
+  const f=environment(t,{restoreGuard:true});await f.client.connect();
+  const file=makeBackup(),receipt=await f.client.restoreBackup(file);
+  const command=`backup complete ${deviceCRC32(file.subarray(64))}`;
+  assert.equal(receipt.verified,true);assert.equal(f.commands.at(-1),command);
+  assert.ok(f.commands.lastIndexOf('backup abort')<f.commands.indexOf(command));
+  assert.equal(f.commands.filter(value=>value===command).length,1);
+  assert.equal(f.server.restoreActive,false);
+  for(const phase of ['receiving','saving','checking'])assert.ok(f.states.some(value=>value.restoreProgress?.phase===phase&&value.restoreProgress.padsLocked));
+  assert.deepEqual(f.client.status.restoreProgress,{phase:'success',completed:1,total:1,padsLocked:false});
+  assert.ok(f.states.some(value=>value.restoreProgress?.phase==='checking'&&value.restoreProgress.completed===file.length&&value.restoreProgress.total===file.length));
+});
+
+test('guarded readback mismatch keeps the guard and sends no completion or retry',async t=>{
+  const f=environment(t,{restoreGuard:true,exportBytes:server=>{const copy=server.file.slice();copy[100]^=1;return reseal(copy);}});
+  await f.client.connect();await assert.rejects(f.client.restoreBackup(makeBackup()),/re-export differs/);
+  assert.equal(f.server.restoreActive,true);assert.equal(f.client.status.restoreProgress.phase,'error');
+  assert.equal(f.commands.filter(value=>value.startsWith('backup begin ')).length,1);
+  assert.equal(f.commands.some(value=>value.startsWith('backup complete ')),false);
+});
+
+test('guarded completion rejects a mismatched saved identity without a second attempt',async t=>{
+  for(const reply of ['BACKUP complete payload_crc32=00000000 generation=31','BACKUP complete payload_crc32=CHECKSUM generation=32']){
+    const f=environment(t,{restoreGuard:true,override:(command,{server})=>command.startsWith('backup complete ')?reply.replace('CHECKSUM',crc(server.file.subarray(64))):undefined});
+    await f.client.connect();await assert.rejects(f.client.restoreBackup(makeBackup()),/completion does not match/);
+    assert.equal(f.commands.filter(value=>value.startsWith('backup complete ')).length,1);
+    assert.equal(f.states.some(value=>value.restoreProgress?.phase==='success'),false);
+  }
+});
+
+test('active restore blocks a new upload even if its transfer buffer is idle',async t=>{
+  const f=environment(t,{restoreGuard:true});await f.client.connect();f.server.restoreActive=true;
+  await assert.rejects(f.client.restoreBackup(makeBackup()),/earlier restore is unfinished/);
+  assert.equal(f.commands.some(value=>value.startsWith('backup begin ')),false);
+});
+
+test('malformed guarded progress is rejected before any new restore begins',async t=>{
+  for(const tail of ['restore_phase=bogus restore_completed=0 restore_total=0','restore_phase=saving restore_completed=2 restore_total=1']){
+    const f=environment(t,{override:(command,{statusLine})=>command==='backup status'?`${statusLine('idle')} ${tail}`:undefined});
+    await f.client.connect();await assert.rejects(f.client.restoreBackup(makeBackup()),/Invalid restore/);
+    assert.equal(f.commands.some(value=>value.startsWith('backup begin ')),false);
+  }
+});
+
 test('restore does not confuse applied with saved, saving errors, or different readback with verified restoration', async t => {
   for (const failure of ['never-saved', 'save-error', 'readback']) {
     const f = environment(t, { statusSequence: failure === 'never-saved' ? ['applied'] : failure === 'save-error' ? ['error'] : ['saved-verified'],
@@ -557,6 +605,46 @@ test('restore does not confuse applied with saved, saving errors, or different r
     if (failure !== 'readback') assert.equal(f.commands.includes('backup export'), false);
     await f.client.disconnect();
   }
+});
+
+test('backup diagnostics remain read-only and identify an earlier applied restore before any upload',async t=>{
+  for(const state of ['upload','download','applied','queued']){
+    const f=environment(t,{override:(command,{statusLine})=>command==='backup status'?statusLine(state):undefined});
+    await f.client.connect();const start=f.commands.length;
+    const status=await f.client.backupStatus();assert.equal(status.state,state);
+    assert.match(await f.client.telemetry('backup status'),new RegExp(`state=${state} `));
+    await assert.rejects(f.client.restoreBackup(makeBackup()),error=>{
+      assert.equal(error.restoreStage,'preflight');assert.equal(error.backupStatus.state,state);
+      assert.match(error.message,['applied','queued'].includes(state)?/settings were applied.*not verified/:/No restore was started/);
+      return true;
+    });
+    assert.deepEqual(f.commands.slice(start),['backup status','backup status','backup status']);
+  }
+});
+
+test('named scanner diagnostics cannot send pad acquisition or backup writes',async t=>{
+  const f=environment(t,{native:true,override:command=>command==='pads'?'PADS frames=12 scans=192 errors=1 profile=150us-21MHz velocity=strike calibration=unverified':undefined});
+  await f.client.connect();const start=f.commands.length;
+  assert.match(await f.client.telemetry('pads'),/^PADS frames=12 /);
+  for(const command of ['pads start','pads stop','backup abort','backup commit','backup status\nbackup abort'])
+    await assert.rejects(f.client.telemetry(command),/read-only/);
+  assert.deepEqual(f.commands.slice(start),['pads']);
+});
+
+test('malformed backup status never becomes diagnostic success or a restore request',async t=>{
+  const f=environment(t,{override:command=>command==='backup status'?'BACKUP version=1 state=queued bytes=5726 received=5726 crc32=bad payload_crc32=00000000 generation=1':undefined});
+  await f.client.connect();
+  await assert.rejects(f.client.telemetry('backup status'),/checksum/);
+  assert.equal(f.commands.some(command=>/^backup (begin|put|commit|abort|export)/.test(command)),false);
+});
+
+test('failed export cleanup is not reported as a fully released successful backup',async t=>{
+  const f=environment(t,{override:command=>command==='backup abort'?'ERR backup-state':undefined});
+  await f.client.connect();
+  await assert.rejects(f.client.downloadBackup(),/transfer could not be closed/);
+  assert.equal(f.commands.filter(command=>command==='backup export').length,1);
+  assert.equal(f.commands.filter(command=>command==='backup abort').length,1);
+  assert.equal(f.states.some(state=>state.message==='Backup read · checksum verified'),false);
 });
 
 test('upload acknowledgement failure aborts without commit and a wrong-board file sends nothing', async t => {
@@ -625,4 +713,129 @@ test('stale snapshot data cannot satisfy a new generation and overlong device li
   } });
   await long.client.connect(); await assert.rejects(long.client.snapshot(), /line limit/);
   assert.equal(long.client.connected, false);
+});
+
+
+test('optional performance capture uses the same bounded serial/native CRC transaction and releases staging',async t=>{
+  for(const native of [false,true]){
+    const f=environment(t,{native,performance:true,fragment:!native});await f.client.connect();
+    assert.equal(f.client.performanceSupported,true);
+    const packet=await f.client.performanceSnapshot();assert.equal(packet.generation,7);assert.deepEqual(packet.bytes,f.server.performance);
+    assert.equal(f.commands.at(-1),'companion release 7');assert.equal(f.client.busy,false);
+  }
+  const old=environment(t);await old.client.connect();assert.equal(old.client.performanceSupported,false);
+  await assert.rejects(old.client.performanceSnapshot(),/newer firmware/);
+  assert.equal(old.commands.some(command=>command==='companion performance snapshot'),false);
+});
+
+test('malformed performance lengths, chunks and CRCs release the frozen lease',async t=>{
+  for(const failure of ['length','crc','generation']){
+    const f=environment(t,{native:true,performance:true,override:(command,{server})=>{
+      if(command==='companion performance snapshot'&&failure!=='generation')return `COMPANION/1 PERFORMANCE seq=7 bytes=${failure==='length'?1025:1024} crc32=00000000`;
+      if(command==='companion get 7 0 128'&&failure==='generation')return `COMPANION/1 DATA seq=8 offset=0 hex=${hex(server.performance.subarray(0,128))}`;
+    }});await f.client.connect();await assert.rejects(f.client.performanceSnapshot(),/length|checksum|generation/);
+    assert.equal(f.commands.at(-1),'companion release 7');
+  }
+});
+
+function profileFixture({mutate=()=>{},initialId=0,active=false}={}){
+  const state={id:initialId,active,duration:initialId?30000:0,elapsed:initialId?9000:0};
+  const status=()=>`PROFILE version=1 id=${state.id} active=${state.active?1:0} duration_ms=${state.duration} elapsed_ms=${state.elapsed} hz=${state.id?168000000:0} invalid=0 core_peak=4`;
+  const respond=command=>{
+    const altered=mutate(command,state,status);if(altered!==undefined)return altered;
+    if(command==='profile caps')return 'PROFILE version=1 supported=1 metrics=19 bins=20 max_seconds=60 queue_unit=ms';
+    if(command==='profile status')return status();
+    if(command.startsWith('profile start ')){state.id++;state.active=true;state.duration=Number(command.split(' ')[2])*1000;state.elapsed=0;return status();}
+    if(command.startsWith('profile stop ')){state.active=false;state.elapsed=1234;return status();}
+    if(command.startsWith('profile metric ')){
+      const [, ,id,index]=command.split(' '),bins=Array(20).fill(0);bins[5]=10;
+      return `PROFILE_METRIC id=${id} index=${index} unit=${[15,16].includes(Number(index))?'ms':'us'} count=10 min=16 max=24 mean=20 p50_upper=31 p95_upper=31 p99_upper=31 bins=${bins.join(',')}`;
+    }
+  };
+  return {state,status,respond};
+}
+
+test('profile commands have bounded arguments and read-only telemetry cannot start or stop a capture',async t=>{
+  for(const command of ['profile caps','profile status','profile start 1','profile start 60','profile stop 4294967295','profile metric 1 0','profile metric 4294967295 18'])assert.ok(isProfileCommand(command),command);
+  for(const command of ['profile start 0','profile start 61','profile stop 0','profile stop 4294967296','profile metric 1 19','profile metric 0 1','profile status extra','profile start 3\nstatus','profile erase'])assert.equal(isProfileCommand(command),false,command);
+  const p=profileFixture(),f=environment(t,{native:true,override:p.respond});await f.client.connect();
+  const before=f.commands.length;
+  for(const command of ['profile start 30','profile stop 1'])await assert.rejects(f.client.telemetry(command),/read-only/);
+  await assert.rejects(f.client.startProfile(61),/duration/);await assert.rejects(f.client.stopProfile(0),/session/);
+  assert.equal(f.commands.length,before);
+});
+
+test('browser and native profiling use one existing serialized connection and frozen rows never interleave',async t=>{
+  for(const native of [false,true]){
+    const p=profileFixture(),f=environment(t,{native,override:p.respond});await f.client.connect();
+    assert.deepEqual(await f.client.getProfileCapabilities(),{version:1,supported:true,metrics:19,bins:20,maxSeconds:60,queueUnit:'ms'});
+    const active=await f.client.startProfile();assert.equal(active.id,1);assert.equal(active.active,true);assert.equal(active.durationMs,30000);
+    const first=f.commands.length;await assert.rejects(f.client.startProfile(15),/already running/);
+    assert.deepEqual(f.commands.slice(first),['profile status']);
+    await assert.rejects(f.client.readProfileCapture(1),/stopped/);
+    const stopped=await f.client.stopProfile(1);assert.equal(stopped.active,false);
+    const start=f.commands.length,[capture]=await Promise.all([f.client.readProfileCapture(1),f.client.telemetry('status')]);
+    assert.equal(capture.metrics.length,19);assert.equal(capture.metrics[15].unit,'ms');
+    assert.deepEqual(f.commands.slice(start),['profile status',...Array.from({length:19},(_,index)=>`profile metric 1 ${index}`),'profile status','status']);
+    assert.equal(f.serial.requests.length,1);assert.equal(f.client.busy,false);
+  }
+});
+
+test('unsupported or malformed profiling support leaves normal Client access available',async t=>{
+  const old=environment(t,{override:command=>command==='profile caps'?'ERR unknown-command':undefined});await old.client.connect();
+  assert.deepEqual(await old.client.getProfileCapabilities(),{supported:false});assert.equal(old.client.connected,true);
+  assert.match(await old.client.telemetry('status'),/^STATUS /);
+  for(const tail of ['metrics=18 bins=20','metrics=19 bins=19']){
+    const f=environment(t,{native:true,override:command=>command==='profile caps'?`PROFILE version=1 supported=1 ${tail} max_seconds=60 queue_unit=ms`:undefined});await f.client.connect();
+    await assert.rejects(f.client.getProfileCapabilities(),/format/);assert.equal(f.client.connected,true);
+  }
+});
+
+test('profiling rejects mixed sessions, active results and malformed histogram rows without retrying writes',async t=>{
+  for(const failure of ['wrong-id','wrong-index','unit','sum','bounds','percentile','overflow','active','changed-session']){
+    let reads=0;const p=profileFixture({initialId:7,mutate:(command,state,status)=>{
+      if(command==='profile status'&&failure==='active')return status().replace('active=0','active=1');
+      if(command==='profile status'&&failure==='changed-session'&&++reads===2){state.id++;return status();}
+      if(command==='profile metric 7 0'){
+        const bins=Array(20).fill(0);bins[5]=failure==='sum'?9:10;
+        return `PROFILE_METRIC id=${failure==='wrong-id'?8:7} index=${failure==='wrong-index'?1:0} unit=${failure==='unit'?'cycles':'us'} count=10 min=16 max=${failure==='bounds'?15:24} mean=20 p50_upper=31 p95_upper=${failure==='percentile'?30:31} p99_upper=31 bins=${bins.join(',')}${failure==='overflow'?' extra='+('x'.repeat(512)):''}`;
+      }
+    }}),f=environment(t,{native:true,override:p.respond});await f.client.connect();
+    await assert.rejects(f.client.readProfileCapture(7),/profil|captur|histogram/i);
+    assert.equal(f.commands.some(command=>/^profile (?:start|stop)/.test(command)),false);
+  }
+});
+
+test('saturated histograms preserve samples while unavailable quantiles and clock errors stay explicit',async t=>{
+  const p=profileFixture({initialId:3,mutate:(command,state,status)=>{
+    if(command==='profile status')return status()+' saturated=1 dropped=2 clock_error=1';
+    if(command==='profile metric 3 0'){const bins=Array(20).fill(0);bins[5]=10;return `PROFILE_METRIC id=3 index=0 unit=us count=10 min=16 max=24 mean=20 p50_upper=4294967295 p95_upper=4294967295 p99_upper=4294967295 saturated=1 bins=${bins.join(',')}`;}
+  }}),f=environment(t,{native:true,override:p.respond});await f.client.connect();
+  const capture=await f.client.readProfileCapture(3);assert.equal(capture.status.clock_error,1);assert.equal(capture.status.dropped,2);
+  assert.equal(capture.metrics[0].saturated,true);assert.equal(capture.metrics[0].p95_upper,0xffffffff);
+});
+
+test('additive status metadata may exceed512 bytes while the independent1024-byte bound remains enforced',async t=>{
+  for(const length of [650,1100]){
+    const p=profileFixture({initialId:1,mutate:(command,state,status)=>command==='profile status'?status()+' additive_context='+('x'.repeat(length-status().length)):undefined});
+    const f=environment(t,{native:true,override:p.respond});await f.client.connect();
+    if(length<1024)assert.equal((await f.client.getProfileStatus()).id,1);
+    else await assert.rejects(f.client.getProfileStatus(),/limit/);
+  }
+});
+
+test('read-only connections can inspect profile results but cannot start or stop captures',async t=>{
+  const p=profileFixture({initialId:2}),f=environment(t,{native:true,expectedSchema:'ef'.repeat(32),override:p.respond});await f.client.connect();
+  assert.equal(f.client.compatible,false);assert.equal((await f.client.getProfileStatus()).id,2);
+  assert.equal((await f.client.readProfileCapture(2)).metrics.length,19);
+  const before=f.commands.length;await assert.rejects(f.client.startProfile(),/read-only/);await assert.rejects(f.client.stopProfile(2),/read-only/);
+  assert.equal(f.commands.length,before);
+});
+
+test('uncertain profile control replies are surfaced once and status recovery remains read-only',async t=>{
+  const p=profileFixture({initialId:1,active:true,mutate:command=>command==='profile stop 1'?'PROFILE version=1 id=2 active=0 duration_ms=30000 elapsed_ms=1 hz=168000000':undefined});
+  const f=environment(t,{native:true,override:p.respond});await f.client.connect();
+  await assert.rejects(f.client.stopProfile(1),error=>error.profileOutcomeUnknown===true);
+  assert.equal(f.commands.filter(command=>command==='profile stop 1').length,1);
+  assert.equal((await f.client.getProfileStatus()).active,true);
 });

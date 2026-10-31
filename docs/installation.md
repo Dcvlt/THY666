@@ -117,6 +117,17 @@ The updater's message alone is not proof of the running image. Verify the build
 identity, quiet startup, settings state and affected feature behavior. Keep
 package/source/manifest identities together.
 
+After configuration restoration, instrument health must pass again as well as
+saved readback. If restoration fails, keep the original backup and inspect
+Diagnostics → Backup service, Saved settings and Pad scanner before another
+attempt. An applied or queued transfer is not a verified save; a prior green
+startup check does not describe the device after restoration.
+
+Newer firmware displays restoration progress and locks playing while receiving,
+saving and checking settings. Keep the board connected until the saved-state
+comparison and fresh instrument checks finish. A settings restore is separate
+from firmware installation; a failure never starts an automatic retry.
+
 ## Recovery status
 
 Normal completed installation, normal cold-boot persistence and configuration

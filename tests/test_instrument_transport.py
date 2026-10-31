@@ -34,14 +34,15 @@ class InstrumentTransportTests(unittest.TestCase):
         compiled = subprocess.run([
             str(compiler), "cc", *native_target_flags(), "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
             "-I", str(ROOT / "core"), str(ROOT / "core/thy_core.c"),
-            str(ROOT / "core/thy_midi.c"), str(ROOT / "firmware/instrument/transport.c"),
+            str(ROOT / "core/thy_midi.c"), str(ROOT / "core/thy_profile.c"),
+            str(ROOT / "firmware/instrument/transport.c"),
             str(ROOT / "tests/core/test_instrument_transport.c"), "-o", str(binary),
         ], cwd=ROOT, env=env, check=False, capture_output=True, text=True, timeout=60)
         self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
         result = subprocess.run([str(binary)], cwd=ROOT, env=env, check=False,
                                 capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("instrument transport tests passed: 20 scenarios", result.stdout)
+        self.assertIn("instrument transport tests passed: 32 scenarios", result.stdout)
 
 
 if __name__ == "__main__":

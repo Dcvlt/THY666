@@ -39,6 +39,56 @@ const integer=(value,min,max,label)=>{
   if(!Number.isSafeInteger(result)||result<min||result>max)throw new Error(`Invalid ${label}.`);
   return result;
 };
+export const PROFILE_METRIC_COUNT=19;
+export const PROFILE_BIN_COUNT=20;
+export function isProfileCommand(command,{readOnly=false}={}){
+  if(typeof command!=='string')return false;
+  if(command==='profile caps'||command==='profile status')return true;
+  const parts=command.split(' '),number=(value,min,max)=>/^\d+$/.test(value||'')&&Number.isSafeInteger(Number(value))&&Number(value)>=min&&Number(value)<=max;
+  if(parts[0]!=='profile')return false;
+  if(parts[1]==='metric')return parts.length===4&&number(parts[2],1,0xffffffff)&&number(parts[3],0,PROFILE_METRIC_COUNT-1);
+  if(readOnly)return false;
+  return parts.length===3&&(parts[1]==='start'&&number(parts[2],1,60)||parts[1]==='stop'&&number(parts[2],1,0xffffffff));
+}
+function profileStatus(line){
+  if(line.length>1024)throw new Error('Profiling response exceeded its limit.');
+  const f=deviceFields(line,'PROFILE');
+  if(f.version!=='1')throw new Error('Unsupported profiling version.');
+  const result={version:1,id:integer(f.id,0,0xffffffff,'capture session'),active:Boolean(integer(f.active,0,1,'capture state')),
+    durationMs:integer(f.duration_ms,0,60000,'capture duration'),elapsedMs:integer(f.elapsed_ms,0,60000,'capture elapsed time'),hz:integer(f.hz,0,200000000,'capture clock')};
+  if(result.elapsedMs>result.durationMs||result.id&&result.hz<1000000||result.active&&(!result.id||!result.durationMs))throw new Error('Invalid profiling progress.');
+  const extra={};
+  for(const key of ['timed_out','clock_error','invalid','dropped','saturated','core_peak','usb_peak','din_peak','din_bytes_peak','usb_excluded','din_excluded','usb_discarded','din_discarded','clock_min_cycles','clock_max_cycles','engine','view','tempo_milli_bpm','settings_crc'])
+    if(f[key]!==undefined)extra[key]=integer(f[key],0,['timed_out','clock_error','saturated'].includes(key)?1:0xffffffff,'capture counter');
+  return {...result,...extra};
+}
+function profileMetric(line,id,index){
+  if(line.length>512)throw new Error('Profiling response exceeded its limit.');
+  const f=deviceFields(line,'PROFILE_METRIC');
+  if(integer(f.id,1,0xffffffff,'metric session')!==id||integer(f.index,0,PROFILE_METRIC_COUNT-1,'metric index')!==index||f.unit!==([15,16].includes(index)?'ms':'us'))
+    throw new Error('Profiling metric does not match this capture.');
+  const row={index,unit:f.unit,saturated:Boolean(integer(f.saturated??'0',0,1,'metric saturation'))};
+  for(const key of ['count','min','max','mean','p50_upper','p95_upper','p99_upper'])row[key]=integer(f[key],0,0xffffffff,'metric value');
+  const bins=String(f.bins||'').split(',');
+  if(bins.length!==PROFILE_BIN_COUNT)throw new Error('Invalid profiling histogram.');
+  row.bins=bins.map(value=>integer(value,0,0xffffffff,'histogram count'));
+  if(row.bins.reduce((sum,n)=>sum+n,0)!==row.count||row.min>row.max||row.mean<row.min||row.mean>row.max||
+    row.p50_upper>row.p95_upper||row.p95_upper>row.p99_upper||!row.count&&[row.min,row.max,row.mean].some(Boolean))
+    throw new Error('Inconsistent profiling histogram.');
+  for(const [field,percent] of [['p50_upper',50],['p95_upper',95],['p99_upper',99]]){
+    let expected=row.saturated?0xffffffff:0;
+    if(row.count&&!row.saturated){
+      const rank=Math.ceil(row.count*percent/100);let seen=0;
+      for(let bin=0;bin<PROFILE_BIN_COUNT;bin++)if((seen+=row.bins[bin])>=rank){expected=bin===19?0xffffffff:bin?2**bin-1:0;break;}
+    }
+    if(row[field]!==expected)throw new Error('Invalid profiling percentile bound.');
+  }
+  return row;
+}
+const responseError=line=>{
+  const error=new Error(line==='ERR unknown-command'?'This firmware does not support the client. Install the prepared build to connect.':line);
+  error.code=line.replace(/^COMPANION\/1 /,'').slice(4).split(' ')[0];return error;
+};
 const crcValue=value=>{
   if(!/^[0-9a-f]{8}$/i.test(value||''))throw new Error('Invalid device checksum.');
   return parseInt(value,16)>>>0;
@@ -69,19 +119,21 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
   const encoder=new TextEncoder(),decoder=new TextDecoder();
   let port=null,reader=null,writer=null,pump=null,pending=null,lineBuffer='',caps=null,backupCaps=null,padMapLease=null;
   let operations=0,tail=Promise.resolve(),closing=false;
-  const state={connected:false,connecting:false,busy:false,compatible:false,message:'No board connected',identity:null};
+  const state={connected:false,connecting:false,busy:false,compatible:false,message:'No board connected',identity:null,restoreProgress:null};
   const emit=message=>{if(message)state.message=message;state.busy=operations>0;onState({...state});};
+  const trackRestore=(phase,completed=0,total=0,padsLocked=false)=>{
+    state.restoreProgress={phase,completed,total,padsLocked};emit();
+  };
   const rejectPending=error=>{if(pending){const request=pending;pending=null;clearTimeout(request.timer);request.reject(error);}};
   function accept(line){
     line=line.trim();if(!line||!pending)return;
-    if(line.startsWith('ERR ')||line.startsWith('COMPANION/1 ERR ')){rejectPending(new Error(line==='ERR unknown-command'?
-      'This firmware does not support the client. Install the prepared build to connect.':line));return;}
+    if(line.startsWith('ERR ')||line.startsWith('COMPANION/1 ERR ')){rejectPending(responseError(line));return;}
     if(!pending.pattern.test(line))return;
     const request=pending;pending=null;clearTimeout(request.timer);request.resolve(line);
   }
   const validateCommand=command=>{
     if(typeof command!=='string'||command.length>159||/[\r\n]/.test(command)||
-      !/^(?:companion |backup |song |status$|io$|settings$|display$|pad \d+$|velocity \d+$)/.test(command))
+      !/^(?:companion |backup |song |status$|io$|settings$|display$|pads$|pad \d+$|velocity \d+$)/.test(command)&&!isProfileCommand(command))
       throw new Error('Unsupported device command.');
   };
   async function nativeExchange(commands,pattern){
@@ -97,7 +149,7 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
       if(pending!==request)return;
       if(!Array.isArray(lines)||lines.length!==commands.length||lines.some(line=>typeof line!=='string'||line.length>4096||/[\r\n]/.test(line)))throw new Error('Invalid native device response.');
       for(const line of lines){
-        if(line.startsWith('ERR ')||line.startsWith('COMPANION/1 ERR ')){rejectPending(new Error(line==='ERR unknown-command'?'This firmware does not support the client. Install the prepared build to connect.':line));return;}
+        if(line.startsWith('ERR ')||line.startsWith('COMPANION/1 ERR ')){rejectPending(responseError(line));return;}
         if(!pattern.test(line))throw new Error('Unexpected native device response.');
       }
       pending=null;clearTimeout(request.timer);request.resolve(lines);
@@ -154,32 +206,60 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
       if(integer(fields.offset,0,count,'chunk offset')!==offset||part.length!==length)
         throw new Error('Device returned an unexpected chunk offset or length.');
       bytes.set(part,offset);
-      if(prefix==='backup')emit(`Reading backup · ${offset+length}/${count} bytes`);
+      if(prefix==='backup'){
+        if(state.restoreProgress?.phase==='checking')trackRestore('checking',offset+length,count,state.restoreProgress.padsLocked);
+        emit(`Reading backup · ${offset+length}/${count} bytes`);
+      }
       }
     }
     if(deviceCRC32(bytes)!==expected)throw new Error('Device snapshot checksum does not match.');
     return bytes;
   }
   const backupStatus=async()=>{
-    const fields=deviceFields(await exchange('backup status',/^BACKUP version=/),'BACKUP');
+    const line=await exchange('backup status',/^BACKUP version=/),fields=deviceFields(line,'BACKUP');
     if(fields.version!=='1'||!['idle','upload','download','applied','queued','saved-verified','error'].includes(fields.state))
       throw new Error('Unsupported backup service state.');
-    return {...fields,bytes:integer(fields.bytes,0,BACKUP_MAX_BYTES,'backup length'),
+    let restoreProgress=null;
+    if(fields.restore_phase!==undefined){
+      if(!['idle','receiving','saving','checking','success','error'].includes(fields.restore_phase))throw new Error('Invalid restore phase.');
+      const total=integer(fields.restore_total,0,BACKUP_MAX_BYTES,'restore progress total');
+      restoreProgress={phase:fields.restore_phase,completed:integer(fields.restore_completed,0,total,'restore progress'),total};
+    }
+    return {...fields,line,restoreProgress,bytes:integer(fields.bytes,0,BACKUP_MAX_BYTES,'backup length'),
       received:integer(fields.received,0,BACKUP_MAX_BYTES,'received length'),
       crc32:crcValue(fields.crc32),payloadCRC:crcValue(fields.payload_crc32),
+      restoreActive:fields.restore_active===undefined?false:Boolean(integer(fields.restore_active,0,1,'restore guard')),
       generation:integer(fields.generation,0,0xffffffff,'save generation')};
   };
+  const readProfileStatus=async()=>profileStatus(await exchange('profile status',/^PROFILE /));
+  const readProfileCaps=async()=>{
+    let line;
+    try{line=await exchange('profile caps',/^PROFILE /);}
+    catch(error){if(error.code==='unknown-command')return {supported:false};throw error;}
+    if(line.length>512)throw new Error('Profiling response exceeded its limit.');
+    const f=deviceFields(line,'PROFILE');
+    if(f.version!=='1'||f.supported!=='1'||f.metrics!==String(PROFILE_METRIC_COUNT)||f.bins!==String(PROFILE_BIN_COUNT)||f.queue_unit!=='ms')
+      throw new Error('Unsupported profiling format.');
+    return {version:1,supported:true,metrics:PROFILE_METRIC_COUNT,bins:PROFILE_BIN_COUNT,maxSeconds:integer(f.max_seconds,1,60,'maximum capture duration'),queueUnit:'ms'};
+  };
   async function download(){
-    let started=false;
+    let started=false,bytes,readError;
     try{
       const result=deviceFields(await exchange('backup export',/^BACKUP export /),'BACKUP');started=true;
       const count=integer(result.bytes,65,BACKUP_MAX_BYTES,'backup length');
-      const bytes=await chunks('backup',count,crcValue(result.crc32));
+      bytes=await chunks('backup',count,crcValue(result.crc32));
       const info=inspectDeviceBackup(bytes,backupCaps);
       if(info.settingsVersion!==Number(backupCaps.settings)||Number(result.settings)!==info.settingsVersion)
         throw new Error('The exported settings version differs from the device capabilities.');
-      emit('Backup read · checksum verified');return bytes;
-    }finally{if(started){try{await exchange('backup abort',/^BACKUP aborted$/);}catch{}}}
+    }catch(error){readError=error;throw error;}
+    finally{if(started){
+      try{await exchange('backup abort',/^BACKUP aborted$/);}
+      catch(error){
+        if(readError)readError.cleanupError=error.message;
+        else throw new Error('Backup data was read, but its device transfer could not be closed. Inspect Backup service before another transfer.',{cause:error});
+      }
+    }}
+    emit('Backup read · checksum verified');return bytes;
   }
   function canWrite(){if(!state.compatible)throw new Error('The device and this client use different menu versions. Controls are read-only.');}
   async function prepareBackupRestore(bytes){
@@ -211,6 +291,7 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
     get available(){return Boolean(serial?.requestPort);},get connected(){return state.connected;},
     get busy(){return operations>0;},get compatible(){return state.compatible;},
     get harmonySupported(){return state.connected&&caps?.harmony==='1'&&caps?.harmony_bytes==='800';},
+    get performanceSupported(){return state.connected&&caps?.performance==='1'&&caps?.performance_bytes==='1024';},
     get padMapSupported(){return state.connected&&caps?.pad_map==='1'&&caps?.pad_map_bytes==='1672';},
     get resetSupported(){return state.connected&&caps?.reset==='1';},
     get identity(){return caps?{...caps}:null;},get backupIdentity(){return backupCaps?{...backupCaps}:null;},
@@ -248,7 +329,7 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
       if(pump){await pump;pump=null;}
       const oldWriter=writer;writer=null;if(oldWriter){try{oldWriter.releaseLock();}catch{}}
       const oldPort=port;port=null;if(oldPort){try{await oldPort.close();}catch{}}
-      caps=backupCaps=null;padMapLease=null;lineBuffer='';closing=false;state.connected=false;state.compatible=false;state.identity=null;
+      caps=backupCaps=null;padMapLease=null;lineBuffer='';closing=false;state.connected=false;state.compatible=false;state.identity=null;state.restoreProgress=null;
       emit('No board connected');
     },
     snapshot(){return exclusive(async()=>{
@@ -271,6 +352,18 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
         const bytes=await chunks('companion',count,crcValue(result.crc32),generation+' ');
         return {generation,bytes,receivedAt:now()};
       }finally{if(generation!==null){try{await exchange(`companion release ${generation}`,/^COMPANION\/1 RELEASED/);}catch{}}}
+    });},
+    performanceSnapshot(){const requestPort=port,requestCaps=caps;return exclusive(async()=>{
+      if(port!==requestPort||caps!==requestCaps)throw new Error('The device connection changed during the performance request.');
+      if(!client.performanceSupported)throw new Error('Detailed MPE and sequencer feedback requires newer firmware.');
+      let generation=null;
+      try{
+        const result=deviceFields(await exchange('companion performance snapshot',/^COMPANION\/1 PERFORMANCE /),'COMPANION/1 PERFORMANCE');
+        generation=integer(result.seq,1,0xffffffff,'performance snapshot generation');
+        const count=integer(result.bytes,1024,1024,'performance snapshot length');
+        const bytes=await chunks('companion',count,crcValue(result.crc32),generation+' ');
+        return {generation,bytes,receivedAt:now()};
+      }finally{if(generation!==null&&port===requestPort&&caps===requestCaps){try{await exchange(`companion release ${generation}`,/^COMPANION\/1 RELEASED/);}catch{}}}
     });},
     padMapSnapshot(knownRevision=null){const requestPort=port,requestCaps=caps;return exclusive(async()=>{
       if(port!==requestPort||caps!==requestCaps)throw new Error('The device connection changed during the pad-label request.');
@@ -362,10 +455,45 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
     });},
     inspectPad(pad){return exclusive(()=>exchange(`companion pad ${integer(pad,0,95,'pad')}`,/^COMPANION\/1 PAD /));},
     telemetry(command){
-      if(!/^(?:status|io|settings|display|pad (?:[0-8]?\d|9[0-5])|velocity (?:[0-8]?\d|9[0-5]))$/.test(command))
+      if(!/^(?:status|io|settings|display|pads|backup status|pad (?:[0-8]?\d|9[0-5])|velocity (?:[0-8]?\d|9[0-5]))$/.test(command)&&!isProfileCommand(command,{readOnly:true}))
         return Promise.reject(new Error('Only named read-only telemetry commands are supported.'));
-      return exclusive(()=>exchange(command,/^(?:STATUS|IO|SETTINGS|DISPLAY|PAD|VELOCITY) /));
+      return exclusive(async()=>command==='backup status'?(await backupStatus()).line:
+        exchange(command,/^(?:STATUS|IO|SETTINGS|DISPLAY|PADS|PAD|VELOCITY|PROFILE|PROFILE_METRIC) /));
     },
+    getProfileCapabilities(){return exclusive(readProfileCaps);},
+    getProfileStatus(){return exclusive(readProfileStatus);},
+    startProfile(seconds=30){return exclusive(async()=>{
+      canWrite();integer(seconds,1,60,'capture duration');
+      const previous=await readProfileStatus();
+      if(previous.active)throw new Error('A capture is already running. Stop it or wait for it to finish.');
+      let result;
+      try{result=profileStatus(await exchange(`profile start ${seconds}`,/^PROFILE /));}
+      catch(error){if(!error.code)error.profileOutcomeUnknown=true;throw error;}
+      if(!result.active||!result.id||result.durationMs!==seconds*1000){
+        const error=new Error('Capture start was not confirmed. Read its status before starting again.');error.profileOutcomeUnknown=true;throw error;
+      }
+      return result;
+    });},
+    stopProfile(id){return exclusive(async()=>{
+      canWrite();integer(id,1,0xffffffff,'capture session');let result;
+      try{result=profileStatus(await exchange(`profile stop ${id}`,/^PROFILE /));}
+      catch(error){if(!error.code)error.profileOutcomeUnknown=true;throw error;}
+      if(result.id!==id||result.active){const error=new Error('Capture stop was not confirmed. Read its status before trying again.');error.profileOutcomeUnknown=true;throw error;}
+      return result;
+    });},
+    readProfileCapture(id){return exclusive(async()=>{
+      integer(id,1,0xffffffff,'capture session');
+      const before=await readProfileStatus();
+      if(before.id!==id||before.active)throw new Error('This capture is not available as a stopped session.');
+      const metrics=[];
+      for(let index=0;index<PROFILE_METRIC_COUNT;index++)
+        metrics.push(profileMetric(await exchange(`profile metric ${id} ${index}`,/^PROFILE_METRIC /),id,index));
+      const after=await readProfileStatus();
+      if(after.id!==id||after.active||JSON.stringify(after)!==JSON.stringify(before))
+        throw new Error('The capture changed while its results were being read.');
+      return {version:1,status:after,metrics};
+    });},
+    backupStatus(){return exclusive(backupStatus);},
     downloadBackup(){return exclusive(download);},
     async prepareBackupRestore(bytes){
       const {info,original,targetVersion}=await prepareBackupRestore(bytes);
@@ -376,36 +504,59 @@ export function createDeviceClient({serial=globalThis.navigator?.serial,timeoutM
       // Capture both bytes and identity before asynchronous migration. The
       // original file and its provenance remain unchanged outside this call.
       const prepared=await prepareBackupRestore(bytes),{info,original,targetVersion}=prepared;bytes=prepared.bytes;
-      let uploading=false,applied=false;
+      let uploading=false,applied=false,stage='preflight',guarded=false;
+      state.restoreProgress=null;
       try{
-        const before=await backupStatus();if(!['idle','saved-verified','error'].includes(before.state))throw new Error('Device backup service is busy.');
+        const before=await backupStatus();
+        if(before.restoreActive||!['idle','saved-verified','error'].includes(before.state)){
+          const error=new Error(['applied','queued'].includes(before.state)?
+            `An earlier restore is ${before.state}: settings were applied, but saving is not verified. Inspect Backup service and Saved settings before continuing.`:
+            before.restoreActive?'An earlier restore is unfinished. Inspect Backup service before continuing.':
+            `The backup service is ${before.state}. No restore was started. Inspect Backup service before continuing.`);
+          error.backupStatus={...before};error.restoreStage='preflight';throw error;
+        }
+        stage='upload';
         const ready=deviceFields(await exchange(`backup begin ${bytes.length} ${deviceCRC32(bytes)}`,/^BACKUP ready /),'BACKUP');
         uploading=true;if(Number(ready.bytes)!==bytes.length)throw new Error('Unexpected accepted backup size.');
+        guarded=backupCaps.restore_guard==='1';trackRestore('receiving',0,bytes.length,guarded);
         for(let offset=0;offset<bytes.length;offset+=32){const part=bytes.subarray(offset,offset+32);
           const reply=deviceFields(await exchange(`backup put ${offset} ${hex(part)}`,/^BACKUP received=/),'BACKUP');
           if(Number(reply.received)!==offset+part.length)throw new Error('Backup upload acknowledgement differs.');
+          trackRestore('receiving',offset+part.length,bytes.length,guarded);
           emit(`Sending backup · ${offset+part.length}/${bytes.length} bytes`);
         }
-        const reply=deviceFields(await exchange('backup commit',/^BACKUP applied /),'BACKUP');
+        stage='apply';const reply=deviceFields(await exchange('backup commit',/^BACKUP applied /),'BACKUP');
         applied=true;uploading=false;
         if(Number(reply.bytes)!==bytes.length||crcValue(reply.payload_crc32)!==info.payloadCRC)
           throw new Error('Applied backup identity differs; inspect the device before continuing.');
         emit('Applied to device · waiting for verified save');
-        const deadline=now()+30000;let status;
+        trackRestore('saving',0,0,guarded);
+        stage='save';const deadline=now()+30000;let status;
         do{status=await backupStatus();
+          if(status.restoreProgress)trackRestore(status.restoreProgress.phase,status.restoreProgress.completed,status.restoreProgress.total,guarded);
           if(status.state==='error')throw new Error('Settings were applied but saving failed. Keep the backup file.');
           if(status.state==='saved-verified')break;
           await sleep(150);
         }while(now()<deadline);
         if(status.state!=='saved-verified'||status.payloadCRC!==info.payloadCRC)
           throw new Error('Settings were applied, but the saved state could not be verified before timeout. Keep the backup file.');
+        stage='readback';trackRestore('checking',0,0,guarded);
         const checked=inspectDeviceBackup(await download(),backupCaps);
         if(checked.payload.length!==info.payload.length||checked.payload.some((byte,index)=>byte!==info.payload[index]))
           throw new Error('Saved settings re-export differs from the restored payload.');
+        if(backupCaps.restore_guard==='1'){
+          stage='complete';
+          const complete=deviceFields(await exchange(`backup complete ${info.payloadCRC}`,/^BACKUP complete /),'BACKUP');
+          if(crcValue(complete.payload_crc32)!==info.payloadCRC||integer(complete.generation,0,0xffffffff,'restore completion generation')!==status.generation)
+            throw new Error('The restore completion does not match the verified saved settings. Inspect Backup service before continuing.');
+        }
+        trackRestore('success',1,1,false);
         emit('Restored · saved and read back exactly');return {generation:status.generation,payloadCRC:info.payloadCRC,
           sourcePayloadCRC:original.payloadCRC,sourceSettingsVersion:original.settingsVersion,settingsVersion:targetVersion,
           migrated:original.settingsVersion!==targetVersion,verified:true};
-      }finally{if(uploading&&!applied){try{await exchange('backup abort',/^BACKUP aborted$/);}catch{}}}
+      }catch(error){error.restoreStage??=stage;error.settingsApplied=applied;
+        if(stage!=='preflight')trackRestore('error',0,0,guarded);throw error;}
+      finally{if(uploading&&!applied){try{await exchange('backup abort',/^BACKUP aborted$/);if(state.restoreProgress)trackRestore('error',0,0,false);}catch{}}}
     });},
   };
   serial?.addEventListener?.('disconnect',event=>{if(event.target===port||event.port===port)void client.disconnect();});

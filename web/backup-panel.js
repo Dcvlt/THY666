@@ -1,6 +1,7 @@
 /* Explicit applied-state files only. No connection, firmware update or note input. */
 import { createUIIcon, createUIIconCorners } from './ui-system.js';
 import { BACKUP_HEADER_BYTES, BACKUP_MAX_BYTES, inspectDeviceBackup } from './device-client.js';
+import { createUpdateProgressBox, paintUpdateProgress, restoreProgressCopy } from './updater-art.js';
 
 let panelSequence = 0;
 
@@ -46,6 +47,7 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
   fileSummary.setAttribute('aria-live', 'polite');
   const restore = button('Restore backup', 'restore');restore.className+=' hud-action--primary';
   const status = el('p', 'library-notice backup-notice hud-notice'); status.dataset.backupReadout = 'notice';
+  const restoreProgress=createUpdateProgressBox(doc,'Settings restoration progress');restoreProgress.box.dataset.backupReadout='progress';
   status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const preview = el('details', 'backup-limits hud-disclosure');
   preview.append(el('summary', '', 'Backup limits'), el('p', 'inspector-notice', 'Backups contain saved configuration, not firmware, the bootloader or unsaved edits. Restore requires the same board.'));
@@ -63,7 +65,7 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
   }
   listen(saveChoice, 'click', () => showFlow('save'));
   listen(restoreChoice, 'click', () => showFlow('restore'));
-  body.append(identity, flows, journey, saveFlow, restoreFlow, status, preview); root.append(heading, coverage, body);
+  body.append(identity, flows, journey, saveFlow, restoreFlow, restoreProgress.box, status, preview); root.append(heading, coverage, body);
   mount.replaceChildren(root);
 
   function selectionStatus() {
@@ -103,8 +105,10 @@ export function initializeBackupPanel({ mount, client, getEngine, onApplied = ()
       } else fileSummary.append(el('p', '', current.error || 'File rejected. Choose a complete THY666 backup.'));
     } else fileSummary.append(el('p', 'inspector-notice', 'Choose a backup to restore.'));
     status.textContent = working && client.status?.message ? client.status.message : notice;
+    const tracked=working&&flow==='restore'?client.status?.restoreProgress:null;
+    paintUpdateProgress(restoreProgress,{state:tracked?'running':'idle',completed:tracked?.completed,total:tracked?.total,message:restoreProgressCopy(tracked)});
     status.dataset.tone=working?'info':noticeTone;
-    status.hidden = !status.textContent;
+    status.hidden = Boolean(tracked)||!status.textContent;
     if (!connected && dialog) closeConfirmation();
     return { connected, busy, selected: selection?.name || null, canRestore: !restore.disabled, confirmationOpen: Boolean(dialog), notice: status.textContent };
   }

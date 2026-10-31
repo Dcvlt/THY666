@@ -33,6 +33,29 @@ Clang/WASM installation can substitute for Zig:
 python tools/build_core.py --cc clang --test --core-only
 ```
 
+### Undefined-behavior checks
+
+Run an additional native diagnostic build before changing arithmetic, layouts,
+codecs or queue handling:
+
+```sh
+python tools/build_core.py --sanitize=undefined
+```
+
+This runs every portable native suite at `-O2` with assertions enabled and fatal
+undefined-behavior traps. Each invocation first verifies a clean program, a
+deliberate signed overflow and a failing assertion; unsupported instrumentation
+fails the run. The pinned Windows compiler lacks the standalone UBSan reporting
+runtime, so trap mode stops the affected executable without a symbolic UBSan
+message. Debug symbols and the failing suite remain available for investigation.
+
+Results go into a fresh `build/core-ubsan/` subdirectory. The command does not
+rebuild WebAssembly, regenerate UI assets, overwrite the normal build manifest
+or access a device. `--wasm-only` is incompatible; `--cc clang` remains available
+with the same mandatory probes. Public core CI has a separate diagnostic job.
+These checks cover executed host paths, not MCU MMIO/DMA or every possible input.
+See [optimization guidance](optimization.md) for interpretation and next steps.
+
 ## Connected Client and optional archival data
 
 The normal browser and desktop Client start using the shared C core and public
@@ -92,6 +115,26 @@ This needs no board, native HID library or private musical data. The generated
 WASM/manifest pair contains only updater policy and is checked before site or
 desktop packaging. See [Browser installation](browser-installation.md).
 
+### Local performance telemetry preview
+
+After building the portable core and browser updater, stage a separate local
+preview with synthetic input captured from the actual C engine:
+
+```sh
+python tools/build_site.py --output build/performance-preview
+node tools/render_performance_preview.mjs
+python -m http.server 3356 --bind 127.0.0.1 --directory build/performance-preview
+```
+
+Open `http://127.0.0.1:3356/performance-preview.html`. Its scene selector covers
+15 MPE members, upper-zone assignment, reserved strum voices, sustain, 21 track
+playheads, external-clock pause/loss and stale/unsupported detail. Snapshots are
+frozen; the preview never advances positions in JavaScript or opens a device.
+Dark and light appearances use the production Client widgets. The preview files
+stay in the ignored build directory and are excluded from normal site/desktop
+bundles. Physical MIDI delivery, foreground timing and display polling still
+require the [board checks](v0.2-board-checklist.md).
+
 ## STM32 instrument
 
 ```sh
@@ -145,6 +188,13 @@ end-to-end macOS/Linux workflows. Configuration restoration, interrupted-update
 recovery and automatic rollback remain separate unqualified capabilities.
 
 ## Verification
+
+For target optimization evidence, use the optional
+[performance capture](profiling.md) in Client Diagnostics. Its portable
+accumulator, journal observers, instrument adapter and destination-queue hooks
+have synthetic host tests. Keep instrumentation disabled for baseline behavior
+checks; actual recorder overhead requires paired board measurements. Captures
+are RAM-only and do not replace tests, ELF inspection or a stack watermark.
 
 Run focused native and browser suites for changed behavior, then the applicable
 target integration checks. Inspect generated ELF/map/stack reports for memory

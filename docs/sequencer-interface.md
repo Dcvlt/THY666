@@ -2,6 +2,16 @@
 
 The shared C engine and Client use the same workflow. Select **Engines → Sequencer**. Opening it never starts playback.
 
+The development Client's Board panel also shows firmware-reported playheads for
+all created tracks. Each marker is the sampled position within that track's
+actual loop, including a nonzero loop start and its grid spacing. Queued starts
+and stops, mute, recording, pause and clock suspension remain explicit. A stopped
+or paused marker does not drift between packets. Processor patterns such as Arp
+direction/swing are separate from the track's transport cursor; the marker is
+not an inferred Arp step or a measurement of a receiving instrument. Missing or
+stale telemetry shows unavailable. This requires matching development firmware
+and still needs a connected hardware test.
+
 ## 1. Create or open a track
 
 The OLED lists only tracks you have created, with note counts, progress, recording status and queued-start countdowns. The large pads stay quiet on this screen.

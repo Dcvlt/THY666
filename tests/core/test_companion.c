@@ -13,6 +13,7 @@ static uint8_t frozen[THY_COMPANION_SNAPSHOT_BYTES];
 static thy_instrument_pad layout[96];
 static uint32_t generation;
 static unsigned assertions,visual_calls;
+static int ledger_fixtures;
 static int provider_available;
 #define CHECK(x) do{++assertions;if(!(x)){fprintf(stderr,"%s:%d %s\n",__FILE__,__LINE__,#x);return 0;}}while(0)
 static uint16_t get16(unsigned at){return (uint16_t)(memory.stage[at]|((uint16_t)memory.stage[at+1u]<<8u));}
@@ -51,7 +52,7 @@ static int frozen_snapshot_and_runtime_are_actual(void)
     init();
     CHECK(strstr(command(1,0,"companion caps"),"COMPANION/1 CAPS build=0123456789abcdef uid=00112233445566778899aabb schema="));
     CHECK(strstr(response.text," bytes=1680 chunk=128 rows="));
-    CHECK(strstr(response.text," role=instrument backup=1 song=1 companion=1 harmony=1 harmony_bytes=800 reset=1 pad_map=1 pad_map_bytes=1672\r\n"));
+    CHECK(strstr(response.text," role=instrument backup=1 song=1 companion=1 harmony=1 harmony_bytes=800 reset=1 pad_map=1 pad_map_bytes=1672 performance=1 performance_bytes=1024\r\n"));
     const int16_t notes[]={60,64,67};
     CHECK(thy_engine_press_shaped(&engine,0,notes,3,0,0,5,80,NULL)==THY_OK);
     instrument.control_masks[1]=1u<<2u;instrument.sensors[0].pressure=93;
@@ -161,7 +162,11 @@ static int maximum_note_set_and_long_labels_keep_wire_fields_separate(void)
     instrument.user_scale=1u;
     memset(instrument.library.scales[0].name,'S',sizeof instrument.library.scales[0].name);
     instrument.library.scales[0].name[sizeof instrument.library.scales[0].name-1u]=0u;
-    for(unsigned note=0;note<128u;++note)core.refs[note]=1u;
+    int16_t pitches[64];
+    for(unsigned note=0;note<64u;++note)pitches[note]=(int16_t)note;
+    CHECK(thy_core_press(&core,0u,pitches,64u,0,0u,THY_ROUTE_USB0,96u)==THY_OK);
+    for(unsigned note=0;note<64u;++note)pitches[note]=(int16_t)(note+64u);
+    CHECK(thy_core_press(&core,1u,pitches,64u,0,0u,THY_ROUTE_USB0,96u)==THY_OK);
     CHECK(strstr(command(1,0,"companion snapshot"),"SNAPSHOT seq=1"));
     CHECK(!strcmp((char *)memory.stage+THY_COMPANION_HARMONY,"128 NOTES"));
     CHECK(memory.stage[THY_COMPANION_HARMONY+31u]==0u);
@@ -174,9 +179,10 @@ static int maximum_note_set_and_long_labels_keep_wire_fields_separate(void)
      * without intruding into the next field or either input-note bitmap. */
     instrument.held_input_valid[0]=instrument.held_color_valid[0]=1u;
     instrument.held_color_root[0]=1u;
-    core.refs[7]=1u;
+    unsigned count=1u;pitches[0]=7;
     for(unsigned interval=0;interval<12u;++interval)
-        if(UINT16_C(0x26d)&(1u<<interval))core.refs[13u+interval]=1u;
+        if(UINT16_C(0x26d)&(1u<<interval))pitches[count++]=(int16_t)(13u+interval);
+    CHECK(thy_core_press(&core,0u,pitches,count,0,0u,THY_ROUTE_USB0,96u)==THY_OK);
     CHECK(strstr(command(1,0,"companion snapshot"),"SNAPSHOT seq=1"));
     CHECK(!strcmp((char *)memory.stage+THY_COMPANION_HARMONY,"C# DIM7 ADD9 ADD11/G"));
     CHECK(memory.stage[THY_COMPANION_HARMONY+31u]==0u);
@@ -484,9 +490,222 @@ static int pad_map_key_ignores_acquisition_pressure_and_gate_activity(void)
     }
     CHECK(guards());return 1;
 }
-int main(void)
+static int capture_performance(uint32_t now)
 {
-    if(!frozen_snapshot_and_runtime_are_actual()||!exclusive_staging_expiry_and_readonly_pad_selection()||
+    if(companion.active){char release[64];(void)snprintf(release,sizeof release,"companion release %lu",(unsigned long)companion.sequence);
+        CHECK(strstr(command(0,now,release),"RELEASED"));}
+    CHECK(strstr(command(1,now,"companion performance snapshot"),"PERFORMANCE seq="));return 1;
+}
+static void drain_events(void)
+{thy_midi_event event;while(thy_core_poll(&core,&event)){} }
+static int performance_snapshot_is_frozen_exclusive_and_readonly(void)
+{
+    init();provider_available=0;
+    CHECK(strstr(command(0,0,"companion performance snapshot"),"ERR busy"));
+    companion.capacity=THY_COMPANION_PERFORMANCE_BYTES-1u;
+    CHECK(strstr(command(1,0,"companion performance snapshot"),"ERR snapshot-unavailable"));
+    companion.capacity=sizeof memory.stage;
+    uint32_t engine_before=thy_settings_crc32((const uint8_t *)&engine,sizeof engine);
+    uint32_t core_before=thy_settings_crc32((const uint8_t *)&core,sizeof core);
+    CHECK(capture_performance(10u));
+    CHECK(!memcmp(memory.stage,"THYPER1",8u));CHECK(get16(8)==1u&&get16(10)==1024u);
+    CHECK(get16(28)==THY_CLOCK_PPQN&&memory.stage[31]==UINT8_MAX&&memory.stage[157]==UINT8_MAX);
+    CHECK(get32(20)==engine.sequencer.revision&&get32(24)==engine.rhythm_transport.generation);
+    CHECK(companion.crc==thy_settings_crc32(memory.stage,THY_COMPANION_PERFORMANCE_BYTES));
+    CHECK(engine_before==thy_settings_crc32((const uint8_t *)&engine,sizeof engine));
+    CHECK(core_before==thy_settings_crc32((const uint8_t *)&core,sizeof core)&&!visual_calls);
+    for(unsigned n=0;n<THY_MPE_MEMBERS;++n){unsigned at=160u+n*24u;
+        CHECK(!memory.stage[at]&&memory.stage[at+1u]==UINT8_MAX&&memory.stage[at+19u]==UINT8_MAX);}
+    for(unsigned n=520u;n<1024u;++n)CHECK(!memory.stage[n]);
+    memcpy(frozen,memory.stage,1024u);engine.rhythm_transport.position=UINT64_C(0x1122334455667788);
+    CHECK(strstr(command(1,11u,"companion performance snapshot"),"ERR snapshot-active"));
+    CHECK(strstr(command(1,11u,"companion snapshot"),"ERR snapshot-active"));
+    CHECK(strstr(command(1,11u,"companion harmony snapshot"),"ERR snapshot-active"));
+    CHECK(strstr(command(1,11u,"companion pad-map"),"ERR snapshot-active"));
+    CHECK(strstr(command(1,11u,"companion get 1 1023 1"),"DATA seq=1"));
+    CHECK(strstr(command(1,11u,"companion get 1 1023 2"),"ERR offset"));
+    CHECK(!memcmp(frozen,memory.stage,1024u));
+    CHECK(capture_performance(12u));CHECK(get32(136)==0x55667788u&&get32(140)==0x11223344u);
+    CHECK(thy_companion_expire(&companion,5013u)&&!companion.active);
+    CHECK(strstr(command(1,5014u,"companion get 2 0 1"),"ERR generation"));
+    provider_available=1;CHECK(strstr(command(1,5015u,"companion snapshot"),"SNAPSHOT seq=3"));
+    CHECK(strstr(command(1,5016u,"companion release 3"),"RELEASED"));CHECK(capture_performance(5017u));
+    CHECK(strstr(command(1,5018u,"companion release 4"),"RELEASED"));
+    CHECK(strstr(command(1,5019u,"companion snapshot"),"ERR rate"));
+    CHECK(guards());return 1;
+}
+static int performance_mpe_reports_real_admission_backpressure_and_retirement(void)
+{
+    init();static thy_mpe mpe;thy_engine_bind_expression(&engine,&mpe);
+    thy_mpe_config config=engine.expression_config;config.enabled=1u;config.pressure_output[0]=THY_MPE_CC74;
+    CHECK(thy_engine_expression_configure(&engine,&config)==THY_OK);CHECK(sizeof(thy_mpe_voice)==24u);
+    const int16_t chord[]={60,64,67};int consumed=-1;
+    CHECK(thy_core_advance(&core,0u)==THY_OK);
+    CHECK(thy_mpe_press_ex(&mpe,0u,0u,60u,chord,3u,THY_ROUTE_USB0,91u,30u,&consumed,12u)==THY_OK);
+    CHECK(thy_mpe_pressure(&mpe,0u,107u)==THY_OK&&thy_mpe_bend(&mpe,0u,10000u)==THY_OK);
+    CHECK(capture_performance(1u));CHECK(memory.stage[152]&THY_COMPANION_PERF_MPE_ENABLED);
+    CHECK(memory.stage[160]==THY_MPE_HELD&&memory.stage[166]==THY_ROUTE_USB0);
+    CHECK(memory.stage[168]==91u&&memory.stage[169]==THY_MPE_CC74);
+    CHECK(memory.stage[170]==0u&&memory.stage[171]==12u&&get16(172)==8192u);
+    CHECK(memory.stage[174]==107u&&get16(176)==10000u);
+    CHECK(memory.stage[167]&THY_COMPANION_VOICE_EXPRESSION_PENDING);
+    for(unsigned n=1;n<3u;++n){unsigned at=160u+n*24u;
+        CHECK(memory.stage[at]==THY_MPE_HELD&&!memory.stage[at+6u]);
+        CHECK(memory.stage[at+7u]&THY_COMPANION_VOICE_PENDING);}
+    thy_midi_event cc={0u,0xb0u,1u,0u};unsigned filled=0;
+    while(thy_core_emit_batch(&core,&cc,1u)==THY_OK)++filled;
+    CHECK(filled>100u);uint16_t queue=core.queue_count;
+    CHECK(thy_mpe_service(&mpe)==THY_QUEUE_FULL);
+    CHECK(capture_performance(2u));CHECK(core.queue_count==queue&&memory.stage[170]==0u&&memory.stage[174]==107u);
+    drain_events();for(unsigned n=0;n<15u;++n)CHECK(thy_mpe_service(&mpe)==THY_OK);
+    drain_events();CHECK(thy_core_advance(&core,60u)==THY_OK);
+    CHECK(capture_performance(3u));
+    for(unsigned n=0;n<3u;++n){unsigned at=160u+n*24u;CHECK(memory.stage[at+6u]==THY_ROUTE_USB0);
+        CHECK(!(memory.stage[at+7u]&(THY_COMPANION_VOICE_PENDING|THY_COMPANION_VOICE_EXPRESSION_PENDING)));
+        CHECK(memory.stage[at+10u]==107u&&get16(at+12u)==10000u);}
+    drain_events();CHECK(thy_core_sustain(&core,THY_ROUTE_USB0,mpe.voices[0].channel,1)==THY_OK);
+    CHECK(thy_mpe_release(&mpe,0u)==THY_OK);CHECK(capture_performance(4u));
+    CHECK(memory.stage[160]==THY_MPE_RETIRING&&(memory.stage[167]&THY_COMPANION_VOICE_SUSTAINED));
+    CHECK(memory.stage[168]==91u&&memory.stage[169]==THY_MPE_CC74);
+    const int16_t next[]={72};CHECK(thy_mpe_press(&mpe,0u,0u,72u,next,1u,THY_ROUTE_USB0,44u,0u,&consumed)==THY_OK);
+    CHECK(capture_performance(5u));CHECK(memory.stage[168]==91u&&memory.stage[192]==44u);
+    CHECK(thy_mpe_release(&mpe,0u)==THY_OK);drain_events();
+    CHECK(thy_core_sustain(&core,THY_ROUTE_USB0,mpe.voices[0].channel,0)==THY_OK);
+    for(unsigned n=0;n<15u;++n)CHECK(thy_mpe_service(&mpe)==THY_OK);
+    CHECK(capture_performance(6u));for(unsigned n=0;n<THY_MPE_MEMBERS;++n){unsigned at=160u+n*24u;
+        CHECK(memory.stage[at]==THY_MPE_FREE&&memory.stage[at+1u]==UINT8_MAX&&!memory.stage[at+10u]);}
+    drain_events();config.upper_zone=1u;config.glide=1u;config.pressure_output[1]=THY_MPE_CC1;
+    CHECK(thy_engine_expression_configure(&engine,&config)==THY_OK);
+    const int16_t root[]={60},neighbor[]={62};
+    CHECK(thy_mpe_press(&mpe,48u,48u,60u,root,1u,THY_ROUTE_ALL,77u,0u,&consumed)==THY_OK);
+    CHECK(thy_mpe_press(&mpe,52u,52u,62u,neighbor,1u,THY_ROUTE_ALL,77u,0u,&consumed)==THY_OK&&consumed);
+    CHECK(thy_mpe_pressure(&mpe,48u,20u)==THY_OK&&thy_mpe_pressure(&mpe,52u,90u)==THY_OK);
+    CHECK(capture_performance(7u));CHECK(memory.stage[31]==15u&&memory.stage[161]==14u);
+    CHECK(memory.stage[163]==48u&&memory.stage[164]==48u&&memory.stage[165]==THY_ROUTE_ALL);
+    CHECK(memory.stage[169]==THY_MPE_CC1&&memory.stage[179]==52u);
+    CHECK(memory.stage[167]&THY_COMPANION_VOICE_MODIFIER);
+    CHECK(get16(176)==thy_mpe_glide_bend(20u,90u,2,config.bend_range));
+    CHECK(guards());return 1;
+}
+static int performance_playheads_copy_transport_loop_pause_queue_and_clock_loss(void)
+{
+    init();thy_transport *t=&engine.rhythm_transport;thy_clock *clock=&engine.musical_clock;thy_sequencer *seq=&engine.sequencer;
+    CHECK(thy_sequencer_create(seq,0u)==THY_OK&&thy_sequencer_create(seq,20u)==THY_OK);
+    CHECK(thy_sequencer_loop(seq,t,0u,960u,4800u)==THY_OK);
+    CHECK(thy_sequencer_loop(seq,t,20u,120u,1080u)==THY_OK);
+    seq->tracks[20].muted=1u;seq->tracks[20].flags|=THY_SEQ_FLAG_ONESHOT;
+    CHECK(thy_transport_set_enabled(t,0u,1u)==THY_TIME_OK&&thy_transport_set_enabled(t,20u,1u)==THY_TIME_OK);
+    CHECK(thy_sequencer_record(seq,t,clock,0u,THY_SEQ_SOURCE_PADS,THY_SEQ_REPLACE,960u,4800u)==THY_OK);
+    CHECK(capture_performance(1u));CHECK(memory.stage[156]==THY_SEQ_ARMED&&memory.stage[157]==0u&&memory.stage[543]==THY_SEQ_ARMED);
+    CHECK(thy_transport_start(t,clock)==THY_TIME_OK);CHECK(thy_sequencer_capture_advance(seq,t,clock)==THY_OK);
+    clock->tick=1000u;CHECK(thy_transport_advance(t,clock)==THY_TIME_OK);
+    CHECK(capture_performance(2u));CHECK(memory.stage[153]==THY_TRANSPORT_PLAYING);
+    CHECK(get32(520)==960u&&get32(524)==3840u&&get32(528)==1960u&&get32(532)==240u);
+    CHECK(memory.stage[540]==(THY_COMPANION_TRACK_CREATED|THY_COMPANION_TRACK_ENABLED|THY_COMPANION_TRACK_RUNNING|THY_COMPANION_TRACK_POSITION));
+    CHECK(get32(520u+20u*24u+8u)==160u);
+    CHECK(memory.stage[520u+20u*24u+20u]&(THY_COMPANION_TRACK_MUTED|THY_COMPANION_TRACK_ONESHOT));
+    CHECK(memory.stage[156]==THY_SEQ_RECORDING&&memory.stage[543]==THY_SEQ_RECORDING);
+    thy_sequencer_cancel(seq);CHECK(thy_transport_pause(t,clock)==THY_TIME_OK);uint32_t phase=t->tracks[0].playhead;
+    clock->tick+=1000u;CHECK(thy_transport_advance(t,clock)==THY_TIME_OK);
+    CHECK(capture_performance(3u));CHECK(memory.stage[153]==THY_TRANSPORT_PAUSED&&get32(528)==phase&&get32(136)==1000u);
+    CHECK(thy_transport_continue(t,clock)==THY_TIME_OK);
+    CHECK(thy_clock_set_source(clock,THY_CLOCK_SOURCE_USB,0u)==THY_TIME_OK);
+    CHECK(thy_transport_advance(t,clock)==THY_TIME_OK);CHECK(capture_performance(999999u));
+    CHECK(memory.stage[152]&THY_COMPANION_PERF_SUSPENDED);CHECK(!(memory.stage[152]&THY_COMPANION_PERF_CLOCK_READY));
+    CHECK(get32(528)==phase&&memory.stage[155]==THY_CLOCK_WAITING);
+    CHECK(thy_clock_midi_pulse(clock,1u)==THY_TIME_OK&&thy_transport_advance(t,clock)==THY_TIME_OK);
+    CHECK(capture_performance(1000000u));CHECK(!(memory.stage[152]&THY_COMPANION_PERF_SUSPENDED));CHECK(get32(528)==phase+40u);
+    CHECK(thy_transport_request_track(t,20u,0u,THY_TRANSPORT_BEAT,clock)==THY_TIME_OK);
+    CHECK(capture_performance(1000001u));CHECK(memory.stage[520u+20u*24u+21u]==THY_TRANSPORT_PENDING_STOP);
+    CHECK(thy_transport_stop(t,clock)==THY_TIME_OK);CHECK(capture_performance(1000002u));
+    CHECK(memory.stage[153]==THY_TRANSPORT_STOPPED&&get32(136)==0u&&get32(528)==960u);
+    CHECK(thy_clock_set_source(clock,THY_CLOCK_SOURCE_INTERNAL,2u)==THY_TIME_OK);
+    CHECK(thy_transport_set_enabled(t,0u,0u)==THY_TIME_OK&&thy_transport_set_enabled(t,20u,1u)==THY_TIME_OK);
+    CHECK(thy_transport_start(t,clock)==THY_TIME_OK&&thy_sequencer_advance(seq,&core,t,clock,NULL)==THY_OK);
+    clock->tick+=1000u;CHECK(thy_transport_advance(t,clock)==THY_TIME_OK);
+    CHECK(thy_sequencer_advance(seq,&core,t,clock,NULL)==THY_OK&&capture_performance(1000003u));
+    CHECK(!(memory.stage[520u+20u*24u+20u]&(THY_COMPANION_TRACK_ENABLED|THY_COMPANION_TRACK_RUNNING)));
+    CHECK(memory.stage[520u+20u*24u+20u]&THY_COMPANION_TRACK_ONESHOT);
+    CHECK(get32(520u+20u*24u+8u)==t->tracks[20].playhead);
+    CHECK(!core.queue_count&&!visual_calls);CHECK(guards());return 1;
+}
+static int capture_ledger(uint32_t now,uint64_t low,uint64_t high)
+{
+    static thy_core before_core;
+    before_core=core;
+    CHECK(strstr(command(1,now,"companion snapshot"),"SNAPSHOT seq="));
+    unsigned count=0u;
+    for(unsigned note=0u;note<128u;++note){
+        unsigned expected=(unsigned)(((note<64u?low:high)>>(note%64u))&1u);
+        CHECK(((memory.stage[THY_COMPANION_NOTES+note/8u]>>(note%8u))&1u)==expected);
+        count+=expected;
+    }
+    CHECK(memory.stage[1619]==count);
+    CHECK(!memcmp(&core,&before_core,sizeof core));
+    if(ledger_fixtures){
+        printf("LEDGER-%u ",now);
+        for(unsigned n=0u;n<THY_COMPANION_SNAPSHOT_BYTES;++n)printf("%02x",memory.stage[n]);
+        putchar('\n');
+    }
+    char release[48];(void)snprintf(release,sizeof release,"companion release %u",companion.sequence);
+    CHECK(strstr(command(1,now+1u,release),"RELEASED"));
+    CHECK(guards());return 1;
+}
+
+static int note_ledger_covers_idle_strum_overlap_sustain_generated_and_arp_gaps(void)
+{
+    init();const uint64_t c=UINT64_C(1)<<60u,eg=(UINT64_C(1)<<0u)|(UINT64_C(1)<<3u);
+    CHECK(capture_ledger(0u,0u,0u));
+    CHECK(thy_core_sustain(&core,THY_ROUTE_ALL,0u,1)==THY_OK);
+    CHECK(!core.sounding_count&&core.sustain_count==3u);
+    CHECK(capture_ledger(100u,0u,0u));
+    const int16_t notes[]={60,64,67};thy_shape shape={.strum_ms=100u};
+    CHECK(thy_core_press_shaped(&core,0u,notes,3u,0,0u,THY_ROUTE_ALL,96u,&shape)==THY_OK);
+    CHECK(core.pending_keys==6u&&core.sounding_count==3u);
+    CHECK(capture_ledger(200u,c,0u)); /* Future E/G attacks stay absent. */
+    CHECK(thy_core_press(&core,1u,notes,1u,0,0u,THY_ROUTE_ALL,80u)==THY_OK);
+    CHECK(core.refs[60u]==2u&&core.sounding_count==3u);
+    CHECK(capture_ledger(300u,c,0u));
+    CHECK(thy_core_advance(&core,200u)==THY_OK);
+    CHECK(capture_ledger(400u,c,eg));
+    CHECK(thy_core_release(&core,0u)==THY_OK&&thy_core_release(&core,1u)==THY_OK);
+    CHECK(!core.refs[60u]&&thy_core_deferred(&core,60u)&&core.sounding_count==9u);
+    CHECK(capture_ledger(500u,c,eg));
+    thy_generated_handle generated;
+    CHECK(thy_core_generated_acquire(&core,100u,1u,72u,2u,THY_ROUTE_DIN,90u,&generated)==THY_OK);
+    CHECK(capture_ledger(600u,c,eg|(UINT64_C(1)<<8u)));
+    CHECK(thy_core_sustain(&core,THY_ROUTE_ALL,0u,0)==THY_OK);
+    CHECK(core.sounding_count==1u&&core.generated_count==1u);
+    CHECK(capture_ledger(700u,0u,UINT64_C(1)<<8u));
+    CHECK(thy_core_generated_release(&core,generated)==THY_OK);
+    CHECK(!core.sounding_count&&core.queue_count>0u);
+    CHECK(capture_ledger(800u,0u,0u)); /* Undrained MIDI is not an owned note. */
+    thy_arp_config config=engine.arps[0].config;config.enabled=1u;config.start=THY_ARP_GRID;
+    CHECK(thy_arp_configure(&engine.arps[0],&core,&config,1u,1u,1)==THY_OK);
+    CHECK(thy_arp_press(&engine.arps[0],&core,0u,0u,notes,3u,96u,1u,1u,1)==THY_OK);
+    CHECK(!core.sounding_count&&engine.arps[0].held_count==1u);
+    CHECK(capture_ledger(900u,0u,0u));
+    CHECK(memory.stage[1618]==1u);
+    CHECK(memory.stage[THY_COMPANION_POOL+7u]&(1u<<4u));
+    CHECK(!strcmp((char *)memory.stage+THY_COMPANION_HARMONY,"C MAJ"));
+    CHECK(thy_arp_advance(&engine.arps[0],&core,config.rate_ticks,1u,1)==THY_OK);
+    CHECK(core.sounding_count>0u&&capture_ledger(1000u,c,0u));
+    CHECK(thy_arp_advance(&engine.arps[0],&core,config.rate_ticks+config.rate_ticks*config.gate_percent/100u,1u,1)==THY_OK);
+    CHECK(!core.sounding_count&&engine.arps[0].held_count==1u);
+    CHECK(capture_ledger(1100u,0u,0u));
+    CHECK(memory.stage[THY_COMPANION_POOL+7u]&(1u<<4u));
+    CHECK(thy_arp_release(&engine.arps[0],&core,0u,config.rate_ticks+config.rate_ticks*config.gate_percent/100u,1u,1)==THY_OK);
+    CHECK(capture_ledger(1200u,0u,0u));return 1;
+}
+
+int main(int argc,char **argv)
+{
+    if(argc==2&&!strcmp(argv[1],"--ledger-fixtures")){
+        ledger_fixtures=1;return note_ledger_covers_idle_strum_overlap_sustain_generated_and_arp_gaps()?0:1;
+    }
+    if(argc!=1)return 1;
+    if(!note_ledger_covers_idle_strum_overlap_sustain_generated_and_arp_gaps()||
+       !frozen_snapshot_and_runtime_are_actual()||!exclusive_staging_expiry_and_readonly_pad_selection()||
        !schema_scoped_parameters_navigation_and_explicit_actions()||!remote_controls_are_taps_and_cannot_release_a_physical_control()||
        !maximum_note_set_and_long_labels_keep_wire_fields_separate()||
        !optional_harmony_snapshot_reuses_staging_and_preserves_visual_cadence()||
@@ -495,6 +714,9 @@ int main(void)
        !reset_confirmation_uses_c_scope_and_rejects_stale_remote_navigation()||
        !pad_map_cooperative_publication_is_readonly_and_leased()||
        !pad_map_cancellation_changes_and_physical_roles()||!pad_map_sequencer_controls_are_contextual()||
-       !pad_map_key_ignores_acquisition_pressure_and_gate_activity())return 1;
-    printf("Companion:13 scenarios passed (%u assertions); service%zu bytes, caller-owned staging%u bytes.\n",assertions,sizeof(thy_companion),THY_COMPANION_SNAPSHOT_BYTES);return 0;
+       !pad_map_key_ignores_acquisition_pressure_and_gate_activity()||
+       !performance_snapshot_is_frozen_exclusive_and_readonly()||
+       !performance_mpe_reports_real_admission_backpressure_and_retirement()||
+       !performance_playheads_copy_transport_loop_pause_queue_and_clock_loss())return 1;
+    printf("Companion:17 scenarios passed (%u assertions); service%zu bytes, caller-owned staging%u bytes.\n",assertions,sizeof(thy_companion),THY_COMPANION_SNAPSHOT_BYTES);return 0;
 }

@@ -270,6 +270,96 @@ static int codec_rejects_crc_valid_structural_corruption(void)
     CHECK(thy_sequencer_encode(&seq,song,sizeof(song),&untouched)==THY_SEQ_CORRUPT && untouched==123u);
     return 1;
 }
+static void codec_put16(uint8_t *p,uint16_t value)
+{p[0]=(uint8_t)value;p[1]=(uint8_t)(value>>8);}
+static uint32_t codec_get32(const uint8_t *p)
+{return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);}
+static int codec_id_order_boundaries_and_duplicate_guards(void)
+{
+    static uint8_t saved[THY_SEQ_SONG_MAX];
+    const unsigned offsets=32u+THY_SEQ_TRACKS*28u;
+    for(unsigned order=0;order<5u;++order){
+        init();seq.count=THY_SEQ_EVENTS;seq.next_id=order==4u?0u:1025u;seq.next_group=0u;
+        for(unsigned n=0;n<seq.count;++n){
+            uint16_t id=(uint16_t)(order==0u?n+1u:order==1u?2u*n+1u:
+                order==2u?THY_SEQ_EVENTS-n:order==3u?((73u*n)%THY_SEQ_EVENTS)+1u:
+                n? n:UINT16_MAX);
+            seq.events[n]=note(n*3u,7u,n%128u,UINT16_MAX);
+            seq.events[n].id=id;seq.events[n].track=(uint8_t)(n%THY_SEQ_TRACKS);
+        }
+        backup=seq;size_t size=0;
+        CHECK(thy_sequencer_encode(&seq,song,sizeof song,&size)==THY_OK && size==THY_SEQ_SONG_MAX);
+        CHECK(thy_sequencer_validate(song,size)==THY_OK);memcpy(saved,song,size);
+        CHECK(thy_sequencer_decode(&seq,song,size)==THY_OK);
+        CHECK(!memcmp(seq.events,backup.events,sizeof seq.events));
+        CHECK(seq.next_id==backup.next_id && seq.next_group==0u);
+        CHECK(thy_sequencer_encode(&seq,song,sizeof song,&size)==THY_OK && !memcmp(song,saved,size));
+        /* IDs are song-wide, including duplicates between different tracks.
+         * Cover immediate, remote and earlier-than-maximum duplicates. */
+        const unsigned pairs[][2]={{0u,1u},{0u,511u},{256u,511u},{511u,0u}};
+        for(unsigned pair=0;pair<sizeof pairs/sizeof pairs[0];++pair){
+            memcpy(song,saved,size);unsigned from=offsets+pairs[pair][0]*16u+8u;
+            unsigned to=offsets+pairs[pair][1]*16u+8u;
+            song[to]=song[from];song[to+1u]=song[from+1u];repair_crc(size);
+            CHECK(thy_sequencer_validate(song,size)==THY_SEQ_CORRUPT);
+            backup=seq;CHECK(thy_sequencer_decode(&seq,song,size)==THY_SEQ_CORRUPT);
+            CHECK(!memcmp(&seq,&backup,sizeof seq));
+        }
+        memcpy(song,saved,size);codec_put16(song+offsets+8u,0u);repair_crc(size);
+        CHECK(thy_sequencer_validate(song,size)==THY_SEQ_CORRUPT);
+        memcpy(song,saved,size);codec_put16(song+20u,seq.events[0].id);repair_crc(size);
+        CHECK(thy_sequencer_validate(song,size)==THY_SEQ_CORRUPT);
+        memcpy(song,saved,size);codec_put16(song+22u,UINT16_MAX);repair_crc(size);
+        CHECK(thy_sequencer_validate(song,size)==THY_SEQ_CORRUPT);
+    }
+    return 1;
+}
+static int codec_track_occupancy_preserves_created_and_grid_bytes(void)
+{
+    init();seq.count=6u;seq.next_id=7u;seq.next_group=7u;
+    const uint8_t tracks[]={20u,0u,10u,4u,20u,0u};
+    seq.tracks[7].flags=THY_SEQ_FLAG_CREATED|THY_SEQ_FLAG_ONESHOT;
+    seq.tracks[4].loop_start=100u;seq.tracks[4].loop_end=11621u;seq.tracks[4].content_end=11621u;
+    for(unsigned n=0;n<seq.count;++n){
+        seq.events[n]=note(n*3u,7u,n+60u,n+1u);
+        seq.events[n].id=(uint16_t)(n+1u);seq.events[n].track=tracks[n];
+        seq.events[n].kind=(uint8_t)(n|128u);
+    }
+    backup=seq;size_t size=0;
+    CHECK(thy_sequencer_encode(&seq,song,sizeof song,&size)==THY_OK);
+    CHECK(!memcmp(&seq,&backup,sizeof seq));
+    for(unsigned t=0;t<THY_SEQ_TRACKS;++t){
+        const uint8_t *wire=song+32u+t*28u;
+        unsigned occupied=t==0u || t==4u || t==10u || t==20u;
+        CHECK(wire[23]==(uint8_t)(seq.tracks[t].flags|(occupied?THY_SEQ_FLAG_CREATED:0u)));
+        CHECK(codec_get32(wire+24u)==(t==4u?241u:240u));
+    }
+    CHECK(thy_sequencer_decode(&seq,song,size)==THY_OK);
+    CHECK(!memcmp(seq.events,backup.events,seq.count*sizeof seq.events[0]));
+    CHECK(thy_sequencer_track_exists(&seq,7) && !thy_sequencer_track_count(&seq,7));
+    CHECK(seq.tracks[4].grid_ticks==241u && seq.tracks[4].loop_start==100u && seq.tracks[4].loop_end==11621u);
+    seq.tracks[4].grid_ticks=0u;size=123u;
+    CHECK(thy_sequencer_encode(&seq,song,sizeof song,&size)==THY_SEQ_CORRUPT && size==123u);
+    return 1;
+}
+static int codec_invalid_track_does_not_alias_an_occupied_track(void)
+{
+    const uint8_t invalid[]={THY_SEQ_TRACKS,31u,32u,255u};
+    const unsigned offsets=32u+THY_SEQ_TRACKS*28u;
+    for(unsigned test=0;test<sizeof invalid/sizeof invalid[0];++test){
+        init();seq.count=2u;seq.next_id=3u;seq.next_group=3u;
+        seq.events[0]=note(0u,240u,60u,1u);seq.events[0].id=1u;seq.events[0].track=20u;
+        seq.events[1]=note(240u,240u,64u,2u);seq.events[1].id=2u;seq.events[1].track=invalid[test];
+        backup=seq;size_t size=123u;
+        CHECK(thy_sequencer_encode(&seq,song,sizeof song,&size)==THY_SEQ_CORRUPT && size==123u);
+        CHECK(!memcmp(&seq,&backup,sizeof seq));
+        CHECK(song[offsets+16u+12u]==invalid[test]);
+        for(unsigned t=0;t<THY_SEQ_TRACKS;++t)
+            CHECK(song[32u+t*28u+23u]==(t==20u?THY_SEQ_FLAG_CREATED:0u));
+        CHECK(thy_sequencer_validate(song,thy_sequencer_song_size(&seq))==THY_SEQ_CORRUPT);
+    }
+    return 1;
+}
 static int sustain_track_leases_and_captured_routes(void)
 {
     init();thy_seq_event a[]={
@@ -427,6 +517,8 @@ int main(void)
         full_capacity_and_non_destructive_limits,controller_event_delivery,
         compact_arp_each_layer_and_restart,mute_preserves_phase_and_oneshot_end,
         quantized_track_launch_with_small_service_delay,codec_rejects_crc_valid_structural_corruption,
+        codec_id_order_boundaries_and_duplicate_guards,codec_track_occupancy_preserves_created_and_grid_bytes,
+        codec_invalid_track_does_not_alias_an_occupied_track,
         sustain_track_leases_and_captured_routes,sustain_cleanup_keeps_live_pedal_and_full_queue_reservations,
         continuous_capture_thinning_keeps_edges,live_loop_extension_preserves_phase_and_owners,
         delayed_multiple_loops_release_before_new_attack,created_track_lifecycle_and_legacy_migration,

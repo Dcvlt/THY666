@@ -23,6 +23,7 @@ static uint8_t frame[THY_UI_FRAME_BYTES], before[THY_UI_FRAME_BYTES];
 static uint8_t target[THY_UI_FRAME_BYTES], interrupted[THY_UI_FRAME_BYTES];
 static uint8_t destinations[7][THY_UI_FRAME_BYTES];
 static unsigned assertions;
+static int ledger_fixtures;
 static int matches_text(const uint8_t *actual, unsigned x, unsigned y,
     const char *text, unsigned limit);
 
@@ -2317,8 +2318,155 @@ static int test_harmony_key_and_scale_pages_override_chord_view_without_key_chan
     return 1;
 }
 
+static int render_ledger_views(uint32_t now,unsigned pads,unsigned notes,const char *name)
+{
+    static thy_core frozen_core;
+    frozen_core=musical_core;before_state=state;
+    char actual[32],expected[32];
+    (void)snprintf(expected,sizeof expected,"PADS %u  NOTES %u",pads,notes);
+    thy_studio_ui_view_line(&state,THY_VIEW_INFO_COUNTS,"MAJOR C",1,1,actual);
+    CHECK(!strcmp(actual,expected));
+    if(name){
+        thy_studio_ui_view_line(&state,THY_VIEW_INFO_MUSICAL_NAMES,"MAJOR C",1,1,actual);
+        CHECK(!strcmp(actual,name));
+    }
+    for(unsigned view=0u;view<THY_VIEW_COUNT;++view){
+        if(!thy_view_available(view))continue;
+        instrument.display_view=(uint8_t)view;
+        render(&still,now,frame);
+        if(ledger_fixtures){
+            printf("LEDGER-UI-%u-%u ",now,view);
+            for(unsigned n=0u;n<THY_UI_FRAME_BYTES;++n)printf("%02x",frame[n]);
+            putchar('\n');
+        }
+    }
+    CHECK(!memcmp(&musical_core,&frozen_core,sizeof musical_core));
+    CHECK(!memcmp(&state,&before_state,sizeof state));return 1;
+}
+
+static int test_note_ledger_empty_fast_path_preserves_input_pools_and_all_ownership_modes(void)
+{
+    initialize();const int16_t notes[]={60,64,67};
+    CHECK(render_ledger_views(0u,0u,0u,NULL));
+    CHECK(thy_core_sustain(&musical_core,THY_ROUTE_ALL,0u,1)==THY_OK);
+    CHECK(render_ledger_views(1u,0u,0u,NULL));
+    thy_shape shape={.strum_ms=100u};
+    CHECK(thy_core_press_shaped(&musical_core,0u,notes,3u,0,0u,THY_ROUTE_ALL,96u,&shape)==THY_OK);
+    CHECK(musical_core.pending_keys==6u&&render_ledger_views(2u,1u,1u,NULL));
+    CHECK(thy_core_press(&musical_core,1u,notes,1u,0,0u,THY_ROUTE_ALL,80u)==THY_OK);
+    CHECK(render_ledger_views(3u,2u,1u,NULL));
+    CHECK(thy_core_advance(&musical_core,200u)==THY_OK);
+    CHECK(render_ledger_views(4u,2u,3u,"C MAJ"));
+    CHECK(thy_core_release(&musical_core,0u)==THY_OK&&thy_core_release(&musical_core,1u)==THY_OK);
+    CHECK(!musical_core.refs[60u]&&thy_core_deferred(&musical_core,60u));
+    CHECK(render_ledger_views(5u,0u,3u,"C MAJ"));
+    thy_generated_handle handle;
+    CHECK(thy_core_generated_acquire(&musical_core,100u,1u,72u,2u,THY_ROUTE_DIN,90u,&handle)==THY_OK);
+    CHECK(render_ledger_views(6u,0u,4u,NULL));
+    CHECK(thy_core_sustain(&musical_core,THY_ROUTE_ALL,0u,0)==THY_OK);
+    CHECK(render_ledger_views(7u,0u,1u,NULL));
+    CHECK(thy_core_generated_release(&musical_core,handle)==THY_OK);
+    CHECK(!musical_core.sounding_count&&musical_core.queue_count>0u);
+    CHECK(render_ledger_views(8u,0u,0u,NULL));
+    thy_arp_config config=engine.arps[0].config;config.enabled=1u;config.start=THY_ARP_GRID;
+    CHECK(thy_arp_configure(&engine.arps[0],&musical_core,&config,1u,1u,1)==THY_OK);
+    CHECK(thy_arp_press(&engine.arps[0],&musical_core,0u,0u,notes,3u,96u,1u,1u,1)==THY_OK);
+    CHECK(!musical_core.sounding_count&&render_ledger_views(9u,1u,0u,"C MAJ"));
+    CHECK(thy_arp_advance(&engine.arps[0],&musical_core,config.rate_ticks,1u,1)==THY_OK);
+    CHECK(render_ledger_views(10u,1u,1u,NULL));
+    uint64_t gate_end=config.rate_ticks+config.rate_ticks*config.gate_percent/100u;
+    CHECK(thy_arp_advance(&engine.arps[0],&musical_core,gate_end,1u,1)==THY_OK);
+    CHECK(!musical_core.sounding_count&&render_ledger_views(11u,1u,0u,"C MAJ"));
+    CHECK(thy_arp_release(&engine.arps[0],&musical_core,0u,gate_end,1u,1)==THY_OK);
+    CHECK(render_ledger_views(12u,0u,0u,NULL));return 1;
+}
+
+static int test_restore_overlay_is_read_only_bounded_and_reports_real_progress(void)
+{
+    struct {uint8_t prefix[32],pixels[THY_UI_FRAME_BYTES],suffix[32];} guarded;
+    initialize();before_state=state;
+    thy_restore_progress progress={THY_RESTORE_RECEIVING,1u,1u,0u,2863u,5726u};
+    const thy_restore_progress frozen=progress;
+    memset(&guarded,0xa5,sizeof guarded);
+    thy_studio_ui_render_restore(&progress,guarded.pixels);
+    CHECK(!memcmp(&progress,&frozen,sizeof progress));
+    CHECK(!memcmp(&state,&before_state,sizeof state));
+    CHECK(matches_text(guarded.pixels,3u,17u,"RECEIVING",24u));
+    CHECK(matches_text(guarded.pixels,3u,48u,"2863/5726 BYTES",24u));
+    CHECK(matches_text(guarded.pixels,13u,58u,"PAD INPUT LOCKED",22u));
+    CHECK(pixel_at(guarded.pixels,5u,57u) && !pixel_at(guarded.pixels,5u,61u));
+    for(unsigned n=0u;n<24u;++n)
+        CHECK(pixel_at(guarded.pixels,6u+n*5u,39u)==(n<12u));
+    memcpy(before,guarded.pixels,sizeof before);
+    progress.phase=THY_RESTORE_SAVING;progress.completed=1024u;progress.total=4096u;
+    thy_studio_ui_render_restore(&progress,guarded.pixels);
+    CHECK(memcmp(before,guarded.pixels,sizeof before));
+    CHECK(matches_text(guarded.pixels,3u,17u,"SAVING",24u));
+    CHECK(matches_text(guarded.pixels,3u,48u,"1024/4096 BYTES",24u));
+    for(unsigned n=0u;n<24u;++n)
+        CHECK(pixel_at(guarded.pixels,6u+n*5u,39u)==(n<6u));
+    progress.phase=THY_RESTORE_CHECKING;progress.completed=0u;progress.total=0u;
+    thy_studio_ui_render_restore(&progress,guarded.pixels);
+    CHECK(matches_text(guarded.pixels,3u,17u,"CHECKING",24u));
+    CHECK(matches_text(guarded.pixels,3u,48u,"READBACK IN PROGRESS",24u));
+    for(unsigned n=0u;n<24u;++n){
+        CHECK(!pixel_at(guarded.pixels,6u+n*5u,39u));
+        CHECK(pixel_at(guarded.pixels,6u+n*5u,41u));
+    }
+    progress.phase=THY_RESTORE_SUCCESS;progress.pads_locked=0u;
+    thy_studio_ui_render_restore(&progress,guarded.pixels);
+    CHECK(matches_text(guarded.pixels,3u,17u,"VERIFIED",24u));
+    CHECK(matches_text(guarded.pixels,13u,58u,"PAD INPUT ENABLED",22u));
+    for(unsigned n=0u;n<24u;++n)CHECK(pixel_at(guarded.pixels,6u+n*5u,39u));
+    progress.phase=THY_RESTORE_ERROR;progress.pads_locked=1u;
+    thy_studio_ui_render_restore(&progress,guarded.pixels);
+    CHECK(matches_text(guarded.pixels,3u,17u,"NEEDS ATTENTION",24u));
+    CHECK(matches_text(guarded.pixels,3u,48u,"KEEP YOUR BACKUP",24u));
+    progress.device_verified=1u;progress.pads_locked=0u;
+    thy_studio_ui_render_restore(&progress,guarded.pixels);
+    CHECK(matches_text(guarded.pixels,3u,17u,"SAVED ON BOARD",24u));
+    CHECK(matches_text(guarded.pixels,3u,26u,"HOST CHECK PENDING",24u));
+    CHECK(matches_text(guarded.pixels,13u,58u,"PAD INPUT ENABLED",22u));
+    CHECK(sizeof(thy_restore_progress)==12u);
+    progress.phase=THY_RESTORE_RECEIVING;progress.completed=UINT32_MAX;progress.total=1u;
+    thy_studio_ui_render_restore(&progress,guarded.pixels);
+    for(unsigned n=0u;n<24u;++n)CHECK(pixel_at(guarded.pixels,6u+n*5u,39u));
+    progress.phase=UINT8_MAX;
+    thy_studio_ui_render_restore(&progress,guarded.pixels);
+    CHECK(matches_text(guarded.pixels,3u,17u,"NEEDS ATTENTION",24u));
+    progress.active=0u;thy_studio_ui_render_restore(&progress,guarded.pixels);
+    for(unsigned n=0u;n<THY_UI_FRAME_BYTES;++n)CHECK(guarded.pixels[n]==0u);
+    thy_studio_ui_render_restore(NULL,guarded.pixels);
+    thy_studio_ui_render_restore(&progress,NULL);
+    for(unsigned n=0u;n<32u;++n){CHECK(guarded.prefix[n]==0xa5u);CHECK(guarded.suffix[n]==0xa5u);}
+    CHECK(!memcmp(&state,&before_state,sizeof state));
+    CHECK(!musical_core.sounding_count && !thy_core_queued(&musical_core));
+    return 1;
+}
+
 int main(int argc,char **argv)
 {
+    if(argc==2&&!strcmp(argv[1],"--ledger-fixtures")){
+        ledger_fixtures=1;return test_note_ledger_empty_fast_path_preserves_input_pools_and_all_ownership_modes()?0:1;
+    }
+    if(argc==2&&!strcmp(argv[1],"--restore-fixtures")){
+        const thy_restore_progress examples[]={
+            {THY_RESTORE_RECEIVING,1u,1u,0u,2863u,5726u},
+            {THY_RESTORE_SAVING,1u,1u,0u,2048u,5662u},
+            {THY_RESTORE_CHECKING,1u,1u,1u,0u,0u},
+            {THY_RESTORE_SUCCESS,1u,0u,1u,1u,1u},
+            {THY_RESTORE_ERROR,1u,1u,0u,0u,0u},
+            {THY_RESTORE_ERROR,1u,0u,1u,0u,0u}
+        };
+        const char *names[]={"RECEIVING","SAVING","CHECKING","SUCCESS","ERROR","HOST-PENDING"};
+        for(unsigned f=0u;f<6u;++f){
+            thy_studio_ui_render_restore(&examples[f],frame);
+            printf("RESTORE-%s ",names[f]);
+            for(unsigned n=0u;n<THY_UI_FRAME_BYTES;++n)printf("%02x",frame[n]);
+            putchar('\n');
+        }
+        return 0;
+    }
     if (argc == 2 && !strcmp(argv[1], "--harmony-fixtures")) {
         harmony_fixture();
         for(unsigned view=0u;view<4u;++view) {
@@ -2345,7 +2493,9 @@ int main(int argc,char **argv)
         return 0;
     }
     if(argc!=1)return 1;
-    if (!test_geometry_catalog_and_render_is_read_only() ||
+    if (!test_note_ledger_empty_fast_path_preserves_input_pools_and_all_ownership_modes() ||
+        !test_restore_overlay_is_read_only_bounded_and_reports_real_progress() ||
+        !test_geometry_catalog_and_render_is_read_only() ||
         !test_play_projection_and_opposite_hierarchy_slides() ||
         !test_cursor_and_editor_changes_do_not_slide() ||
         !test_wrap_reduced_motion_and_interruption() ||
@@ -2397,6 +2547,6 @@ int main(int argc,char **argv)
         !test_harmony_focus_separates_base_chord_and_complete_melody_classes() ||
         !test_harmony_four_views_status_and_details_follow_physical_clusters() ||
         !test_harmony_key_and_scale_pages_override_chord_view_without_key_changes()) return 1;
-    printf("50 shared studio UI/transfer scenarios passed (%u assertions)\n", assertions);
+    printf("52 shared studio UI/transfer scenarios passed (%u assertions)\n", assertions);
     return 0;
 }

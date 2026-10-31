@@ -196,8 +196,9 @@ pub fn validate_command(bytes: &[u8]) -> Result<(), String> {
                 && id.parse::<u8>().is_ok_and(|id| id < 96)
         })
     });
-    let allowed = ["status", "io", "settings", "display"].contains(&command)
+    let allowed = ["status", "io", "settings", "display", "pads"].contains(&command)
         || pad_command
+        || profile_command(command)
         || ["companion ", "backup ", "song "]
             .iter()
             .any(|prefix| command.starts_with(prefix));
@@ -205,6 +206,21 @@ pub fn validate_command(bytes: &[u8]) -> Result<(), String> {
         return Err("This command is outside the Companion protocol".into());
     }
     Ok(())
+}
+
+fn profile_command(command: &str) -> bool {
+    let parts: Vec<_> = command.split(' ').collect();
+    let number = |text: &str, min: u32, max: u32| {
+        !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())
+            && text.parse::<u32>().is_ok_and(|value| value >= min && value <= max)
+    };
+    match parts.as_slice() {
+        ["profile", "caps" | "status"] => true,
+        ["profile", "start", seconds] => number(seconds, 1, 60),
+        ["profile", "stop", id] => number(id, 1, u32::MAX),
+        ["profile", "metric", id, index] => number(id, 1, u32::MAX) && number(index, 0, 18),
+        _ => false,
+    }
 }
 
 impl Session {
@@ -403,8 +419,11 @@ fn response_matches(command: &str, line: &str) -> bool {
         "io" => "IO ",
         "settings" => "SETTINGS ",
         "display" => "DISPLAY ",
+        "pads" => "PADS ",
         "pad" => "PAD ",
         "velocity" => "VELOCITY ",
+        "profile" if command.starts_with("profile metric ") => "PROFILE_METRIC ",
+        "profile" => "PROFILE ",
         _ => return false,
     };
     line.starts_with(prefix) || line.starts_with("ERR ") || line.starts_with("COMPANION/1 ERR ")
@@ -457,8 +476,17 @@ mod tests {
             "io\n",
             "settings\n",
             "display\n",
+            "pads\n",
+            "backup status\n",
             "pad 0\n",
             "velocity 95\n",
+            "profile caps\n",
+            "profile status\n",
+            "profile start 1\n",
+            "profile start 60\n",
+            "profile stop 4294967295\n",
+            "profile metric 1 0\n",
+            "profile metric 4294967295 18\n",
         ] {
             assert!(validate_command(command.as_bytes()).is_ok());
         }
@@ -471,6 +499,16 @@ mod tests {
             "nor erase\n",
             "flash read\n",
             "status\0\n",
+            "profile\n",
+            "profile start 0\n",
+            "profile start 61\n",
+            "profile stop 0\n",
+            "profile stop 4294967296\n",
+            "profile metric 1 19\n",
+            "profile metric 1 -1\n",
+            "profile metric 0 1\n",
+            "profile status extra\n",
+            "profile erase\n",
         ] {
             assert!(validate_command(command.as_bytes()).is_err());
         }
@@ -544,8 +582,17 @@ mod tests {
             "COMPANION/1 CAPS role=instrument"
         ));
         assert!(response_matches("backup caps", "BACKUP version=1"));
+        assert!(response_matches("backup status", "BACKUP version=1 state=queued"));
+        assert!(response_matches("pads", "PADS frames=12 scans=192 errors=0"));
+        assert!(!response_matches("pads", "PAD index=0 raw=1200"));
         assert!(response_matches("song caps", "SONG version=1"));
         assert!(response_matches("io", "ERR busy"));
         assert!(!response_matches("status", "IO din_ready=1"));
+        assert!(response_matches("profile status", "PROFILE version=1 id=1 active=0"));
+        assert!(response_matches("profile start 30", "PROFILE version=1 id=1 active=1"));
+        assert!(response_matches("profile metric 1 18", "PROFILE_METRIC id=1 index=18 unit=us"));
+        assert!(!response_matches("profile metric 1 0", "PROFILE version=1"));
+        assert!(!response_matches("profile status", "PROFILE_METRIC id=1 index=0"));
+        assert!(response_matches("profile stop 1", "ERR profile-session"));
     }
 }

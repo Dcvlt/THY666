@@ -18,6 +18,7 @@
 #include "settings.h"
 #include "control_lights.h"
 #include "thy_calibration.h"
+#include "profile.h"
 
 #ifndef THY_INSTRUMENT_CPU_ASM
 #define THY_INSTRUMENT_CPU_ASM(...) __asm volatile(__VA_ARGS__)
@@ -52,10 +53,94 @@ static char service_uid[25];
 static uint32_t last_scan, last_layout_revision;
 static uint32_t last_settings_check;
 static uint32_t last_song_revision;
+static uint32_t profile_frames;
 static unsigned scale_index = 256u, group_index = 21u;
 static bool initialized, acquisition_failed;
+static uint32_t restore_suppressed_controls[4];
+static uint32_t restore_control_samples[4];
+static thy_restore_progress restore_progress;
+static uint32_t restore_terminal_ms;
+static uint8_t restore_guard_seen, restore_terminal_phase, restore_controls_wait;
 static int musical_idle(void);
 static int restore_settings(void *,const uint8_t *,size_t);
+static int hardware_ready(void)
+{
+    const diag_pads_report_t *pads=board_pads_report();
+    return initialized&&!acquisition_failed&&thy_instrument_din_report()->ready&&
+        thy_instrument_transport_ready(&transport)&&board_pads_active()&&
+        pads->state!=DIAG_PADS_FAULT&&!pads->errors;
+}
+
+static void restore_input_gate(void)
+{
+    if(!initialized)return;
+    if(backup_transfer.restore_active){
+        if(!restore_guard_seen)restore_terminal_phase=0u;
+        restore_guard_seen=1u;
+        /* Admission already proved musical ownership quiet. This explicit
+         * maintenance gate need not panic or alter the stored configuration. */
+        instrument.input_enabled=0u;
+    }else if(restore_guard_seen){
+        restore_guard_seen=0u;
+        const diag_controls_report_t *controls=board_controls_report();
+        restore_controls_wait=15u;
+        for(unsigned bank=0u;bank<4u;++bank){
+            restore_control_samples[bank]=controls->banks[bank].samples;
+            restore_suppressed_controls[bank]=UINT32_MAX;
+        }
+        /* Detector dispatch was suspended while raw ADC scanning continued.
+         * Requalify quiet contact state instead of playing a pad held across
+         * maintenance. Keep all saved calibration and response preferences. */
+        for(unsigned n=0;n<THY_PAD_COUNT;++n){
+            thy_instrument_sensor *sensor=&instrument.sensors[n];
+            sensor->warmup_count=0u;sensor->warmup_sum=0u;
+            sensor->attack_count=sensor->release_count=0u;
+            sensor->strike_ready=0u;sensor->strike_peak_rate=0u;
+        }
+    }
+}
+
+const thy_restore_progress *thy_instrument_app_restore_progress(void)
+{
+    if(!initialized)return NULL;
+    thy_settings_transfer_progress(&backup_transfer,&settings,&restore_progress);
+    restore_progress.pads_locked=(uint8_t)(backup_transfer.restore_active||acquisition_failed);
+    if(!backup_transfer.restore_active &&
+        (restore_progress.phase==THY_RESTORE_SUCCESS||restore_progress.phase==THY_RESTORE_ERROR)){
+        if(restore_terminal_phase!=restore_progress.phase){restore_terminal_ms=board_millis();restore_terminal_phase=restore_progress.phase;}
+        restore_progress.active=(uint8_t)((uint32_t)(board_millis()-restore_terminal_ms)<2500u);
+    }else restore_terminal_phase=0u;
+    return &restore_progress;
+}
+
+static int backup_commit(const char *line)
+{
+    const char *expected="backup commit";
+    if(!line)return 0;
+    while(*expected && *line==*expected){++line;++expected;}
+    return !*expected && !*line;
+}
+
+static int pause_restore_acquisition(void)
+{
+    const diag_pads_report_t *pads=board_pads_report();
+    if(acquisition_failed || pads->errors || pads->state==DIAG_PADS_FAULT ||
+        !board_pads_active())return 0;
+    if(board_pads_request(0)!=DIAG_SUCCESS)return 0;
+    uint32_t started=board_millis();
+    /* A quiet restore already excludes notes and output work. Complete only
+     * the driver's ADC/stream0 cleanup here; never recurse into USB, music,
+     * display or journal work. The normal raw-ADC restore needs one ms.
+     * Both guards stay finite if either hardware or SysTick is unavailable. */
+    for(unsigned polls=0u;polls<100000u;++polls){
+        board_pads_task(board_millis());
+        if(pads->errors || pads->state==DIAG_PADS_FAULT)break;
+        if(!board_pads_active())return 1;
+        if((uint32_t)(board_millis()-started)>=5u)break;
+    }
+    acquisition_failed=true;
+    return 0;
+}
 
 const thy_instrument *thy_instrument_app_state(void) { return initialized ? &instrument : NULL; }
 const thy_state *thy_instrument_app_menu_state(void) { return initialized ? &high_level.state : NULL; }
@@ -66,43 +151,81 @@ size_t thy_instrument_app_song_command(const char *line,char *output,size_t capa
     if(!initialized) return 0u;
     uint8_t before=song_transfer.state;
     size_t bytes=thy_song_transfer_command(&song_transfer,&high_level,
-        !settings.writing&&!companion.active&&!thy_settings_transfer_busy(&backup_transfer),
+        !settings.writing&&!companion.active&&!backup_transfer.restore_active&&!thy_settings_transfer_busy(&backup_transfer),
         board_millis(),line,output,capacity);
     if(before && !song_transfer.state) settings.observed=0u;
     return bytes;
 }
 size_t thy_instrument_app_backup_command(const char *line,char *output,size_t capacity)
 {
-    if(!initialized)return 0u;
-    return thy_settings_transfer_command(&backup_transfer,&high_level,&settings,
-        !settings.writing&&!song_transfer.state&&!companion.active,
-        musical_idle(),board_millis(),line,output,capacity);
+    if(!initialized || !line || !output || capacity<256u)return 0u;
+    int available=!settings.writing&&!song_transfer.state&&!companion.active;
+    int quiet=musical_idle(),paused=0;
+    const char *completion=line,*head="backup complete ";
+    while(*head&&*completion==*head){++completion;++head;}
+    if(!*head && (!hardware_ready()||!board_pads_report()->frames))quiet=0;
+    if(backup_commit(line) && backup_transfer.state==THY_BACKUP_UPLOAD &&
+        backup_transfer.received==backup_transfer.bytes && available && quiet){
+        /* File CRC/validation also runs before the apply callback. Stop ADC
+         * across the entire commit, including rejected complete candidates,
+         * so a long CPU-only validation cannot age an in-flight conversion.
+         * Detector baselines and settings remain untouched on rejection. */
+        paused=pause_restore_acquisition();
+        if(!paused)quiet=0;
+    }
+    size_t bytes=thy_settings_transfer_command(&backup_transfer,&high_level,&settings,
+        available,quiet,board_millis(),line,output,capacity);
+    if(paused){
+        /* The driver owns no old DMA at this point. Never clear a real fault
+         * or replay contacts; accepted settings deliberately warm up again. */
+        if(board_pads_request(1)!=DIAG_SUCCESS)acquisition_failed=true;
+        /* The restarted driver's frame counter is reset, not a completed
+         * frame. Preserve the profiler's prior real-frame timestamp so its
+         * next interval includes the acquisition pause. */
+        last_scan=profile_frames=0u;
+    }
+    restore_input_gate();
+    return bytes;
 }
 size_t thy_instrument_app_companion_command(const char *line,char *output,size_t capacity)
 {
     if(!initialized)return 0u;
     return thy_companion_command(&companion,&high_level,
-        !settings.writing&&!song_transfer.state&&!thy_settings_transfer_busy(&backup_transfer),
+        !settings.writing&&!song_transfer.state&&!backup_transfer.restore_active&&!thy_settings_transfer_busy(&backup_transfer),
         board_millis(),line,output,capacity);
+}
+size_t thy_instrument_app_profile_command(const char *line,char *output,size_t capacity)
+{
+    thy_instrument_profile_context snapshot={instrument.engine_kind,instrument.display_view,
+        high_level.musical_clock.tempo_milli_bpm,settings.saved_crc};
+    /* Starting is a diagnostic action, permitted during music but not across
+     * another maintenance transaction. It never changes musical settings. */
+    int available=hardware_ready()&&!settings.writing&&!song_transfer.state&&
+        !companion.active&&!backup_transfer.restore_active&&
+        !thy_settings_transfer_busy(&backup_transfer);
+    return thy_instrument_profile_command(line,output,capacity,available,&snapshot);
 }
 void thy_instrument_app_console_reset(void)
 {
     if(!initialized)return;
     /* The USB poll calls reset repeatedly while DTR is low. Do not restart
      * the autosave debounce in an ordinary disconnected/standalone session. */
-    if(!song_transfer.state&&!companion.active&&!thy_settings_transfer_busy(&backup_transfer))return;
+    if(!song_transfer.state&&!companion.active&&!thy_settings_transfer_staging(&backup_transfer)&&!backup_transfer.restore_active)return;
+    int had_staging=song_transfer.state||companion.active||thy_settings_transfer_staging(&backup_transfer);
     song_transfer.state=THY_SONG_IDLE;
     companion.active=0u;
     thy_settings_transfer_disconnect(&backup_transfer);
-    settings.observed=0u;
+    /* Applied restoration owns ordinary durable saving even without a host.
+     * Repeated DTR-low callbacks must never restart its save debounce. */
+    if(had_staging&&!backup_transfer.restore_applied)settings.observed=0u;
+    restore_input_gate();
 }
 const char *thy_instrument_app_scale_name(void) {
     return instrument.user_scale && instrument.user_scale<=8u?
         (const char *)instrument.library.scales[instrument.user_scale-1u].name:thy_instrument_data_name(scale_index);
 }
 bool thy_instrument_app_ready(void) {
-    if (!initialized || acquisition_failed || !thy_instrument_din_report()->ready ||
-        !thy_instrument_transport_ready(&transport)) return false;
+    if (!hardware_ready() || backup_transfer.restore_active) return false;
     /* Each sensor qualifies its own stable quiet startup. A boot-held or
      * noisy pad must not prevent the other 95 inputs from being played. */
     return true;
@@ -111,7 +234,7 @@ void thy_instrument_app_panic(void) { if (initialized) thy_engine_panic(&high_le
 
 void thy_instrument_app_midi(const thy_midi_event *event, uint32_t now_ms)
 {
-    if (!initialized || !event || event->destination != THY_USB0) return;
+    if (!initialized || backup_transfer.restore_active || !event || event->destination != THY_USB0) return;
     uint8_t bytes[3] = {event->status, event->data1, event->data2};
     uint8_t length=event->status>=0xf8u?1u:
         (event->status&0xf0u)==0xc0u || (event->status&0xf0u)==0xd0u?2u:3u;
@@ -123,6 +246,7 @@ void thy_instrument_app_usb_reset(uint32_t now_ms)
 {
     if (!initialized) return;
     thy_instrument_app_console_reset();
+    if(backup_transfer.restore_active)return;
     int result = thy_engine_usb_reset(&high_level, now_ms);
     if (result != THY_OK) { ++instrument.errors; instrument.last_error = result; }
 }
@@ -133,7 +257,11 @@ static bool write_usb(void *context, const uint8_t packet[4]) {
 }
 static bool write_din(void *context, const uint8_t *bytes, size_t count) {
     (void)context;
-    return thy_instrument_din_write(bytes, count);
+    bool written=thy_instrument_din_write(bytes, count);
+    thy_profile *profile=thy_instrument_profile_state();
+    if(written&&thy_profile_active(profile))
+        thy_profile_peak(profile,THY_PROFILE_PEAK_DIN_BYTES,thy_instrument_din_report()->queued);
+    return written;
 }
 
 static void action(void *context, const thy_instrument_control_event *event)
@@ -229,6 +357,8 @@ static int restore_settings(void *context,const uint8_t *payload,size_t count)
 }
 static void init_services(void)
 {
+    restore_guard_seen=restore_terminal_phase=restore_controls_wait=0u;
+    for(unsigned bank=0u;bank<4u;++bank)restore_suppressed_controls[bank]=restore_control_samples[bank]=0u;
     static const char hex[]="0123456789abcdef";
     for(unsigned word=0;word<3u;++word)
         for(unsigned digit=0;digit<8u;++digit)
@@ -246,6 +376,7 @@ static void init_services(void)
 int main(void)
 {
     board_init();
+    thy_instrument_profile_init(g_diag_mailbox.hclk_hz);profile_frames=0u;
     board_led_init(); thy_instrument_lights_init();
     board_controls_init(); board_pads_init(); board_center_init();
     thy_instrument_control_lights_init();
@@ -289,9 +420,12 @@ int main(void)
             }
         }
     } else {settings.status=THY_SETTINGS_ERROR; settings.errors=1u;}
+    settings.observer=thy_instrument_profile_journal_observer();
     if (!thy_instrument_din_init(g_diag_mailbox.pclk2_hz)) acquisition_failed = true;
     thy_instrument_transport_io io = {NULL, write_usb, write_din};
     thy_instrument_transport_init(&transport, &core, &io);
+    thy_instrument_transport_profile_bind(&transport,thy_instrument_profile_state(),
+        thy_instrument_profile_now,NULL);
     refresh_layout();
     /* Applying after catalog restoration preserves the optional per-pad slot
      * masks: set_layout deliberately clears these when changing a scale. */
@@ -308,12 +442,24 @@ int main(void)
     board_boot_stage(5u);
     if (board_pads_request(1) != DIAG_SUCCESS) acquisition_failed = true;
     for (;;) {
+        if(thy_profile_active(thy_instrument_profile_state()))
+            thy_instrument_profile_service(board_millis());
+        thy_instrument_profile_gap(THY_PROFILE_LOOP_US);
         board_resources_task(board_millis());
+        thy_instrument_profile_mark profile_mark=thy_instrument_profile_begin();
         thy_diag_usb_task();
+        thy_instrument_profile_end(THY_PROFILE_USB_US,profile_mark);
+        profile_mark=thy_instrument_profile_begin();
         thy_instrument_din_task(board_millis());
         const thy_diag_usb_stats *usb = thy_diag_usb_status();
         thy_instrument_transport_poll(&transport, usb->mounted, thy_instrument_usb_epoch(), 16u);
-        thy_channel_expression_usb_blocked(&channel_expression,transport.usb_blocked,sizeof transport.usb_blocked);
+        /* Empty-map synchronization only ORs zero into exclusions. The
+         * transport hint proves it is empty without another owner scan. */
+        if(transport.usb_blocks_pending)
+            thy_channel_expression_usb_blocked(&channel_expression,transport.usb_blocked,sizeof transport.usb_blocked);
+        thy_instrument_profile_end(THY_PROFILE_TRANSPORT_US,profile_mark);
+        thy_instrument_profile_gap(THY_PROFILE_INPUT_GAP_US);
+        profile_mark=thy_instrument_profile_begin();
         uint32_t now = board_millis();
         if (board_touch_response_ms() != instrument.center_poll_ms)
             (void)board_touch_response_set(instrument.center_poll_ms);
@@ -321,6 +467,10 @@ int main(void)
         board_poll();
         board_controls_task(board_millis());
         const diag_pads_report_t *pads = board_pads_report();
+        if(profile_frames!=pads->frames){
+            profile_frames=pads->frames;
+            thy_instrument_profile_gap(THY_PROFILE_ADC_FRAME_GAP_US);
+        }
         if (pads->state == DIAG_PADS_FAULT || pads->errors != 0u) {
             if (!acquisition_failed) thy_instrument_panic(&instrument);
             acquisition_failed = true;
@@ -346,7 +496,7 @@ int main(void)
         if (pads->scans && pads->scans != last_scan) {
             last_scan = pads->scans;
             unsigned selection = (pads->index + 15u) & 15u;
-            for (unsigned bank = 0; bank < 6; ++bank) {
+            for (unsigned bank = 0; !backup_transfer.restore_active && bank < 6; ++bank) {
                 unsigned slot = bank * 16u + selection;
                 if (pads->valid[slot / 32u] & (UINT32_C(1) << (slot & 31u)))
                     (void)thy_instrument_sample(&instrument, (uint8_t)slot,
@@ -355,8 +505,20 @@ int main(void)
         }
         if (instrument.presses != presses_before) board_display_boot_skip();
         const diag_controls_report_t *controls = board_controls_report();
-        for (unsigned bank = 0; bank < 4; ++bank) if (controls->banks[bank].valid)
-            (void)thy_instrument_controls(&instrument, (uint8_t)bank, controls->banks[bank].logical_pressed);
+        for (unsigned bank = 0; bank < 4; ++bank) if (controls->banks[bank].valid){
+            uint32_t mask=controls->banks[bank].logical_pressed;
+            if(backup_transfer.restore_active)restore_suppressed_controls[bank]=mask;
+            else{
+                if(restore_controls_wait&(1u<<bank)){
+                    if(controls->banks[bank].samples==restore_control_samples[bank])continue;
+                    restore_controls_wait&=(uint8_t)~(1u<<bank);
+                }
+                restore_suppressed_controls[bank]&=mask;
+                (void)thy_instrument_controls(&instrument,(uint8_t)bank,mask&~restore_suppressed_controls[bank]);
+            }
+        }
+        thy_instrument_profile_end(THY_PROFILE_INPUT_US,profile_mark);
+        profile_mark=thy_instrument_profile_begin();
         if (last_layout_revision != instrument.layout_revision) refresh_layout();
         int music_result = thy_engine_advance(&high_level, board_millis());
         if (music_result != THY_OK) {
@@ -367,18 +529,25 @@ int main(void)
             last_song_revision=high_level.sequencer.revision;
             high_level.song_status=1u;
         }
+        thy_instrument_profile_end(THY_PROFILE_ENGINE_US,profile_mark);
         /* Deliver the current generated-note changes before presentation.
          * Display service never waits for a full frame and has no music clock. */
+        profile_mark=thy_instrument_profile_begin();
         thy_instrument_transport_poll(&transport, usb->mounted, thy_instrument_usb_epoch(), 16u);
-        thy_channel_expression_usb_blocked(&channel_expression,transport.usb_blocked,sizeof transport.usb_blocked);
+        if(transport.usb_blocks_pending)
+            thy_channel_expression_usb_blocked(&channel_expression,transport.usb_blocked,sizeof transport.usb_blocked);
         thy_instrument_din_task(board_millis());
+        thy_instrument_profile_end(THY_PROFILE_TRANSPORT_US,profile_mark);
         board_display_task();
+        profile_mark=thy_instrument_profile_begin();
         thy_instrument_lights_task(&instrument, board_millis());
         thy_instrument_control_lights_task(&high_level, board_millis());
+        thy_instrument_profile_end(THY_PROFILE_LIGHTS_US,profile_mark);
         /* Programming is sliced into one verified word per idle foreground
          * turn; hashing settings is limited to 10Hz when not already saving.
          * Sector rotation can pause this single-bank MCU while fully idle. */
         now=board_millis();
+        profile_mark=thy_instrument_profile_begin();
         if(thy_song_transfer_expire(&song_transfer,now)) {
             settings.observed=0u; high_level.song_status=3u;
         }
@@ -390,14 +559,18 @@ int main(void)
             high_level.song_recall_requested=0u;
             high_level.song_status=thy_settings_journal_recall_song(&settings,&high_level)?2u:3u;
         }
+        thy_instrument_profile_end(THY_PROFILE_BACKGROUND_US,profile_mark);
         if (!song_transfer.state&&!companion.active&&!thy_settings_transfer_staging(&backup_transfer)&&
             (settings.writing || (uint32_t)(now-last_settings_check)>=100u)) {
             last_settings_check=now;
             int idle=settings_idle();
+            int maintenance_idle=idle&&!board_pads_busy();
             /* A full-song CRC/semantic pass is background work too. Keep it
              * out of active music, rather than merely blocking flash writes. */
-            if(settings.writing || idle) {
-                thy_settings_journal_task(&settings,&high_level,now,idle);
+            if(settings.writing || maintenance_idle) {
+                profile_mark=thy_instrument_profile_begin();
+                thy_settings_journal_task(&settings,&high_level,now,maintenance_idle);
+                thy_instrument_profile_end(THY_PROFILE_JOURNAL_US,profile_mark);
                 if(high_level.song_save_requested && settings.status==THY_SETTINGS_PENDING) {
                     settings.changed_ms=now-1500u;
                     high_level.song_save_requested=0u;
@@ -409,7 +582,10 @@ int main(void)
                     high_level.song_status=3u;
             }
         }
+        profile_mark=thy_instrument_profile_begin();
         thy_settings_transfer_poll(&backup_transfer,&high_level,&settings,
             settings_idle(),now);
+        restore_input_gate();
+        thy_instrument_profile_end(THY_PROFILE_BACKGROUND_US,profile_mark);
     }
 }

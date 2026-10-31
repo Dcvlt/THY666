@@ -31,6 +31,14 @@ static thy_diag_usb_stats mock_usb;
 static thy_instrument_din_stats mock_din;
 static uint8_t mock_din_messages[256][3], mock_usb_packets[512][4];
 static unsigned mock_din_count, mock_usb_count, mock_light_calls;
+static unsigned mock_pad_active, mock_pad_busy, mock_pad_stop_pending;
+static unsigned mock_pad_stops, mock_pad_starts, mock_pad_stop_services;
+static unsigned mock_restore_delay_ms, mock_restore_catalog_checks, mock_elapsed_ms;
+static unsigned mock_pad_stop_stuck;
+static uint32_t mock_restored_crc;
+static void restore_during_main(void);
+static void commit_restore_during_main(void);
+static void complete_restore_during_main(void);
 static unsigned mock_control_light_calls;
 static unsigned mock_display_calls;
 static unsigned mock_boot_stage_count, mock_boot_ready_calls, mock_boot_skip_calls;
@@ -62,6 +70,7 @@ static int mock_settings_read(void *context,uint32_t offset,uint8_t *out,size_t 
 }
 static int mock_settings_program(void *context,uint32_t offset,const uint8_t word[4]) {
     (void)context; assert(!(offset&3u) && offset<=sizeof mock_settings_flash-4u);
+    assert(!mock_pad_busy); /* Internal flash maintenance waits for ADC completion. */
     for(unsigned n=0;n<4u;++n) {assert(mock_settings_flash[offset+n]==255u);mock_settings_flash[offset+n]=word[n];}
     ++mock_settings_programs; return 1;
 }
@@ -132,7 +141,10 @@ void thy_instrument_control_lights_task(const thy_engine *state, uint32_t now)
     ++mock_control_light_calls;
 }
 void board_controls_init(void) { memset(&mock_controls, 0, sizeof mock_controls); }
-void board_controls_task(uint32_t now) { assert(now == mock_now); }
+void board_controls_task(uint32_t now) {
+    assert(now == mock_now);
+    for(unsigned bank=0u;bank<4u;++bank)if(mock_controls.banks[bank].valid)++mock_controls.banks[bank].samples;
+}
 const diag_controls_report_t *board_controls_report(void) { return &mock_controls; }
 void board_center_init(void) { }
 int board_center_request(unsigned mode, unsigned channel, unsigned brightness)
@@ -143,14 +155,43 @@ int board_center_request(unsigned mode, unsigned channel, unsigned brightness)
 void board_pads_init(void)
 {
     memset(&mock_pads, 0, sizeof mock_pads);
+    mock_pad_active = mock_pad_busy = mock_pad_stop_pending = 0u;
+    mock_pad_stops = mock_pad_starts = mock_pad_stop_services = 0u;
     for (unsigned i = 0u; i < 96u; ++i) mock_pads.raw[i] = 4u;
     mock_pads.valid[0] = mock_pads.valid[1] = mock_pads.valid[2] = UINT32_MAX;
 }
 int board_pads_request(int start)
 {
-    assert(start == 1);
+    assert(start == 0 || start == 1);
+    if (!start) {
+        ++mock_pad_stops;
+        mock_pad_stop_pending = mock_pad_active;
+        return DIAG_SUCCESS;
+    }
+    assert(!mock_pad_active);
+    ++mock_pad_starts;
+    mock_pad_active = 1u;
+    mock_pad_busy = 0u;
+    mock_pads.scans = mock_pads.frames = mock_pads.index = 0u;
     mock_pads.state = DIAG_PADS_SETTLE;
     return DIAG_SUCCESS;
+}
+int board_pads_active(void) { return (int)mock_pad_active; }
+int board_pads_busy(void) { return (int)mock_pad_busy; }
+void board_pads_task(uint32_t now)
+{
+    assert(now == mock_now);
+    if (!mock_pad_stop_pending) return;
+    ++mock_pad_stop_services;
+    if (mock_pad_stop_stuck) { ++mock_elapsed_ms; ++mock_now; return; }
+    if (mock_pads.state != DIAG_PADS_RESTORE) {
+        mock_pads.state = DIAG_PADS_RESTORE;
+        mock_pad_busy = 0u;
+        return;
+    }
+    ++mock_elapsed_ms; ++mock_now; /* Model the driver's one millisecond cleanup. */
+    mock_pad_active = mock_pad_stop_pending = 0u;
+    mock_pads.state = DIAG_PADS_IDLE;
 }
 const diag_pads_report_t *board_pads_report(void) { return &mock_pads; }
 void thy_instrument_pads_renew(uint32_t now) { assert(now == mock_now); }
@@ -188,6 +229,15 @@ uint32_t thy_instrument_usb_epoch(void) { return mock_epoch; }
 
 int thy_instrument_data_find(unsigned group, unsigned root)
 {
+    if (mock_restore_delay_ms && ++mock_restore_catalog_checks == 2u) {
+        /* The real restore performs several settings decodes and a catalog
+         * refresh synchronously. The actual ADC driver separately tests delayed
+         * DMA completions; this application mock requires quiet hardware for
+         * a deliberately long catalog operation before letting time advance. */
+        assert(!mock_pad_active && !mock_pad_busy);
+        mock_elapsed_ms += mock_restore_delay_ms;
+        mock_now += mock_restore_delay_ms;
+    }
     assert(group < 70u && root < 12u);
     return (int)(4u + group * 12u + root);
 }
@@ -215,6 +265,8 @@ const char *thy_instrument_data_name(unsigned scale)
 
 static unsigned raw_value(unsigned slot)
 {
+    if (mock_case >= 7u) return slot==0u &&
+        ((mock_iteration>=155u && mock_iteration<=190u)||(mock_iteration>=4000u && mock_iteration<=4040u))?3766u:4u;
     if (slot == 5u) return 3766u; /* Held throughout power-on: this pad cannot arm. */
     if (mock_case == 1u) {
         if (slot == 0u && mock_iteration >= 145u && mock_iteration <= 192u) return 3766u;
@@ -229,8 +281,8 @@ static unsigned raw_value(unsigned slot)
 void thy_diag_usb_task(void)
 {
     if (++mock_iteration > mock_limit) longjmp(mock_escape, 1);
-    mock_now = mock_iteration;
-    if (mock_case >= 5u) {
+    mock_now = mock_iteration + mock_elapsed_ms;
+    if (mock_case == 5u || mock_case == 6u) {
         if (mock_iteration == 1u) {
             thy_arp_config config=high_level.arps[0].config;
             config.enabled=1u; config.channel=2u; config.destinations=THY_ROUTE_DIN;
@@ -266,8 +318,8 @@ void thy_diag_usb_task(void)
          * This assertion fails if app_ready globally waits for all96 inputs. */
         assert(thy_instrument_app_ready() && instrument.input_enabled);
         assert(instrument.sensors[0].warmup_count == 8u);
-        assert(instrument.sensors[5].warmup_count == 0u);
-        assert(instrument.sensors[5].blocked && !instrument.sensors[5].held);
+        assert(instrument.sensors[5].warmup_count == (mock_case>=7u?8u:0u));
+        assert(instrument.sensors[5].blocked == (mock_case>=7u?0u:1u) && !instrument.sensors[5].held);
         assert(instrument.sensors[0].detector_profile == THY_DETECTOR_FACTORY_LINEAR);
         assert(instrument.destinations[0] == (THY_ROUTE_DIN | THY_ROUTE_USB0));
         assert(instrument.destinations[1] == (THY_ROUTE_DIN | THY_ROUTE_USB0));
@@ -280,6 +332,27 @@ void thy_diag_usb_task(void)
         assert(mock_din_count == 48u && !mock_usb_count);
         if (mock_case == 3u) assert(!mock_boot_ready_calls && mock_boot_skip_calls);
         else assert(mock_boot_ready_calls != 0u); /* No USB host required. */
+    }
+    if (mock_case >= 7u) {
+        if (mock_iteration == 150u) restore_during_main();
+        if (mock_iteration == 200u) commit_restore_during_main();
+        if (mock_case==8u && mock_iteration>=210u) {
+            uint8_t observed=settings.observed;uint32_t changed=settings.changed_ms;
+            thy_instrument_app_console_reset();
+            assert(settings.observed==observed&&settings.changed_ms==changed);
+        }
+        if (mock_case==7u && backup_transfer.restore_verified && backup_transfer.restore_active)
+            complete_restore_during_main();
+        mock_controls.banks[2].valid=1u;
+        mock_controls.banks[2].logical_pressed=
+            (mock_iteration>=155u && mock_iteration<3980u)||mock_iteration==3990u?4u:
+            mock_iteration==3992u?1u:0u;
+        if(mock_iteration>=156u && mock_iteration<3980u)assert(instrument.performance.root==0u);
+        if(mock_iteration==3991u)assert(instrument.performance.root==2u);
+        if(mock_iteration==3993u)assert(instrument.performance.root==0u);
+        /* A later in-flight acquisition interrupts an ongoing save. Its
+         * pending journal words must wait rather than program over ADC work. */
+        mock_pad_busy=(mock_iteration>=1800u && mock_iteration<=2000u);
     }
     if (mock_case == 2u) {
         if (mock_iteration == 180u || mock_iteration == 220u) {
@@ -307,6 +380,9 @@ void thy_diag_usb_task(void)
     ++mock_pads.scans;
     mock_pads.index = (selection + 1u) & 15u;
     if (mock_pads.index == 0u) ++mock_pads.frames;
+#ifdef THY_INSTRUMENT_APP_TEST_TURN
+    THY_INSTRUMENT_APP_TEST_TURN();
+#endif
 }
 
 static void din_message(unsigned index, unsigned status, unsigned note, unsigned value)
@@ -321,6 +397,7 @@ static void run_case(unsigned scenario, unsigned limit)
     mock_case = scenario;
     mock_limit = limit;
     mock_iteration = mock_now = mock_epoch = 0u;
+    mock_restore_delay_ms = mock_restore_catalog_checks = mock_elapsed_ms = mock_pad_stop_stuck = 0u;
     mock_display_calls = 0u;
     mock_din_count = mock_usb_count = 0u;
     mock_boot_stage_count = mock_boot_ready_calls = mock_boot_skip_calls = 0u;
@@ -331,6 +408,8 @@ static void run_case(unsigned scenario, unsigned limit)
     scale_index = 256u;
     group_index = 21u;
     initialized = acquisition_failed = false;
+    restore_guard_seen=restore_terminal_phase=restore_controls_wait=0u;
+    memset(restore_suppressed_controls,0,sizeof restore_suppressed_controls);
     if (setjmp(mock_escape) == 0) (void)thy_test_app_main();
     assert(mock_light_calls == limit);
     assert(mock_display_calls == limit);
@@ -340,7 +419,7 @@ static void run_case(unsigned scenario, unsigned limit)
     assert(!instrument.sensors[0].held && !instrument.sensors[48].held);
     /* These real musical presses all occur before the 840 ms brand reveal
      * could finish. Presentation cannot hold up acquisition or DIN output. */
-    assert(mock_now < 840u && mock_boot_skip_calls >= (mock_case==4u?1u:2u));
+    assert((mock_case>=7u || mock_now < 840u) && mock_boot_skip_calls >= (mock_case==4u || mock_case>=7u?1u:2u));
     if (mock_case == 3u) assert(!mock_boot_ready_calls && !mock_boot_stage_count);
     else assert(mock_boot_ready_calls && mock_boot_stage_count == 3u);
 }
@@ -500,16 +579,102 @@ static void backup_and_companion_integration(void)
     assert(thy_instrument_app_backup_command("backup commit",reply,sizeof reply)&&strstr(reply,"ERR backup-busy")==reply);
     assert(core.owners[0].held&&high_level.scale==21u&&instrument.performance.root==0u);
     core.owners[0].held=0u;
+    uint32_t before=thy_settings_crc32((const uint8_t *)&instrument,sizeof instrument);
+    uint32_t expected_crc=backup_transfer.crc;backup_transfer.crc^=1u;
+    unsigned starts=mock_pad_starts,stops=mock_pad_stops;
+    assert(thy_instrument_app_backup_command("backup commit",reply,sizeof reply)&&strstr(reply,"ERR backup-crc-or-format")==reply);
+    assert(before==thy_settings_crc32((const uint8_t *)&instrument,sizeof instrument));
+    assert(mock_pad_starts==starts+1u && mock_pad_stops==stops+1u && mock_pad_active);
+    backup_transfer.crc=expected_crc;
+    mock_restore_delay_ms=25u;mock_restore_catalog_checks=0u;
     assert(thy_instrument_app_backup_command("backup commit",reply,sizeof reply)&&strstr(reply,"BACKUP applied")==reply);
+    mock_restore_delay_ms=0u;
     assert(high_level.scale==22u&&instrument.performance.root==3u&&scale_index==271u);
     assert(layout[0].notes[0]==63&&instrument.excluded_slots[0]==2u&&board_touch_response_ms()==12u);
     size_t encoded_bytes=0u;assert(thy_settings_encode(&high_level,encoded,sizeof encoded,&encoded_bytes));
     assert(encoded_bytes==count-64u&&!memcmp(encoded,candidate+64u,encoded_bytes));
     assert(!core.queue_count&&!core.sounding_count&&!core.generated_count);
-    thy_instrument_app_console_reset();assert(!thy_settings_transfer_busy(&backup_transfer));
+    settings.observed=1u;settings.changed_ms=123u;
+    thy_instrument_app_console_reset();thy_instrument_app_console_reset();
+    assert(thy_settings_transfer_busy(&backup_transfer)&&backup_transfer.restore_active);
+    assert(settings.observed==1u&&settings.changed_ms==123u);
 }
 
-int main(void)
+static void restore_during_main(void)
+{
+    static uint8_t file[THY_BACKUP_FILE_MAX];char reply[384],line[128];
+    assert(musical_idle() && instrument.sensors[0].warmup_count==8u);
+    instrument.center_poll_ms=12u;
+    assert(thy_instrument_app_backup_command("backup export",reply,sizeof reply)&&strstr(reply,"BACKUP export ")==reply);
+    uint32_t bytes=backup_transfer.bytes;
+    memcpy(file,backup_transfer.header,64u);memcpy(file+64u,backup_transfer.buffer,bytes-64u);
+    mock_restored_crc=backup_transfer.payload_crc;
+    assert(thy_instrument_app_backup_command("backup abort",reply,sizeof reply)&&strstr(reply,"BACKUP aborted")==reply);
+    instrument.center_poll_ms=8u;
+    (void)snprintf(line,sizeof line,"backup begin %u %u",bytes,thy_settings_crc32(file,bytes));
+    assert(thy_instrument_app_backup_command(line,reply,sizeof reply)&&strstr(reply,"BACKUP ready")==reply);
+    for(uint32_t at=0u;at<bytes;at+=32u){
+        unsigned count=bytes-at;if(count>32u)count=32u;
+        int prefix=snprintf(line,sizeof line,"backup put %u ",at);
+        for(unsigned n=0u;n<count;++n)(void)snprintf(line+prefix+n*2u,sizeof line-(unsigned)prefix-n*2u,"%02x",file[at+n]);
+        assert(thy_instrument_app_backup_command(line,reply,sizeof reply)&&strstr(reply,"BACKUP received=")==reply);
+    }
+    assert(backup_transfer.restore_active&&!instrument.input_enabled&&!thy_instrument_app_ready());
+    const thy_restore_progress *progress=thy_instrument_app_restore_progress();
+    assert(progress->active&&progress->pads_locked&&progress->phase==THY_RESTORE_RECEIVING&&progress->completed==bytes&&progress->total==bytes);
+    assert(!mock_pad_stops&&mock_pad_starts==1u);
+}
+
+static void commit_restore_during_main(void)
+{
+    char reply[384];
+    assert(backup_transfer.restore_active&&!instrument.input_enabled&&!instrument.sensors[0].held);
+    assert(instrument.performance.root==0u); /* Physical D was suppressed. */
+    mock_pad_busy=1u;mock_pads.state=DIAG_PADS_ACQUIRE;
+    mock_restore_delay_ms=25u;mock_restore_catalog_checks=0u;
+    assert(thy_instrument_app_backup_command("backup commit",reply,sizeof reply)&&strstr(reply,"BACKUP applied ")==reply);
+    mock_restore_delay_ms=0u;
+    assert(mock_pad_stops==1u && mock_pad_starts==2u && mock_pad_stop_services>=2u);
+    assert(mock_pad_active && !mock_pad_busy && !acquisition_failed && !last_scan);
+    assert(instrument.center_poll_ms==12u && instrument.sensors[0].warmup_count==0u);
+}
+
+static void complete_restore_during_main(void)
+{
+    char reply[384],line[64];
+    assert(backup_transfer.restore_active&&backup_transfer.restore_verified&&!instrument.input_enabled);
+    assert(backup_transfer.restore_crc==mock_restored_crc);
+    /* A faulted scanner cannot turn byte-correct readback into success. */
+    acquisition_failed=true;
+    (void)snprintf(line,sizeof line,"backup complete %u",mock_restored_crc);
+    assert(thy_instrument_app_backup_command(line,reply,sizeof reply)&&strstr(reply,"ERR backup-complete")==reply);
+    assert(backup_transfer.restore_active&&!backup_transfer.restore_host_verified&&!thy_instrument_app_ready());
+    acquisition_failed=false; /* A separate healthy-admission test, not a production retry. */
+    assert(thy_instrument_app_backup_command(line,reply,sizeof reply)&&strstr(reply,"BACKUP complete ")==reply);
+    assert(!backup_transfer.restore_active&&backup_transfer.restore_host_verified);
+    const thy_restore_progress *progress=thy_instrument_app_restore_progress();
+    assert(progress->active&&!progress->pads_locked&&progress->phase==THY_RESTORE_SUCCESS);
+}
+
+static void restore_cleanup_failure_stays_latched(void)
+{
+    char reply[384];unsigned starts=mock_pad_starts;
+    backup_transfer.state=THY_BACKUP_UPLOAD;backup_transfer.bytes=backup_transfer.received=64u;
+    mock_pad_stop_stuck=1u;mock_pad_busy=1u;mock_pads.state=DIAG_PADS_ACQUIRE;
+    unsigned services=mock_pad_stop_services;
+    uint32_t before=thy_settings_crc32((const uint8_t *)&instrument,sizeof instrument);
+    assert(thy_instrument_app_backup_command("backup commit",reply,sizeof reply)&&strstr(reply,"ERR backup-busy")==reply);
+    assert(acquisition_failed && mock_pad_starts==starts && mock_pad_stop_services-services<=5u);
+    assert(before==thy_settings_crc32((const uint8_t *)&instrument,sizeof instrument));
+    services=mock_pad_stop_services;
+    assert(thy_instrument_app_backup_command("backup commit",reply,sizeof reply)&&strstr(reply,"ERR backup-busy")==reply);
+    assert(mock_pad_stop_services==services && mock_pad_starts==starts); /* No fault retry. */
+}
+
+#ifndef THY_INSTRUMENT_APP_TEST_MAIN
+#define THY_INSTRUMENT_APP_TEST_MAIN main
+#endif
+int THY_INSTRUMENT_APP_TEST_MAIN(void)
 {
     static const unsigned notes[] = {60u, 64u, 67u};
     memset(mock_settings_flash,255u,sizeof mock_settings_flash);
@@ -583,6 +748,22 @@ int main(void)
     assert(high_level.arps[0].skipped>0u && !high_level.arps[0].held_count);
     calibration_callback_mapping_tests();
     backup_and_companion_integration();
-    puts("instrument actual app tests passed: 7 scenarios, DIN standalone, per-pad warmup, USB isolation, fresh-note recovery, boot/settings restoration, timed Arps, deferred USB clock bursts, shared staging and atomic current-state restore");
+    memset(mock_settings_flash,255u,sizeof mock_settings_flash);
+    run_case(7u,4300u);
+    assert(thy_instrument_app_ready() && instrument.input_enabled && !acquisition_failed);
+    assert(instrument.presses==1u && instrument.releases==1u && mock_din_count==54u);
+    for(unsigned n=0u;n<96u;++n)assert(instrument.sensors[n].warmup_count==8u);
+    assert(settings.status==THY_SETTINGS_SAVED && !settings.errors && settings.saved_crc==mock_restored_crc);
+    assert(backup_transfer.state==THY_BACKUP_SAVED_VERIFIED);
+    assert(backup_transfer.restore_host_verified&&!backup_transfer.restore_active);
+    memset(mock_settings_flash,255u,sizeof mock_settings_flash);
+    run_case(8u,4300u);
+    assert(thy_instrument_app_ready()&&instrument.input_enabled&&!acquisition_failed);
+    assert(instrument.presses==1u&&instrument.releases==1u&&mock_din_count==54u);
+    assert(settings.status==THY_SETTINGS_SAVED&&!settings.errors&&settings.saved_crc==mock_restored_crc);
+    assert(backup_transfer.restore_verified&&!backup_transfer.restore_active&&!backup_transfer.restore_host_verified);
+    assert(backup_transfer.restore_phase==THY_RESTORE_ERROR);
+    restore_cleanup_failure_stays_latched();
+    puts("instrument actual app tests passed: 9 scenarios, DIN standalone, per-pad warmup, USB isolation, fresh-note recovery, boot/settings restoration, timed Arps, deferred USB clock bursts, guarded restoration, suppressed inputs, host completion and disconnected durable saving");
     return 0;
 }

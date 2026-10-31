@@ -16,6 +16,7 @@ static unsigned assertions;
 static int invariant(const thy_core *core)
 {
     uint8_t expected[THY_KEY_COUNT] = {0};
+    uint8_t expected_pitches[128] = {0}, pitches[128];
     uint16_t sounding = 0u;
     uint16_t sustain = 0u;
     uint16_t pending = 0u;
@@ -44,6 +45,7 @@ static int invariant(const thy_core *core)
         CHECK(thy_core_refcount(core, (uint16_t)key) == expected[key]);
         if (core->refs[key] != 0u || thy_core_deferred(core, (uint16_t)key) != 0u) {
             ++sounding;
+            expected_pitches[key % 128u] = 1u;
         }
         if (thy_core_deferred(core, (uint16_t)key) != 0u) {
             CHECK(core->refs[key] == 0u);
@@ -57,6 +59,8 @@ static int invariant(const thy_core *core)
     CHECK(thy_core_pending(core) == pending);
     CHECK(thy_core_reserved(core) == sounding + sustain + 2u * pending);
     CHECK(core->sustain_count == sustain);
+    thy_core_sounding_pitches(core, pitches);
+    CHECK(memcmp(pitches, expected_pitches, sizeof pitches) == 0);
     return 1;
 }
 
@@ -1117,10 +1121,102 @@ static int test_deferred_keyset_storage_and_isolation(void)
     return 1;
 }
 
+static int snapshot_matches_scalar(const thy_core *core)
+{
+    uint8_t expected[128] = {0}, guarded[130];
+    memset(guarded, 0xa5, sizeof guarded);
+    if (core != NULL && core->sounding_count != 0u)
+        for (unsigned key = 0u; key < THY_KEY_COUNT; ++key)
+            if (core->refs[key] || thy_core_deferred(core, (uint16_t)key))
+                expected[key % 128u] = 1u;
+    thy_core_sounding_pitches(core, guarded + 1u);
+    CHECK(guarded[0] == 0xa5u && guarded[129] == 0xa5u);
+    CHECK(memcmp(guarded + 1u, expected, sizeof expected) == 0);
+    return 1;
+}
+
+static int test_sounding_pitch_snapshot(void)
+{
+    thy_core core, before;
+    CHECK(snapshot_matches_scalar(NULL));
+    thy_core_sounding_pitches(NULL, NULL);
+    thy_core_init(&core);
+    thy_core_sounding_pitches(&core, NULL);
+    CHECK(snapshot_matches_scalar(&core));
+
+    /* Every key exercises word/byte, channel and destination boundaries,
+     * independently for owned and sustain-deferred notes. */
+    core.sounding_count = 1u;
+    for (unsigned key = 0u; key < THY_KEY_COUNT; ++key) {
+        core.refs[key] = (uint8_t)(1u + key % 224u);
+        CHECK(snapshot_matches_scalar(&core));
+        core.refs[key] = 0u;
+        core.deferred_bits[key / 8u] = (uint8_t)(1u << (key & 7u));
+        CHECK(snapshot_matches_scalar(&core));
+        core.deferred_bits[key / 8u] = 0u;
+    }
+
+    /* Inspection also remains equivalent on synthetic sparse/dense ledgers,
+     * without treating owner metadata or a partial count as the pitch source. */
+    uint32_t random = 0x413782bdu;
+    for (unsigned trial = 0u; trial < 64u; ++trial) {
+        thy_core_init(&core);
+        for (unsigned key = 0u; key < THY_KEY_COUNT; ++key) {
+            random = random * 1664525u + 1013904223u;
+            if ((random >> 28u) == 0u) {
+                core.refs[key] = (uint8_t)(1u + random % 255u);
+                ++core.sounding_count;
+            } else if ((random >> 28u) == 1u) {
+                core.deferred_bits[key / 8u] |= (uint8_t)(1u << (key & 7u));
+                ++core.sounding_count;
+            }
+        }
+        before = core;
+        CHECK(snapshot_matches_scalar(&core));
+        CHECK(memcmp(&core, &before, sizeof core) == 0);
+    }
+    memset(core.refs, 0xff, sizeof core.refs);
+    memset(core.deferred_bits, 0xff, sizeof core.deferred_bits);
+    core.sounding_count = THY_KEY_COUNT;
+    CHECK(snapshot_matches_scalar(&core));
+    core.sounding_count = 0u;
+    CHECK(snapshot_matches_scalar(&core));
+
+    /* Generated voices, overlap, captured routes and deferred release must
+     * appear exactly like physical ownership, without changing the core. */
+    thy_core_init(&core);
+    thy_generated_handle first, second;
+    const int16_t notes[] = {0, 60, 127};
+    CHECK(thy_core_generated_acquire(&core, 1u, 1u, 0u, 15u,
+        THY_ROUTE_ALL, 90u, &first) == THY_OK);
+    CHECK(thy_core_generated_acquire(&core, 2u, 1u, 0u, 0u,
+        THY_ROUTE_DIN, 91u, &second) == THY_OK);
+    CHECK(thy_core_press(&core, 0u, notes, 3u, 0, 0u,
+        THY_ROUTE_ALL, 92u) == THY_OK);
+    CHECK(snapshot_matches_scalar(&core));
+    CHECK(thy_core_sustain(&core, THY_ROUTE_ALL, 15u, 1) == THY_OK);
+    CHECK(thy_core_generated_release(&core, first) == THY_OK);
+    CHECK(thy_core_release(&core, 0u) == THY_OK);
+    CHECK(snapshot_matches_scalar(&core));
+    CHECK(thy_core_generated_release(&core, second) == THY_OK);
+    CHECK(snapshot_matches_scalar(&core));
+    CHECK(thy_core_sustain(&core, THY_ROUTE_ALL, 15u, 0) == THY_OK);
+    CHECK(snapshot_matches_scalar(&core));
+    CHECK(thy_core_press_shaped(&core, 1u, notes, 3u, 0, 0u,
+        THY_ROUTE_ALL, 93u, &(thy_shape){.strum_ms = 20u}) == THY_OK);
+    CHECK(snapshot_matches_scalar(&core));
+    CHECK(thy_core_advance(&core, 20u) == THY_OK);
+    CHECK(snapshot_matches_scalar(&core));
+    thy_core_panic(&core);
+    CHECK(snapshot_matches_scalar(&core));
+    return 1;
+}
+
 int main(void)
 {
     struct named_test { const char *name; int (*run)(void); };
     const struct named_test tests[] = {
+        {"sounding pitch snapshots match the reference ledger", test_sounding_pitch_snapshot},
         {"overlap and duplicate pitches", test_overlap_and_duplicates},
         {"channel and destination isolation", test_same_pitch_separate_channels_and_destinations},
         {"held root, route and octave snapshots", test_held_root_route_and_octave_changes},

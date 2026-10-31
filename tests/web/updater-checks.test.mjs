@@ -68,6 +68,12 @@ test('driver errors, blocked or held pads, incomplete acquisition and disconnect
     assert.throws(() => checkUpdateHealth('io', replace('io', key, value), operation()), key);
   }
 });
+
+test('only valid incomplete warmup is marked as transient pad settling',()=>{
+  assert.throws(()=>checkUpdateHealth('io',replace('io','warmed','0'),operation()),error=>error.code==='pads-settling');
+  for(const line of [replace('io','warmed','97'),replace('io','warmed','-1'),without('io','warmed'),replace('io','blocked','1').replace('warmed=96','warmed=0'),replace('io','din_errors','1').replace('warmed=96','warmed=0')])
+    assert.throws(()=>checkUpdateHealth('io',line,operation()),error=>error.code!=='pads-settling');
+});
 test('settings saving, unsupported formats, unavailable storage and errors never pass', () => {
   for (const status of ['pending', 'saving', 'error', 'unsupported', 'unavailable', 'unknown']) {
     assert.throws(() => checkUpdateHealth('settings', replace('settings', 'status', status), operation()), status);

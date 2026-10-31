@@ -212,6 +212,79 @@ static void failure_and_lifecycle_tests(void)
     assert(accesses == 0u);
 }
 
+static void delayed_completed_conversion_tests(uint32_t start, uint32_t delay)
+{
+    setup(); fake_now = start;
+    assert(board_pads_request(1) == DIAG_SUCCESS);
+    uint32_t expiry = board_pads_report()->expires_ms;
+    task(start); task(start + 2u);
+    for (unsigned sample = 0u; sample < 3u; ++sample) {
+        /* DMA finished during foreground work; servicing its completion late
+         * must not fault the next, newly started conversion. */
+        inject_scan(0u, sample, start + 2u + (sample + 1u) * delay);
+        assert(board_pads_report()->errors == 0u);
+        assert(board_pads_report()->expires_ms == expiry);
+        if (sample < 2u) {
+            assert(board_pads_busy() && board_pads_report()->subscan == sample + 1u);
+            assert(board_pads_report()->scans == 0u);
+            for (unsigned word = 0u; word < 3u; ++word)
+                assert(board_pads_report()->valid[word] == 0u);
+        }
+    }
+    assert(board_pads_report()->state == DIAG_PADS_SETTLE);
+    assert(board_pads_report()->scans == 1u && board_pads_report()->index == 1u);
+    for (unsigned bank = 0u; bank < 6u; ++bank) {
+        unsigned slot = bank * 16u;
+        assert(board_pads_report()->raw[slot] == bank * 100u + 3u);
+        assert(board_pads_report()->valid[slot / 32u] & (1u << (slot & 31u)));
+    }
+    uint32_t now = start + 2u + 3u * delay;
+    assert(board_pads_request(0) == DIAG_SUCCESS); task(now);
+    assert(board_pads_active() && board_pads_report()->state == DIAG_PADS_RESTORE);
+    task(now + 1u);
+    assert(!board_pads_active() && board_pads_report()->state == DIAG_PADS_IDLE);
+}
+
+static void restarted_conversion_timeout_tests(uint32_t start)
+{
+    setup(); fake_now = start;
+    assert(board_pads_request(1) == DIAG_SUCCESS);
+    task(start); task(start + 2u);
+    inject_scan(0u, 0u, start + 22u);
+    assert(board_pads_busy() && board_pads_report()->errors == 0u);
+    task(start + 41u);
+    assert(board_pads_busy() && board_pads_report()->errors == 0u);
+    task(start + 42u); /* The new conversion really failed to complete. */
+    assert(board_pads_report()->state == DIAG_PADS_RESTORE);
+    assert(board_pads_report()->errors == 1u && board_pads_report()->scans == 0u);
+    assert(board_pads_report()->last_failure_result == DIAG_TIMEOUT);
+    assert(board_pads_report()->last_failure_ms == start + 42u);
+    assert((*stored(UINT32_C(0x40026410)) & 1u) == 0u);
+    assert(*stored(UINT32_C(0x40012008)) == 1u);
+    for (unsigned word = 0u; word < 3u; ++word)
+        assert(board_pads_report()->valid[word] == 0u);
+    task(start + 43u);
+    assert(!board_pads_active() && board_pads_report()->state == DIAG_PADS_FAULT);
+    assert(board_pads_report()->dma_resets == 0u && board_pads_report()->adc_resets == 0u);
+}
+
+static void completed_conversion_error_priority_tests(void)
+{
+    for (unsigned adc_overrun = 0u; adc_overrun < 2u; ++adc_overrun) {
+        setup(); assert(board_pads_request(1) == DIAG_SUCCESS);
+        task(0u); task(2u);
+        (void)fake_mmio(UINT32_C(0x40026400));
+        *stored(UINT32_C(0x40026400)) = adc_overrun ? 0x20u : 0x28u;
+        *stored(UINT32_C(0x40012000)) = adc_overrun ? 0x20u : 0u;
+        task(22u);
+        assert(board_pads_report()->last_failure_result == DIAG_UNAVAILABLE);
+        assert(board_pads_report()->errors == 1u && board_pads_report()->subscan == 0u);
+        assert(board_pads_report()->scans == 0u);
+        task(23u);
+        assert(!board_pads_active() && board_pads_report()->state == DIAG_PADS_FAULT);
+    }
+}
+
 static void stuck_stream_cleanup_tests(void)
 {
     setup(); assert(board_pads_request(1) == DIAG_SUCCESS); task(0u); task(2u);
@@ -239,6 +312,11 @@ static void stuck_stream_cleanup_tests(void)
 int main(void)
 {
     mux_tests(); acquisition_tests(0u); acquisition_tests(UINT32_MAX-1u);
+    delayed_completed_conversion_tests(0u, 20u);
+    delayed_completed_conversion_tests(UINT32_MAX - 1u, 27u);
+    restarted_conversion_timeout_tests(0u);
+    restarted_conversion_timeout_tests(UINT32_MAX - 1u);
+    completed_conversion_error_priority_tests();
     failure_and_lifecycle_tests(); stuck_stream_cleanup_tests();
     puts("diagnostic pad mux, ADC-only DMA lifecycle and lighting isolation tests passed");
     return 0;

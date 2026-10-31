@@ -17,6 +17,7 @@ static void instrument_boot_stage(uint32_t stage);
 #include "app.h"
 #include "display.h"
 #include "led.h"
+#include "profile.h"
 #include "../diagnostic/center.h"
 
 static thy_resources resources;
@@ -156,10 +157,14 @@ void board_display_task(void)
     if (!ui_initialized || display.report.faulted) return;
     uint32_t now = board_millis();
     const thy_state *state = thy_instrument_app_menu_state();
-    uint32_t scene_key = thy_studio_ui_scene_key(state);
-    int scene_changed = state != NULL && scene_key_seen &&
+    const thy_restore_progress *restore = thy_instrument_app_restore_progress();
+    int restoring = restore != NULL && restore->active && restore->phase != THY_RESTORE_IDLE;
+    uint32_t scene_key = restoring ? UINT32_C(0xF0000) | restore->phase :
+        thy_studio_ui_scene_key(state);
+    int scene_valid = state != NULL || restoring;
+    int scene_changed = scene_valid && scene_key_seen &&
         scene_key != requested_scene_key;
-    if (state != NULL && !scene_key_seen) {
+    if (scene_valid && !scene_key_seen) {
         requested_scene_key = scene_key;
         scene_key_seen = 1u;
     }
@@ -167,17 +172,20 @@ void board_display_task(void)
      * Play renders wait for a pinned scene to finish. This prevents continuous
      * visualizers from keeping the panel dark indefinitely. */
     if (scene_changed || thy_display_due(&display, now)) {
+        thy_instrument_profile_mark profile_mark=thy_instrument_profile_begin();
         uint32_t started = MMIO32(UINT32_C(0xe0001004));
         const thy_instrument_transport *output = thy_instrument_app_transport();
-        thy_studio_ui_render(&ui, state, thy_instrument_app_scale_name(),
-            thy_instrument_app_ready(),
-            output != NULL && thy_instrument_transport_usb_ready(output),
-            now, framebuffer);
+        if(restoring)thy_studio_ui_render_restore(restore,framebuffer);
+        else thy_studio_ui_render(&ui, state, thy_instrument_app_scale_name(),
+                thy_instrument_app_ready(),
+                output != NULL && thy_instrument_transport_usb_ready(output),
+                now, framebuffer);
         if (scene_changed) {
             (void)thy_display_submit_scene(&display, framebuffer, now);
             requested_scene_key = scene_key;
         } else (void)thy_display_submit(&display, framebuffer, now);
         display_render_finished(started);
+        thy_instrument_profile_end(THY_PROFILE_DISPLAY_RENDER_US,profile_mark);
     }
     /* New renders replace only the latest target. Each submitted bus slice
      * owns its payload until commit; successful bytes alone update the panel
@@ -192,12 +200,14 @@ void board_display_task(void)
     }
     const thy_display_transfer *slice = thy_display_prepare(&display, now);
     if (slice == NULL) return;
+    thy_instrument_profile_mark profile_mark=thy_instrument_profile_begin();
     uint32_t started = MMIO32(UINT32_C(0xe0001004));
     int sent = oled_bytes(0, slice->command, slice->command_count) == DIAG_SUCCESS &&
         (!slice->count || oled_bytes(1, slice->data, slice->count) == DIAG_SUCCESS);
     display.report.last_chunk_us = display_elapsed_us(started);
     if (display.report.last_chunk_us > display.report.max_chunk_us)
         display.report.max_chunk_us = display.report.last_chunk_us;
+    thy_instrument_profile_end(THY_PROFILE_DISPLAY_CHUNK_US,profile_mark);
     if (!sent) {
         thy_display_commit(&display, 0, board_millis());
         thy_display_fault(&display);

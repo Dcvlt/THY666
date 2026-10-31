@@ -208,6 +208,28 @@ profile, that stream captures upper Aftertouch. It does not record/replay the
 new D0, bend or MPE controller axes as an expression timeline. Generated notes
 receive channel cleanup before attack, but do not acquire physical pressure ownership.
 
+## Client member output meters
+
+Development firmware adds a read-only performance snapshot for the Client's
+Board view. Alongside physical Left/Right input peaks, the MPE panel can show
+each member's captured note, channel, output destinations and pressure mapping.
+Its pressure, upper-axis and pitch-bend readings are the last values accepted by
+the firmware's MIDI queue; they are not measurements from the receiving synth.
+Desired changes waiting for queue space remain distinguishable from accepted
+values. The upper axis retains the existing mapping: CC74 with Pressure output,
+or Channel Pressure when primary output is CC74/CC1.
+
+Reserved strum attacks, sounding owners, sustained notes and retiring cleanup
+remain distinct. A channel does not become free merely because its physical
+pad was released. Routing and pressure-message labels follow the voice's
+captured assignment, including while later settings differ.
+
+The Client samples these values without changing musical state or inventing
+per-note movement between packets. Missing/stale data stays unavailable; an
+older firmware build explains that detailed meters require an update. This is
+local development work, not included in published v0.2.2, and awaits physical
+playing, receiver comparison and mixed-load timing checks.
+
 ## Play-screen indicators
 
 The installed `db14dace` build's USB, DIN, MPE and Arp indicators, ordinary AT

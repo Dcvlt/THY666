@@ -55,8 +55,12 @@ export function checkUpdateHealth(id, line, operation, backupIdentity) {
     for (const key of ['din_ready', 'usb_ready', 'usb_mounted']) equals(v, key, 1, 'A MIDI driver is not ready. Wait, then check again.');
     for (const key of ['din_errors', 'transport_fault', 'led_errors', 'led_fault']) equals(v, key, 0, 'A pad, lighting or MIDI driver reports an error.');
     equals(v, 'held', 0, 'Release every pad, then check again.');
-    equals(v, 'warmed', 96, 'Pad acquisition is still settling. Wait, then check again.');
     equals(v, 'blocked', 0, 'A pad is blocked. Release every pad, then check again.');
+    const warmed=number(v,'warmed');
+    if(warmed!==96){
+      const error=new Error('Pad acquisition is still settling. Wait, then check again.');
+      if(warmed<96)error.code='pads-settling';throw error;
+    }
     return 'All 96 pads have settled; lighting and MIDI drivers report ready.';
   }
   if (id === 'settings') {
