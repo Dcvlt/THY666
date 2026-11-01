@@ -8,6 +8,9 @@
 THY333**, with a Client for your browser and desktop. Keep playing the instrument
 you own, with more control over its music, expression and behavior.
 
+**Current accepted release: [v0.3.1](https://github.com/Dcvlt/THY666/releases/tag/v0.3.1)**
+— hardware alpha, with focused board testing and remaining qualification limits.
+
 ## Start on the project site
 
 ### [Explore THY666 →](https://dcvlt.github.io/THY666/)
@@ -26,6 +29,13 @@ New to THY666? Start with the [Quick start guide](https://dcvlt.github.io/THY666
 read the screen, learn the controls and find your settings. The same guide is
 available in Client → Documentation.
 
+## Human + AI
+
+THY666 is developed through human–AI cooperation, including substantial
+implementation and tooling work with OpenAI Codex. The human maintainer defines
+the musical direction and tests the board; generated work is reviewed and tested.
+Software checks and physical-device qualification are reported separately.
+
 ## What it brings to the board
 
 - **Musical control:** chords and scales, inversions, strum, voice leading,
@@ -40,105 +50,59 @@ available in Client → Documentation.
   backups and a shared firmware-update flow in browser and desktop.
 
 The Client connects only when you ask. The physical board remains the playing
-surface; screen pads inspect its state. On phones, a compact navigation drawer
-keeps pages accessible. Backups separate saving from restoration; Diagnostics
-offers bounded live report charts, including DIN output activity. New firmware
-also exposes CPU timing, fixed RAM allocation, observed stack peak and firmware
-flash in Diagnostics and System → Resources; focused board checks passed. Board
-feedback adapts to active engines: connection assembly, expression routing,
-Arp pitch ribbons, Harmony movement/history and clear recording states.
-Labels read the board's assignments; the Web screen follows the app theme.
-These Client refinements are software-tested and await a connected board check.
-v0.3.0 adds firmware-reported MPE member output meters and sequencer
-track playheads. These need matching firmware; their broader hardware
-qualification is pending.
-Harmony groups suggestions and playing controls. The guide
-uses illustrations, expandable reference sections and phone-friendly tables.
-The Client and project site share a [component library and design guide](docs/design-system.md),
-including a read-only reference for themes, controls, states and motion, linked
-from Documentation → Use the Client. Sidebar collapse is a tab on its divider,
-distinct from page navigation.
+surface; clicking its large pads on screen inspects them. Contextual displays
+show expression routing, sounding notes, Harmony movement and recording states.
+An illustrated guide explains the controls, settings and musical workflows.
+
+The firmware is optimized for the board's fixed resources. Paired board captures
+confirmed lower rendering cost without reducing frame cadence or increasing
+static RAM. **System → Resources** and **Client → Diagnostics** expose CPU timing,
+fixed RAM allocation, observed stack peak and flash usage. Optional timed captures
+export performance data to help contributors reproduce problems and evaluate changes. See
+[performance profiling](docs/profiling.md) and the
+[resource review](docs/firmware-budget.md).
 
 ## Current status
 
-**Hardware alpha. v0.3.0 is the current accepted version; broader board qualification continues.** Existing playing,
-MIDI, display, storage and Windows update paths have device evidence. The latest
-musical additions have passed software checks and focused board tests, including
-Harmony exploration, held-note stability and saved preferences after power-off.
-macOS/Linux USB, interrupted-update recovery and broader restore
-coverage remain unqualified. See the [board test checklist](docs/v0.2-board-checklist.md).
+**v0.3.1 is the current accepted hardware-alpha release.** Focused board checks
+on the v0.3.0 baseline cover playing, DIN/USB MIDI, expression, Harmony exploration, OLED views,
+resources, Windows updates and saved preferences after power-off. Performance
+captures have also passed timed completion, JSON export and retrieval after
+Client disconnection. These checks do not establish maximum-load performance.
+
+v0.3.1 shares the status-icon frame across all seven Play views and refines the
+site’s mobile navigation. The new frames passed software checks and C-rendered
+preview review; their physical OLED check remains pending.
+
+The released feature set includes:
+
+- **Scoped expression:** Performance → Settings for applies velocity, Aftertouch,
+  bend and MPE pressure output to Both, Left or Right. MPE enable and its zone
+  remain global; pressure output can use Pressure, CC74 or CC1.
+  [Expression guide](docs/mpe-expression.md).
+- **Harmony exploration:** a full chord surface with stable root columns,
+  adaptive or locked qualities and contextual in-key/out-of-key suggestions.
+  System → Swap clusters exchanges musical roles while calibration stays with
+  each physical pad. [Harmony guide](docs/harmony.md).
+- **Configuration recovery:** the Client converts supported older backups with
+  the shared C codec, retains the original file and compares the complete saved
+  payload after restoration. Matching progress on the board and Client guards
+  playing and editing during recovery. [Backup guide](docs/companion-and-backup.md).
+
+macOS/Linux USB, interrupted-update recovery and broader restore coverage remain
+unqualified. Guarded restore failure/disconnect paths, detailed MPE meters,
+sequencer playheads and later Client/indicator refinements have software coverage
+but need broader device checks. Drums remains planned. See the
+[board test checklist](docs/v0.2-board-checklist.md) and
+[release notes](docs/releases.md) for the exact qualification scope.
 
 Back up your configuration before updating. A settings export is not a complete
-device image, and configuration preservation or automatic rollback is not
-promised. Follow the [installation guide](docs/installation.md) and the notes
-attached to the exact release you choose.
+device image; configuration preservation and automatic rollback are not promised.
+Follow the [installation guide](docs/installation.md) and the notes attached to
+the exact release you choose.
 
-v0.3.0 uses settings V19. **Performance → Settings for** scopes
-velocity, Aftertouch, bend and MPE pressure output to Both, Left or Right; MPE
-enable and its zone remain global. Pressure remains the default MPE message,
-with CC74 and CC1 alternatives for different synth assignments. These additions
-and the revised play-screen status icons passed focused board checks, including
-split expression output and clean releases. The later USB/DIN side ticks and
-MIDI menu cleanup remain host-tested and await a device check.
-Performance is the expression hub; MIDI keeps routing, clock and input controls.
-USB/DIN icons combine active routes, with physical-side ticks distinguishing
-whole-half output from mixed zones. See [Expression](docs/mpe-expression.md).
-
-Harmony offers a full 48-pad chord surface, fixed root columns, adaptive or
-locked qualities and contextual in/out-key
-suggestions in one Fifths view. Exploration, readable pad guidance, clean DIN
-releases and cold-boot persistence have been exercised on a board; broader
-policy and load tests remain. **System → Swap clusters** exchanges musical roles;
-sensor calibration stays on its physical pads. See [Harmony](docs/harmony.md).
-
-The development menus also provide confirmed, scoped **Reset options** actions.
-They retain saved musical material and physical calibration. Auto leading is
-anchored to its base register, and the shared Key contrast switch covers
-Chromatic, All notes and Harmony lighting.
-
-Engines opens Play, Harmony, Sequencer, Arp or the planned Drums description.
-The active workspace is retained when leaving settings. Harmony and Sequencer
-settings are under Engines → Settings. Root and Scale live in Chords; upper-button
-scale assignments live in Controls. System stays last in global Settings.
-
-When restoring a compatible older backup, the Client uses an isolated shared C
-codec to migrate it before upload,
-keeps the original file, and verifies the complete saved payload afterward.
-Update verification checks the same supported settings versions and prepares any
-needed backup conversion off-device before a separate restore confirmation.
-Restoration also rechecks the instrument after saved readback. Diagnostics exposes
-backup-transfer state and pad-scanner errors; a pending save or failed recovery
-is never treated as a verified restoration.
-Guarded restoration adds matching progress on the board and Client, locks playing
-and editing, and waits for the complete saved-payload comparison before unlocking.
-Its failure and disconnect paths are host-tested and await device qualification.
-The subsequent efficiency pass removes repeated song, USB, idle-note and display
-work and shares checksum code, preserving capacities and formats. Exact-output
-software checks pass; the rendering follow-up below also has paired board
-measurements. See the
-[resource review](docs/firmware-budget.md#behavior-preserving-efficiency-pass)
-and [optimization guidance](docs/optimization.md).
-The research follow-up narrows sparse display updates and empty USB expression
-checks further, with matching MIDI/state/frame traces. A separate native
-undefined-behavior test configuration and CI job help protect later low-level
-changes; see [development checks](docs/development.md#undefined-behavior-checks).
-The rendering follow-up uses page-byte drawing, skips empty sounding-note
-blocks and combines expression-indicator reads without a retained cache or
-changing refresh timing. Exact-output checks preserve existing screens and
-musical behavior. Paired board captures confirmed lower rendering cost for
-idle, held-note and MPE pressure workloads, with the same frame cadence and
-unchanged static RAM/CCM allocation. These are focused measurements rather than
-worst-case latency or stack guarantees.
-An optional bounded performance recorder adds timed captures and JSON export in
-Client Diagnostics. It measures foreground work, service gaps and destination
-queue waits, including a disconnected workload. Timed completion, retrieval
-after disconnection and JSON export passed focused board checks with idle,
-ordinary playing and MPE pressure workloads. Recorder overhead and worst-case
-loads remain unqualified. See
-[performance profiling](docs/profiling.md).
-V13-to-V15 restoration of the captured Windows configuration passed saved
-readback and a full power-off check. V14 migration and broader saved-material
-coverage still need physical qualification.
+The next milestone is **v0.4: sequencer expansion**. See the
+[roadmap](https://dcvlt.github.io/THY666/#status-heading) for planned work.
 
 ## Build or contribute
 
@@ -160,13 +124,6 @@ Musical ideas, bug reports, hardware findings, documentation and code are all
 welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [Code of Conduct](CODE_OF_CONDUCT.md). Normal pull requests target **develop**;
 reviewed promotions go to protected **main**. Agents should also read [AGENTS.md](AGENTS.md).
-
-## Human + AI
-
-THY666 is developed through human–AI cooperation, including substantial
-implementation and tooling work with OpenAI Codex. The human maintainer defines
-the musical direction and tests the board; generated work is reviewed and tested.
-Software checks and physical-device qualification are reported separately.
 
 ## License and credits
 

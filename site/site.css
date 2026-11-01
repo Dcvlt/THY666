@@ -21,6 +21,18 @@ button,input,select { font:inherit; }
 .brand img { width:96px;height:82px;object-fit:contain; }
 .site-header nav { flex-shrink:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap; }
 .site-header nav a { font-size:12px;line-height:1.8; }
+.project-site .site-menu-toggle[hidden] { display:none; }
+.site-menu-open { overflow:hidden; }
+.project-site dialog.site-menu {
+  position:fixed;inset:16px 16px auto auto;margin:0;width:min(360px,calc(100% - 32px));
+  max-height:calc(100dvh - 32px);padding:24px;border:0;overflow:auto;
+  color:var(--ui-ink);background:var(--ui-paper);font-family:var(--font-base);
+}
+.site-menu::backdrop { background:rgb(0 0 0 / .8); }
+.site-menu-heading { display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px; }
+.site-menu-heading strong { font:500 14px/1.5 var(--font-accent); }
+.site-menu nav { display:grid;gap:12px; }
+.project-site .site-menu nav a { min-height:52px;font-size:13px;justify-content:flex-start; }
 main { max-width:1380px;margin:auto;padding:0 46px; }
 h1,h2,h3 { line-height:1.2;margin:0 0 24px;font-weight:500; }
 h1 { font:400 clamp(35px,4.8vw,66px)/1.28 var(--font-display);letter-spacing:.01em; }
@@ -137,7 +149,7 @@ footer span { margin-right:auto; }
   .site-header { padding:12px 20px 24px;min-height:110px;align-items:center;gap:10px; }
   .brand { font-size:16px;gap:8px; }
   .brand img { width:58px;height:52px; }
-  .site-header nav { max-width:clamp(140px,44vw,320px);gap:3px;justify-content:flex-end; }
+  .site-header nav { flex:1;min-width:0;gap:3px;justify-content:flex-end; }
   .site-header>.hud-rule { flex-basis:32px;min-width:24px; }
   .site-header nav a { font-size:9px;padding:9px;min-height:44px; }
   main { padding-inline:20px; }
@@ -171,5 +183,7 @@ footer span { margin-right:auto; }
 @media(prefers-reduced-motion:no-preference) {
   .hero-copy,.hero-instrument { animation:site-arrival var(--hud-motion-panel,260ms) var(--hud-ease,ease-out) both; }
   .hero-instrument { animation-delay:var(--hud-motion-fast,140ms); }
+  .site-menu[open] { animation:site-menu-arrival var(--hud-motion-panel,260ms) var(--hud-ease,ease-out) both; }
+  @keyframes site-menu-arrival { from { opacity:0;translate:12px 0; } to { opacity:1;translate:0 0; } }
   @keyframes site-arrival { from { opacity:0;translate:0 10px; } to { opacity:1;translate:0 0; } }
 }

@@ -1246,7 +1246,7 @@ static int test_compact_views_show_effective_routes_and_optional_counts(void)
     /* Detailed has its own six rows regardless of compact-view preferences. */
     instrument.display_view = 0u;
     render(&still, 5u, frame);
-    CHECK(matches_text(frame, 2u, 52u, "PADS 1  NOTES 3", 25u));
+    CHECK(matches_text(frame, 2u, 58u, "PADS 1  NOTES 3", 21u));
     CHECK(thy_engine_performance_set(&engine,THY_ROW_PERFORMANCE_VELOCITY,1u,82)==THY_STATE_OK);
     char line[32];
     thy_studio_ui_view_line(&state,THY_VIEW_INFO_VELOCITY,"MAJOR C",1,1,line);
@@ -1444,6 +1444,63 @@ static int test_simple_frame_matches_reference_pixels_and_retains_content_anchor
     CHECK(matches_text(frame,2u,48u,"",21u)&&matches_text(frame,2u,58u,"",21u));
     CHECK(pixel_at(frame,105u,11u)&&pixel_at(frame,106u,12u)&&pixel_at(frame,107u,13u));
     CHECK(pixel_at(frame,107u,51u)&&pixel_at(frame,106u,52u)&&pixel_at(frame,105u,53u));
+    return 1;
+}
+
+static int test_all_play_views_share_the_reference_rail_without_losing_information(void)
+{
+    static const char *const titles[]={"MAJOR C","ABCDEFGHIJKLMNOPQRSTU","MAJOR C","MAJOR C"};
+    static const unsigned footers[]={THY_VIEW_INFO_COUNTS,THY_VIEW_INFO_ROOT_SCALE,THY_VIEW_INFO_OFF,THY_VIEW_INFO_COUNTS};
+    static uint8_t reference[THY_UI_FRAME_BYTES];
+    for(unsigned scenario=0u;scenario<4u;++scenario){
+        initialize();
+        if(scenario==3u){
+            const int16_t notes[]={60,64,67};
+            CHECK(thy_core_press(&musical_core,0u,notes,3u,0,0,THY_ROUTE_DIN,96u)==THY_OK);
+        }
+        for(unsigned view=0u;view<THY_VIEW_COUNT;++view){
+            thy_view_config *config=&instrument.display_config[view];
+            config->header=scenario!=2u;
+            config->slots[1]=(uint8_t)footers[scenario];
+            config->detail_rows[THY_VIEW_DETAIL_ROWS-1u]=(uint8_t)footers[scenario];
+        }
+        instrument.display_view=THY_VIEW_SIMPLE;
+        thy_studio_ui_render(&still,&state,titles[scenario],1,1,1u,reference);
+        unsigned checked=0u;
+        for(unsigned view=0u;view<THY_VIEW_COUNT;++view){
+            if(!thy_view_available(view))continue;
+            instrument.display_view=(uint8_t)view;
+            before_state=state;
+            thy_studio_ui_render(&still,&state,titles[scenario],1,1,2u,frame);
+            CHECK(memcmp(&state,&before_state,sizeof state)==0);
+            /* Exact approved elbows, blank gutter, dotted spine and icons.
+             * Columns 105/106 inside the body remain available to graphics. */
+            for(unsigned y=0u;y<THY_UI_HEIGHT;++y){
+                unsigned first=(y>=8u&&y<=10u)||(y>=54u&&y<=56u)?105u:107u;
+                for(unsigned x=105u;x<first;++x)
+                    if(pixel_at(reference,x,y))first=x;
+                for(unsigned x=first;x<THY_UI_WIDTH;++x)
+                    CHECK(pixel_at(frame,x,y)==pixel_at(reference,x,y));
+            }
+            char footer[32];
+            thy_studio_ui_view_line(&state,footers[scenario],titles[scenario],1,1,footer);
+            CHECK(matches_text(frame,2u,58u,footer,21u));
+            ++checked;
+        }
+        CHECK(checked==7u);
+    }
+    initialize();instrument.display_view=THY_VIEW_DETAILED;
+    thy_view_config *config=&instrument.display_config[THY_VIEW_DETAILED];
+    static const uint8_t rows[]={THY_VIEW_INFO_MUSICAL_NAMES,THY_VIEW_INFO_VELOCITY,
+        THY_VIEW_INFO_COUNTS,THY_VIEW_INFO_CHANNELS,THY_VIEW_INFO_OUTPUTS,THY_VIEW_INFO_MODIFIERS};
+    memcpy(config->detail_rows,rows,sizeof rows);
+    for(unsigned header=0u;header<2u;++header){
+        config->header=(uint8_t)header;render(&still,header,frame);
+        for(unsigned row=0u;row<THY_VIEW_DETAIL_ROWS;++row){
+            char text[32];thy_studio_ui_view_line(&state,rows[row],"MAJOR C",1,1,text);
+            CHECK(matches_text(frame,2u,row+1u==THY_VIEW_DETAIL_ROWS?58u:12u+row*8u,text,21u));
+        }
+    }
     return 1;
 }
 
@@ -2525,6 +2582,7 @@ int main(int argc,char **argv)
         !test_play_rail_reports_physical_expression_halves_without_mpe_at_alias() ||
         !test_output_side_ticks_follow_split_zones_and_physical_swap() ||
         !test_simple_frame_matches_reference_pixels_and_retains_content_anchors() ||
+        !test_all_play_views_share_the_reference_rail_without_losing_information() ||
         !test_simple_five_notes_use_four_large_corners_and_large_center() ||
         !test_simple_six_notes_begin_compact_wrapping_without_ownership_changes() ||
         !test_pretty_is_note_driven_bounded_and_respects_reduced_motion() ||
@@ -2547,6 +2605,6 @@ int main(int argc,char **argv)
         !test_harmony_focus_separates_base_chord_and_complete_melody_classes() ||
         !test_harmony_four_views_status_and_details_follow_physical_clusters() ||
         !test_harmony_key_and_scale_pages_override_chord_view_without_key_changes()) return 1;
-    printf("52 shared studio UI/transfer scenarios passed (%u assertions)\n", assertions);
+    printf("53 shared studio UI/transfer scenarios passed (%u assertions)\n", assertions);
     return 0;
 }

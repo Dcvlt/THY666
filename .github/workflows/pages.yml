@@ -32,7 +32,7 @@ on:
       - "tools/render_help_examples.mjs"
       - "tests/test_site.py"
       - "tests/web/help.test.mjs"
-      - "tests/web/site.test.mjs"
+      - "tests/web/site*.test.mjs"
       - ".github/workflows/pages.yml"
   pull_request:
     paths:
@@ -64,7 +64,7 @@ on:
       - "tools/render_help_examples.mjs"
       - "tests/test_site.py"
       - "tests/web/help.test.mjs"
-      - "tests/web/site.test.mjs"
+      - "tests/web/site*.test.mjs"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -96,7 +96,7 @@ jobs:
       - name: Verify the bounded public site
         run: python3 -m unittest discover -s tests -p test_site.py -v
       - name: Verify shared guide, screenshots and site figures
-        run: node --test tests/web/help.test.mjs tests/web/site.test.mjs tests/web/site-carousel.test.mjs tests/web/browser-*.test.mjs tests/web/updater-*.test.mjs
+        run: node --test tests/web/help.test.mjs tests/web/site*.test.mjs tests/web/browser-*.test.mjs tests/web/updater-*.test.mjs
       - name: Build the project site and shared guide
         run: python3 tools/build_site.py
       - name: Upload only the public site

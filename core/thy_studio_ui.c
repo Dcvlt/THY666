@@ -1894,6 +1894,25 @@ static void reset_confirmation(uint8_t *out,const thy_state *state)
 
     page_footer(out,2u,58u,state->notice==THY_NOTICE_RELEASE?"RELEASE PADS / STOP":"UP/DN > OK O EXIT < BACK",25u);
 }
+static void play_status_frame(uint8_t *out)
+{
+    /* Join the content-aligned rules to the icon rail. Inspect only their
+     * three possible rows so long labels keep their raised/lowered underline. */
+    unsigned top=10u,bottom=54u;
+    for(unsigned y=8u;y<=10u;++y)
+        if(out[y/8u*THY_UI_WIDTH+104u]&(1u<<(y%8u))){top=y;break;}
+    for(unsigned y=54u;y<=56u;++y)
+        if(out[y/8u*THY_UI_WIDTH+104u]&(1u<<(y%8u))){bottom=y;break;}
+    thy_ui_draw_rectangle(out,105u,8u,3u,3u,0);
+    thy_ui_draw_rectangle(out,105u,54u,3u,3u,0);
+    for(unsigned step=0u;step<3u;++step){
+        thy_ui_draw_pixel(out,105u+step,top+step+1u,1);
+        thy_ui_draw_pixel(out,105u+step,bottom-step-1u,1);
+    }
+    for(unsigned y=12u;y<54u;y+=2u)
+        if(y>top+3u&&y<bottom-3u)thy_ui_draw_pixel(out,107u,y,1);
+}
+
 static void studio_play(uint8_t *out, const thy_state *state,
     const char *scale_name, int din_ready, int usb_ready, uint32_t now_ms,
     int motion_enabled)
@@ -1911,46 +1930,33 @@ static void studio_play(uint8_t *out, const thy_state *state,
             scale_name!=NULL?scale_name:"THY666","performance",108u,108u);
     }
     connection_icons(out, state, din_ready, usb_ready);
-    if (view == THY_VIEW_DETAILED) {
-        for (unsigned row = 0u; row < THY_VIEW_DETAIL_ROWS; ++row)
-            draw_view_line(out, (config->header || musical ? 12u : 4u) + row * 8u,
-                state, &snapshot, config->detail_rows[row], scale_name, din_ready, usb_ready);
-        return;
-    }
-    int motion = motion_enabled && config->motion;
-    if (view == THY_VIEW_PIANO) piano_pattern(out, &snapshot);
-    else if (view == THY_VIEW_CHLADNI)
-        nodal_pattern(out, snapshot.pitch_sum, snapshot.notes,
-            instrument->performance.root, now_ms, motion);
-    else if (view == THY_VIEW_ORBIT) orbit_pattern(out, &snapshot, now_ms, motion);
-    else if (view == THY_VIEW_FIFTHS)
-        fifths_pattern(out, &snapshot, instrument->performance.root, now_ms, motion);
-    else if (view == THY_VIEW_WAVES)
-        waves_pattern(out, &snapshot, instrument->performance.root, now_ms, motion);
-    else simple_pattern(out, &snapshot);
-    draw_view_line(out, 48u, state, &snapshot, config->slots[0], scale_name, din_ready, usb_ready);
     char footer[32];
-    view_line(state,&snapshot,config->slots[1],scale_name,din_ready,usb_ready,footer);
+    if (view == THY_VIEW_DETAILED) {
+        for (unsigned row = 0u; row + 1u < THY_VIEW_DETAIL_ROWS; ++row)
+            draw_view_line(out, 12u + row * 8u,
+                state, &snapshot, config->detail_rows[row], scale_name, din_ready, usb_ready);
+        /* Keep all six rows: the last occupies the shared footer, clear of
+         * the lower rule and its terminating diagonal. */
+        view_line(state,&snapshot,config->detail_rows[THY_VIEW_DETAIL_ROWS-1u],
+            scale_name,din_ready,usb_ready,footer);
+    } else {
+        int motion = motion_enabled && config->motion;
+        if (view == THY_VIEW_PIANO) piano_pattern(out, &snapshot);
+        else if (view == THY_VIEW_CHLADNI)
+            nodal_pattern(out, snapshot.pitch_sum, snapshot.notes,
+                instrument->performance.root, now_ms, motion);
+        else if (view == THY_VIEW_ORBIT) orbit_pattern(out, &snapshot, now_ms, motion);
+        else if (view == THY_VIEW_FIFTHS)
+            fifths_pattern(out, &snapshot, instrument->performance.root, now_ms, motion);
+        else if (view == THY_VIEW_WAVES)
+            waves_pattern(out, &snapshot, instrument->performance.root, now_ms, motion);
+        else simple_pattern(out, &snapshot);
+        draw_view_line(out, 48u, state, &snapshot, config->slots[0], scale_name, din_ready, usb_ready);
+        view_line(state,&snapshot,config->slots[1],scale_name,din_ready,usb_ready,footer);
+    }
     if(footer[0])thy_ui_draw_rule(out,55u,108u,2u,footer,21u,1);
     thy_ui_draw_text(out,2u,58u,footer,21u,0);
-    if(view==THY_VIEW_SIMPLE){
-        /* Keep the existing content-aligned rules. Only their three final
-         * columns become elbows; inspect the known three rule rows so long
-         * labels retain their own raised/lowered underline rather than a gap. */
-        unsigned top=10u,bottom=54u;
-        for(unsigned y=8u;y<=10u;++y)
-            if(out[y/8u*THY_UI_WIDTH+104u]&(1u<<(y%8u))){top=y;break;}
-        for(unsigned y=54u;y<=56u;++y)
-            if(out[y/8u*THY_UI_WIDTH+104u]&(1u<<(y%8u))){bottom=y;break;}
-        thy_ui_draw_rectangle(out,105u,8u,3u,3u,0);
-        thy_ui_draw_rectangle(out,105u,54u,3u,3u,0);
-        for(unsigned step=0u;step<3u;++step){
-            thy_ui_draw_pixel(out,105u+step,top+step+1u,1);
-            thy_ui_draw_pixel(out,105u+step,bottom-step-1u,1);
-        }
-        for(unsigned y=12u;y<54u;y+=2u)
-            if(y>top+3u&&y<bottom-3u)thy_ui_draw_pixel(out,107u,y,1);
-    }
+    play_status_frame(out);
 }
 
 void thy_studio_ui_init(thy_studio_ui *ui)
