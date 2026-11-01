@@ -232,7 +232,7 @@ html[data-host="desktop"][data-host-active="false"] .companion-app *,html[data-h
 .rail-toggle[aria-expanded="true"] .hud-glyph { transform:rotate(180deg); }
 
 /* The public Project destination is separate from the workspace tabs. */
-.companion-app .companion-main-nav .companion-project-link { margin-inline-start:16px; }
+.companion-app .companion-main-nav .companion-project-link { margin-inline-start:clamp(16px,calc(50vw - 560px),96px); }
 .companion-app .compact-nav-panel .companion-project-link { margin:8px 0 0; }
 
 /* Composition belongs to each feature; shared choices supply only their frame. */

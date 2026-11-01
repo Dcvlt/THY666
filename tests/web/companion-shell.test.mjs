@@ -302,7 +302,7 @@ test('header uses the original logo alone and groups navigation with connection 
   assert.equal(actions.contains(header.querySelector('.companion-main-nav')),true);
   assert.equal(actions.contains(f.byText('Connect board')),true);
   assert.equal(actions.contains(brand),false);assert.deepEqual(f.calls,[]);
-  assert.deepEqual(header.querySelector('.companion-main-nav').children.map(node=>node.textContent),['Update','Client','Documentation']);
+  assert.deepEqual(header.querySelector('.companion-main-nav').children.map(node=>node.textContent),['Update','Guide','Client']);
   assert.equal(f.byText('Client').attributes['aria-pressed'],'true');assert.equal(f.byText('Update').attributes['aria-pressed'],'false');
 });
 
@@ -838,7 +838,7 @@ test('connected header tabs retain native keyboard activation without navigating
     assert.equal(Boolean(event.defaultPrevented),false,'Native header activation remains available.');
   }
   await flush();assert.deepEqual(f.calls,[]);
-  f.fire(f.byText('Documentation'),'click');assert.equal(f.document.querySelector('#documentation').hidden,false);
+  f.fire(f.byText('Guide'),'click');assert.equal(f.document.querySelector('#documentation').hidden,false);
 });
 
 test('compact sidebar retains accessible page names, disabled reasons and browser-only preference', async t => {
@@ -1175,10 +1175,10 @@ test('documentation uses a low-rate connection refresh and browser visibility pa
   f.shell.showArea('update');f.calls.length=0;await clock.advance(2000);assert.deepEqual(f.calls,[],'The update wizard owns application transactions; its hidden Board poll cannot compete.');
 });
 
-test('public site Client exposes Install, Client, User guide and project navigation without connecting',t=>{
+test('public site Client exposes Install, Guide, Client and project navigation without connecting',t=>{
   const f=fixture(t,{projectSite:true});
   const nav=f.document.querySelector('.companion-main-nav');
-  assert.deepEqual(nav.children.map(node=>node.textContent),['Install','Client','User guide','Project']);
+  assert.deepEqual(nav.children.map(node=>node.textContent),['Install','Guide','Client','Project']);
   assert.equal(nav.children[3].href,'../index.html');
   assert.deepEqual(f.calls,[]);
 });

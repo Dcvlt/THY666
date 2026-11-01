@@ -92,7 +92,6 @@ footer>.hud-rule { position:absolute;inset:0 0 auto;margin:0; }
 footer span { margin-right:auto; }
 .manual-mount { max-width:1480px;padding-top:50px; }
 .manual-page .thy-help { max-width:none; }
-.manual-page .thy-help-rail { top:20px;max-height:calc(100dvh - 40px); }
 .manual-page .thy-help-article { padding-top:28px; }
 .manual-page footer { max-width:1480px; }
 .installer-page { --font:var(--font-base);--signal-dim:var(--theme-edge);--signal-line:var(--theme-bright);--theme-ink:var(--ui-ink); }

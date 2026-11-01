@@ -47,8 +47,8 @@ the application's CDC connection.
 ## Rust updater and the Update tab
 
 See [Updater](updater.md) for building the executable, CLI commands and supported
-package restrictions. **Update** is the first header tab, before Client and
-Documentation, and remains available without a running application connection.
+package restrictions. **Update** is the first header tab, before Guide and
+Client, and remains available without a running application connection.
 The app still opens Client Board by default. Its disconnected wireframe
 includes an **install the firmware on your device** link to Update. The canonical
 Update route is `#update`; older `#client/update` links remain supported. Update

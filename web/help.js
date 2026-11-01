@@ -31,9 +31,10 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
   };
   const root = el('section', 'thy-help');
   root.dataset.helpRoot = '';
-  const rail = el('nav', 'thy-help-rail hud-frame hud-frame--inset');
+  const rail = el('nav', 'thy-help-rail');
   rail.setAttribute('aria-label', 'Documentation topics');
-  rail.append(el('p', 'thy-help-eyebrow', 'THY666 GUIDE'), el('h2', 'thy-help-title', 'Documentation'));
+  const indexHeader = el('div', 'thy-help-index-header');
+  indexHeader.append(el('p', 'thy-help-eyebrow', 'THY666 GUIDE'), el('h2', 'thy-help-title', 'Documentation'));
   const searchLabel = el('label', 'thy-help-search-label', 'Find a feature or control');
   searchLabel.htmlFor = `${prefix}-search`;
   const searchInput = el('input', 'thy-help-search hud-field');
@@ -44,12 +45,16 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
   const resultStatus = el('p', 'thy-help-result-count');
   resultStatus.setAttribute('role', 'status');
   resultStatus.setAttribute('aria-live', 'polite');
-  const links = el('div', 'thy-help-topic-list');
+  const links = el('div', 'thy-help-topic-list hud-scroll-region');
+  links.setAttribute('role', 'region');
+  links.setAttribute('aria-label', 'Guide topics');
+  links.tabIndex = 0;
   const indexToggle = button('Find a topic', 'thy-help-index-toggle hud-action');
   indexToggle.setAttribute('aria-expanded', 'false');
   indexToggle.setAttribute('aria-controls', `${prefix}-index`);
-  const indexContent = el('div', 'thy-help-index-content');indexContent.id = `${prefix}-index`;
-  indexContent.append(searchLabel, searchInput, resultStatus, links);
+  const indexContent = el('div', 'thy-help-index-content hud-frame hud-frame--inset');indexContent.id = `${prefix}-index`;
+  indexHeader.append(searchLabel, searchInput, resultStatus);
+  indexContent.append(indexHeader, links);
   rail.append(indexToggle, indexContent);
   listen(indexToggle, 'click', () => {
     const opened = indexToggle.getAttribute('aria-expanded') !== 'true';
@@ -237,7 +242,9 @@ export function initializeHelp({ mount, onNavigate = () => {}, onContextChange =
   function search(value = '') {
     if (disposed) return [];
     query = String(value); searchInput.value = query;
-    return renderNavigation();
+    const matches = renderNavigation();
+    links.scrollTop = 0;
+    return matches;
   }
 
   function context(id, { anchor } = {}) {
