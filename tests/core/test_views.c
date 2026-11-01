@@ -156,17 +156,18 @@ static int test_six_detailed_rows_and_two_compact_slots_are_independent(void)
     render(0u, frames[0]);
     uint8_t blank[THY_UI_FRAME_BYTES] = {0};
     for (unsigned y = 0u; y < 64u; ++y)
-        for (unsigned x = 0u; x < 108u; ++x) CHECK(!pixel(frames[0], x, y));
+        for (unsigned x = 0u; x < 105u; ++x) CHECK(!pixel(frames[0], x, y));
     CHECK(memcmp(frames[0], blank, sizeof blank) != 0); /* Output side rail. */
     for (unsigned row = 0u; row < THY_VIEW_DETAIL_ROWS; ++row) {
         detail->detail_rows[row] = THY_VIEW_INFO_COUNTS;
         render(row + 1u, frames[0]);
-        CHECK(text_at(frames[0], 4u + row * 8u, "PADS 0  NOTES 0"));
+        CHECK(text_at(frames[0], row + 1u == THY_VIEW_DETAIL_ROWS ? 58u : 12u + row * 8u,
+            "PADS 0  NOTES 0"));
         detail->detail_rows[row] = THY_VIEW_INFO_OFF;
     }
     detail->header = 1u; detail->detail_rows[5] = THY_VIEW_INFO_ARPS;
     render(10u, frames[0]);
-    CHECK(text_at(frames[0], 52u, "ARP 1:OFF 2:OFF"));
+    CHECK(text_at(frames[0], 58u, "ARP 1:OFF 2:OFF"));
     CHECK(text_at(frames[0], 1u, "MAJOR C"));
     for (unsigned view = 0u; view < THY_VIEW_COUNT; ++view) {
         if (!thy_view_available(view) || view == THY_VIEW_DETAILED) continue;

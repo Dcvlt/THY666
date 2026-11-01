@@ -62,7 +62,8 @@ inputs retain the same results as separate queries. The footer is formatted once
 These changes add no retained snapshot or frame cache, persistent RAM, saved
 fields or display-transfer policy. Exact-output comparisons against the captured
 baseline cover primitives, musical views, menus, restoration and prepared OLED
-transfers. Target timing improvement still requires paired board captures.
+transfers. Paired board captures and their limits are recorded in
+[optimization guidance](optimization.md).
 
 ## Client view
 

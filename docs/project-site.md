@@ -97,7 +97,7 @@ npm run build:site
 
 The Install page links to [GitHub Releases](https://github.com/Dcvlt/THY666/releases)
 and source build instructions. The historical v0.1.0 release provides source;
-v0.2.0 is available as a Musical Expansion prerelease with standalone firmware,
+v0.3.1 is the current accepted release, with standalone firmware,
 matching source/input and unsigned Client installers. Only assets visible in a
 published release are available to visitors; draft assets are not public.
 See [Release procedure](releases.md) for packaging and qualification boundaries.
@@ -108,7 +108,7 @@ restoration with durable readback and full payload comparison. This does not
 qualify every configuration or other operating systems. The
 [browser installation guide](browser-installation.md) records the scope.
 
-The default installer catalog remains empty. Download the selected prerelease
+The default installer catalog remains empty. Download the selected release
 firmware asset from Releases and choose **Custom file** explicitly; the site does
 not silently promote a testing build to the default firmware choice. No firmware
 or musical input is included in the Pages bundle.
@@ -121,8 +121,15 @@ Client screenshot shows a disconnected session with no device identifiers; refre
 `site/assets/client-preview.png` when the interface changes. Large display titles retain Monoton; navigation and smaller headings use Orbitron,
 white on dark surfaces and dark in light mode.
 
-The roadmap marks v0.2 as the available development milestone, with musical
-integration additions explicitly still planned within v0.2. v0.3 covers sequencer
-expansion; experimental features and MIDI expansion follow. These product milestones
+The roadmap marks v0.3.1 as the current accepted release, with focused board
+checks and remaining qualification limits identified beside it. v0.4 covers
+sequencer expansion; experimental features and MIDI expansion follow. These product milestones
 do not change package/build version metadata or imply downloadable release artifacts.
 Keep implemented behavior separate from planned work and device qualification.
+
+On phones, the overview, Install page and user guide share a compact navigation
+dialog, using the Client’s burger icon and split icon frame. It moves the existing
+links, supports Escape and backdrop dismissal, and restores focus on close.
+Desktop links stay inline; without scripting or dialog support they remain visible.
+The overview mentions resource gauges and timed performance captures beside the
+Client, with details in Diagnostics rather than a separate marketing claim.

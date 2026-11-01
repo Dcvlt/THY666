@@ -25,7 +25,7 @@ def site_assets() -> dict[str, bytes]:
             raise ValueError("Duplicate public site path")
         files[destination] = bounded_file(source, parent=parent)
 
-    for name in ("index.html", "manual.html", "install.html", "site.css", "site.js", "screen-carousel.js", "guide.js", "install.js", "releases.json"):
+    for name in ("index.html", "manual.html", "install.html", "site.css", "site.js", "site-navigation.js", "screen-carousel.js", "guide.js", "install.js", "releases.json"):
         add(SITE / name, name, parent=SITE)
     # The public pages and read-only reference use the Client's exact foundation.
     for name in ("typography.css", "ui-system.css", "ui-system.js",
