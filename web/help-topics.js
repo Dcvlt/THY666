@@ -938,7 +938,7 @@ export const HELP_TOPICS = [
         ['4 · Detect the board', 'Release both pads, then click Detect board.'],
       ]),
       section('Open the wizard', [
-        'Choose Update, the first header tab before Client and Documentation, or follow install the firmware on your device beneath the disconnected Board wireframe. Update is a separate application area. The app opens Client Board by default.',
+        'Choose Install (Update in the standalone app), or follow install the firmware on your device beneath the disconnected Board wireframe. The updater is a separate application area. The app opens Client Board by default.',
         'In the desktop app, the updater is already built in. Stay in the same window: there is no separate updater download, Python server, helper launch or session token to enter.',
         'The project site offers direct browser installation in supported desktop Chrome/Edge over HTTPS or localhost, without a helper download. WebHID selects the update interface; Web Serial connects an existing THY666 application for backup and verification. The same Rust package checks and transfer policy run in WebAssembly. A same-build Windows browser installation passed transfer, application checks and integrated configuration restoration with durable readback and complete payload comparison. Other platforms, nonempty songs/libraries and calibrated overrides remain unqualified. The optional local Rust helper route remains available; file:// is unsupported.',
         'Development preview in the Update heading lets you review synthetic backup, transfer, verification, restoration and failure screens while disconnected. It never accesses a device or verifies a real installation. Exit preview returns to the real wizard.',

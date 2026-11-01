@@ -123,6 +123,14 @@ different roles. Apply a frame to a wrapper when a group needs its own boundary.
 Feature styles set padding and grid layout; they must not replace the shared
 border recipe or introduce another cut size for the same role.
 
+For a scrolling index, separate the sticky wrapper from its stationary frame.
+Keep search and navigation controls outside the inner `.hud-scroll-region`;
+only the topic list scrolls. Bound that viewport with `min-height: 0`, leave room
+for keyboard focus outlines, and keep the same structure when a mobile disclosure
+opens it. The public guide and Client Documentation reuse this component and its
+responsive rules. A nested desktop host supplies `--content-viewport-height` for
+its available space; host pages must not replace the component's scroll behavior.
+
 ### Geometry and component lifecycle
 
 Call `initializeUIComponents({root})` once for a page or application root. It

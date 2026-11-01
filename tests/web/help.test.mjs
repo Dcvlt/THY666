@@ -374,6 +374,50 @@ test('guide index opens on request and closes after choosing an article', () => 
   assert.ok(f.byClass('thy-help-contents'));f.help.destroy();
 });
 
+test('guide search stays outside the named topic scroll region and survives filtering', () => {
+  const f=fixture(),rail=f.byClass('thy-help-rail'),toggle=f.byClass('thy-help-index-toggle');
+  const panel=f.byClass('thy-help-index-content'),header=f.byClass('thy-help-index-header');
+  const topics=f.byClass('thy-help-topic-list'),search=f.byClass('thy-help-search');
+  const status=f.byClass('thy-help-result-count'),label=f.byClass('thy-help-search-label');
+  const classes=node=>(node.className||'').split(/\s+/);
+
+  assert.equal(rail.tagName,'NAV');
+  assert.equal(classes(rail).includes('hud-frame'),false,'The scrollable index must not move its outer rail decoration.');
+  assert.deepEqual(rail.children,[toggle,panel]);
+  assert.equal(toggle.getAttribute('aria-controls'),panel.id);
+  assert.ok(classes(panel).includes('hud-frame'));
+  assert.ok(classes(panel).includes('hud-frame--inset'));
+  assert.deepEqual(panel.children,[header,topics]);
+  assert.deepEqual(header.children,[f.byClass('thy-help-eyebrow'),f.byClass('thy-help-title'),label,search,status]);
+  assert.equal(topics.contains(search),false);
+  assert.equal(topics.contains(status),false);
+  assert.ok(classes(topics).includes('hud-scroll-region'));
+  assert.equal(topics.getAttribute('role'),'region');
+  assert.equal(topics.getAttribute('aria-label'),'Guide topics');
+  assert.equal(topics.tabIndex,0,'Keyboard users can focus the topic-list viewport.');
+  assert.equal(label.htmlFor,search.id);
+  assert.equal(status.getAttribute('aria-live'),'polite');
+
+  f.fire(toggle,'click');
+  assert.equal(f.document.activeElement,search);
+  topics.scrollTop=480;
+  search.value='aftertouch';f.fire(search,'input');
+  assert.equal(topics.scrollTop,0,'A new query starts at the first result, even after scrolling the full index.');
+  assert.match(status.textContent,/guides? found/);
+  assert.ok(topics.contains(f.find('helpTopic','aftertouch')));
+  assert.equal(f.byClass('thy-help-index-header'),header,'Filtering updates topics, not the fixed search header.');
+  assert.equal(f.document.activeElement,search);
+  assert.equal(toggle.getAttribute('aria-expanded'),'true');
+
+  f.fire(f.find('helpTopic','aftertouch'),'click');
+  assert.equal(f.help.selected,'aftertouch');
+  assert.equal(toggle.getAttribute('aria-expanded'),'false');
+  assert.equal(f.document.activeElement,f.byClass('thy-help-article'));
+  assert.equal(f.byClass('thy-help-index-header'),header);
+  assert.equal(f.byClass('thy-help-topic-list'),topics);
+  f.help.destroy();
+});
+
 
 test('article links expand deeper sections and option tables retain mobile labels', () => {
   const f=fixture();f.help.open('sequencer-editor');

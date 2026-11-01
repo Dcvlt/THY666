@@ -27,7 +27,7 @@ and portable ZIP, or macOS disk image. The source-code archives are separate.
 
 New to THY666? Start with the [Quick start guide](https://dcvlt.github.io/THY666/manual.html#getting-started):
 read the screen, learn the controls and find your settings. The same guide is
-available in Client → Documentation.
+available in the Client’s **Guide** tab.
 
 ## Human + AI
 

@@ -13,16 +13,17 @@ a separate input for firmware and optional standalone workbench builds.
 
 ## Three application areas
 
-The header tabs are **Update**, **Client** and **Documentation**, in that
-order. The app opens **Client → Board** by default. **Update** is a separate
+The header tabs are **Update**, **Guide** and **Client**, in that
+order. The public Client labels Update as **Install** and separates its **Project**
+link from those tabs. The app opens **Client → Board** by default. **Update** is a separate
 application area, outside the Client sidebar. **Client** contains Board,
-Parameters, Harmony, Songs & library, Backups and Diagnostics. **Documentation** contains
+Parameters, Harmony, Songs & library, Backups and Diagnostics. **Guide** contains
 searchable guides, related articles and contextual help for controls/settings.
 Opening the app or reading help
 does not connect to the controller. Without a board, its surface is an inactive
 wireframe; mouse, touch and keyboard gestures cannot play it or change a device.
 
-Documentation → Use the Client → Interface design introduces the shared flat
+Guide → Use the Client → Interface design introduces the shared flat
 surfaces, angular traces, themes and interaction feedback. Its component-library
 link opens read-only examples with sample values; the THY666 mark returns to
 the site or Client. See the [design guide](design-system.md) for contribution rules.
@@ -358,7 +359,8 @@ independently migrated C payload and the complete pre-power-off V15 file. The
 original V13 file was retained unchanged. This qualifies that captured
 configuration; V14 migration and broader saved-material coverage remain separate.
 
-The project site exposes the same browser Client through **Install / Client / User guide**.
+The project site exposes the same browser Client, with **Install / Guide / Client**
+tabs and a separate **Project** link.
 It opens disconnected and needs no private musical archive. Use desktop Chrome or Edge
 over HTTPS or localhost for explicit Web Serial connection. After the standalone
 installer finishes, **Go to Client** releases its port and opens the Client; use

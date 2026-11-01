@@ -28,7 +28,7 @@ html.desktop-window .desktop-window-button svg { width:15px;height:15px;fill:non
 html.desktop-window .desktop-window-button:hover { color:var(--theme-bright,#ff414f);background:var(--theme-soft,#170307); }
 html.desktop-window .desktop-window-close:hover { color:var(--ui-paper,#000);background:var(--theme-bright,#ff414f); }
 html.desktop-window .desktop-window-button:focus-visible { outline:2px solid var(--theme-bright,#ff414f);outline-offset:-3px; }
-.desktop-content-viewport { position:fixed;inset:calc(var(--desktop-title-height) + 5px) calc(.555556% + 10px) calc(1% + 6px);z-index:1;overflow:auto;overscroll-behavior:contain;background:var(--ui-paper,#000);scrollbar-gutter:stable; }
+.desktop-content-viewport { --content-viewport-height:calc(99dvh - var(--desktop-title-height) - 11px);position:fixed;inset:calc(var(--desktop-title-height) + 5px) calc(.555556% + 10px) calc(1% + 6px);z-index:1;overflow:auto;overscroll-behavior:contain;background:var(--ui-paper,#000);scrollbar-gutter:stable; }
 html.desktop-window .desktop-content-viewport>.app-shell { min-height:100%; }
 html.desktop-window .companion-workspace { min-height:calc(100dvh - var(--desktop-title-height) - 13px - var(--companion-header-height,112px)); }
 html.desktop-window #companion-startup { inset:calc(var(--desktop-title-height) + 5px) 8px 8px; }

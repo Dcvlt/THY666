@@ -189,9 +189,9 @@ export function initializeCompanionShell({engine,studio,groups,applyPayload,onPr
   const mainNav=el('nav','companion-main-nav');mainNav.setAttribute('aria-label','Application areas');
   const updateAreaButton=button(projectSite?'Install':'Update','hud-choice hud-choice--nav',()=>showArea('update'));
   const clientAreaButton=button('Client','hud-choice hud-choice--nav is-selected',()=>showArea('client'));
-  const docsAreaButton=button(projectSite?'User guide':'Documentation','hud-choice hud-choice--nav',()=>{showArea('documentation');help.open('getting-started');});
-  for(const control of [updateAreaButton,clientAreaButton,docsAreaButton])control.dataset.traceOrigin='bottom';
-  mainNav.append(updateAreaButton,clientAreaButton,docsAreaButton);
+  const docsAreaButton=button('Guide','hud-choice hud-choice--nav',()=>{showArea('documentation');help.open('getting-started');});
+  for(const control of [updateAreaButton,docsAreaButton,clientAreaButton])control.dataset.traceOrigin='bottom';
+  mainNav.append(updateAreaButton,docsAreaButton,clientAreaButton);
   if(projectSite){
     const home=el('a','button hud-action companion-project-link','Project');home.href='../index.html';
     home.addEventListener('click',event=>{if(updater?.usbBusy||client.busy)event.preventDefault();});
