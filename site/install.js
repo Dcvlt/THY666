@@ -4,8 +4,10 @@ import { initializeUpdaterPanel } from './installer/updater-panel.js';
 import { createCore } from './client/core.js';
 import { createBackupPayloadMigrator } from './client/backup-migration.js';
 import { initializeUIComponents } from './ui-system.js';
+import { initializeSiteNavigation } from './site-navigation.js';
 
 initializeUIComponents();
+initializeSiteNavigation();
 
 const mount = document.querySelector('#browser-updater');
 const status = document.querySelector('#browser-install-status');

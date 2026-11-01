@@ -2,7 +2,7 @@
 
 Versions use **vX.X.X** tags, with X.X.X in package metadata. Prerelease status
 is a GitHub release property rather than a different version spelling.
-`python tools/check_release_version.py --tag v0.3.0` checks the JavaScript,
+`python tools/check_release_version.py --tag v0.3.1` checks the JavaScript,
 Tauri, Rust package and lockfile versions together.
 
 ## Downloads
@@ -27,6 +27,14 @@ checksums. Read the notes attached to the release for platform and device-test
 limits.
 
 ## Release history
+
+- **v0.3.1:** All seven Play views share the approved dotted, notched status-icon
+  frame. Detailed retains its six information rows, with the last below the
+  lower rule. The site gains the Client-style mobile navigation control, and
+  the README and overview explain resource telemetry and performance captures.
+  C-rendered previews, native regressions and phone/desktop browser checks pass;
+  the new frame still awaits a physical OLED check. Musical behavior, saved
+  settings format and existing platform/recovery qualification are unchanged.
 
 - **v0.3.0:** Performance telemetry and timed Diagnostics captures, guarded
   configuration-restoration progress, and behavior-preserving rendering and

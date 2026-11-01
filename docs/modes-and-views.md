@@ -27,6 +27,10 @@ Notes, Scale, Channels, Outputs, Modifiers, Pressure, Octaves, Clock and Arps.
 Each view retains its own header/slot/motion preferences. The first modular
 information line defaults to musical chord/note names.
 
+All seven Play views share the dotted, notched frame beside the status icons.
+Its top and bottom rules follow the width of their text. Detailed keeps five
+information rows inside the frame and its sixth row below the lower rule.
+
 Velocity reflects per-side/zone settings rather than one misleading global
 number. Counts distinguish held physical pad owners from unique sounding
 pitches; sending one pitch to multiple channels does not multiply its pitch
